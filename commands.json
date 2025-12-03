@@ -1,0 +1,320 @@
+[
+    {
+        "api_id": "Move",
+        "description": "Move robot",
+        "args": [
+            {
+                "name": "vx",
+                "type": "number"
+            },
+            {
+                "name": "vy",
+                "type": "number"
+            },
+            {
+                "name": "vyaw",
+                "type": "number"
+            }
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": false,
+        "api_method": "CrossStep",
+        "api_id": "CrossStep",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "api_id": "Damp",
+        "description": "Damp mode",
+        "args": [
+            {
+                "name": "enabled",
+                "type": "boolean"
+            }
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": true,
+        "api_id": "BalanceStand"
+    },
+    {
+        "api_id": "StopMove",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": true,
+        "api_id": "Hello",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "Stretch",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "Content",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "FingerHeart",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "Scrape",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "Wallow",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "StandUp",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": true,
+        "api_id": "StandDown",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": true,
+        "api_id": "RecoveryStand",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        }
+    },
+    {
+        "working": true,
+        "api_id": "Sit",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "RiseSit",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "FrontFlip",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "working": true,
+        "api_id": "FrontJump",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "exec_time": 10
+    },
+    {
+        "api_id": "FrontPounce",
+        "exec_time": 10
+    },
+    {
+        "working": false,
+        "api_id": "FreeBound",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "FreeJump",
+        "args": [
+            {
+                "name": "",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "FreeAvoid",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "Pose",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": true,
+        "api_id": "ContinuousGait"
+       
+    },
+    {
+        "working": false,
+        "api_id": "ClassicWalk",
+        "command": "ClassicWalk",
+        "description": "Toggles between classic and agile mode",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": true,
+        "api_id": "WiggleHips",
+        "exec_time": 10
+    },
+    {
+        "api_id": "Dance1",
+        "exec_time": 10
+    },
+    {
+        "api_id": "Dance2",
+        "exec_time": 10
+    },
+    {
+        "working": false,
+        "api_id": "LeftFlip",
+        "command": "LeftFlip",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": true
+        },
+        "args": [
+            {
+                "name": "id",
+                "type": "number"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "RightFlip"
+    },
+    {
+        "working": false,
+        "api_id": "BackFlip"
+    },
+    {
+        "working": false,
+        "api_id": "StandOut",
+        "args": [
+            {
+                "name": "flag",
+                "type": "boolean"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "SpeedLevel",
+        "args": [
+            {
+                "name": "level",
+                "type": "number"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "SwitchGait",
+        "args": [
+            {
+                "name": "d",
+                "type": "number"
+            }
+        ]
+    },
+    {
+        "working": false,
+        "api_id": "Handstand",
+        "command": "Handstand",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
+    },
+    {
+        "working": false,
+        "api_id": "BackStand",
+        "command": "Backstand"
+    },
+    {
+        "working": false,
+        "api_id": "SwitchAvoidMode",
+        "command": "SwitchAvoidMode"
+    }
+]

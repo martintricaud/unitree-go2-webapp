@@ -1,62 +1,60 @@
 import { writable } from "svelte/store";
 
-type Message = any;
-type Listener = (msg: Message) => void;
-type StateListener = (state: { webSocketConnected: boolean; robotConnected: boolean }) => void;
-
-const URL = "ws://localhost:8000/ws";
-
-let socket: WebSocket | null = null;
-
 // Using stores lets us easily bind to these values in Svelte components
 export const webSocketConnected = writable(false);
 export const robotConnected = writable(false);
+export const videoFrame = writable<ImageBitmap | null>(null)
 
-const msgListeners = new Set<Listener>();
-const stateListeners = new Set<StateListener>();
+export class WebSocketClient {
+    private socket: WebSocket | null = null;
+    public onTrackCallback:  (stream: MediaStream) => void = () => {};
 
-export function connectClient() {
-    if (socket) return;
+    connect() {
+        if (this.socket && this.socket.readyState < WebSocket.CLOSED) return;
+        const ws = new WebSocket("ws://localhost:8000/ws");
+        ws.onopen = () => {
+            webSocketConnected.set(true);
+        };
 
-    socket = new WebSocket(URL);
+        ws.onclose = () => {
+            webSocketConnected.set(false);
+            robotConnected.set(false);
+        };
 
-    socket.onopen = () => {
-        webSocketConnected.set(true);
-    };
+        ws.onmessage = async (ev) => {
+            let msg: any;
+            try {
+                msg = JSON.parse(ev.data);
+            } catch {
+                msg = ev.data;
+            }
 
-    socket.onclose = () => {
-        socket = null;
-        webSocketConnected.set(false);
-        robotConnected.set(false);
-      
-    };
-
-    socket.onmessage = (ev) => {
-        let msg: any;
-        try {
-            msg = JSON.parse(ev.data);
-        } catch {
-            msg = ev.data;
-        }
-
-        if (msg.type === "robot_state") {
-            robotConnected.set(msg.connected);
-        }
-
-        for (const fn of msgListeners) fn(msg);
-    };
-}
-
-export function send(msg: any) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-        throw new Error("WebSocket not connected");
+            if (msg.type === "robot_state") {
+                robotConnected.set(msg.connected);
+            }
+             else if (msg instanceof Blob) {
+                try {
+                    const bitmap = await createImageBitmap(msg);
+                    videoFrame.set(bitmap);
+                } catch (err) {
+                    console.error("Failed to decode video frame:", err);
+                }
+            } 
+            else {
+                msg = ev.data
+            }
+        };
+        this.socket = ws
     }
-    socket.send(JSON.stringify(msg));
+
+    send(msg: any) {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocket not connected");
+        }
+        this.socket.send(JSON.stringify(msg));
+    }
 }
 
-export function onMessage(fn: Listener) {
-    msgListeners.add(fn);
-    return () => msgListeners.delete(fn);
-}
 
-export default { connectClient, send, onMessage};
+// export const websocket = new WebSocketClient();
+export let websocket = new WebSocketClient()

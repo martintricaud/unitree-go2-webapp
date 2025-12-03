@@ -1,30 +1,31 @@
-# main.py
-import asyncio, logging, json
-from fastapi import FastAPI, WebSocket
+
 from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection, WebRTCConnectionMethod
 from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD
+from fastapi import FastAPI, WebSocket
+from video_broadcaster import FrameBroadcaster
+import asyncio, logging, json, cv2
+from aiortc import MediaStreamTrack
 
+broadcaster = FrameBroadcaster()
 
-# ------------------------------------------------------------
-# Only one GUI client → just store its WebSocket
-# ------------------------------------------------------------
-# Current connected WebSocket
-current_ws: WebSocket | None = None
+with open("../commands.json", "r") as f:
+    COMMANDS = json.load(f)
 
-async def notify_frontend(payload):
-    global current_ws # use the global variable
-    if current_ws is None:
-        return
-    try:
-        await current_ws.send_json(payload)
-    except Exception as e:
-        logging.exception("Failed to push message to GUI")
-        current_ws = None
+async def recv_camera_stream(track: MediaStreamTrack):
+        while True:
+            frame = await track.recv()  # wait for next frame
+            img = frame.to_ndarray(format="bgr24")
+            _, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            if current_webSocket:
+                try:
+                    await current_webSocket.send_bytes(jpeg.tobytes())
+                except Exception:
+                    break  # client disconnected
         
 class RobotSession:
     def __init__(self):
         self.conn: UnitreeWebRTCConnection | None = None
-
+    
     ## Connect to the robot with a timeout, and notify the frontend of the connection status
     async def connect(self, ip: str, timeout: int = 5):
         # Avoid reconnecting if already connected
@@ -41,6 +42,11 @@ class RobotSession:
                 "type": "robot_state",
                 "connected": self.conn.datachannel.data_channel_opened
             })
+            print("2")
+            print(self.conn.video)      
+            self.conn.video.add_track_callback(recv_camera_stream)
+            await asyncio.wait_for(self.conn.video.switchVideoChannel(True), timeout)
+
         
         except asyncio.TimeoutError:
             print("Connection attempt timed out.")  # Handle timeout
@@ -48,152 +54,73 @@ class RobotSession:
         except Exception as e:
             print(f"An error occurred during connection: {e}")  # Handle other exceptions
     
-    ## Subscribe to multiplestate data
     async def subscribe_to_robotstate(self):
         self.conn.datachannel.pub_sub.subscribe(
             RTC_TOPIC['MULTIPLE_STATE'], 
             lambda message: asyncio.create_task(notify_frontend(json.loads(message['data']))) ## notify frontend asynchronously
         )
+    
+    async def set_mode(self, mode_name: str):
+        await self.conn.datachannel.pub_sub.publish_request_new(
+            RTC_TOPIC["MOTION_SWITCHER"],
+            { "api_id": 1002, "parameter": {"name": "mcf"}}
+        )
+    
     async def disconnect(self):
         if self.conn:
             await self.conn.disconnect()
             self.conn = None
-            
-    async def move(self, vx, vy, vyaw):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {
-                "api_id": SPORT_CMD["Move"],
-                "parameter": {"vx": vx, "vy": vy, "vyaw": vyaw}
-            }
-        )
 
-    async def stop(self):
+    async def handle_command(self, msg):
+        payload = {"api_id": SPORT_CMD[msg.get("api_id")]}
+        if("parameter" in msg):
+            payload = {**payload, **{"parameter":msg.get("parameter")}}
         await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_CMD["StopMove"]}
-        )
-        
-    async def hello(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"], 
-            {"api_id": SPORT_CMD["Hello"]}
+              RTC_TOPIC["SPORT_MOD"], payload
         )
     
-    async def stretch(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Stretch"]}
-        )
-    async def content(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Content"]}
-        )
-    async def heart(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Heart"]}
-        )
-    async def scrape(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Scrape"]}
-        )
-    async def wallow(self):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Wallow"]}
-    )
-    
-    async def standup(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["StandUp"]}
-    )
-        
-    async def standown(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["StandDown"]}
-    )
-        
-    async def recovery_stand(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["RecoveryStand"]}
-    )
-        
-    async def sit(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["Sit"]}
-    )
-        
-    async def rise_sit(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["RiseSit"]}
-    )
-        
-    async def front_flip(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["FrontFlip"]}
-    )
-        
-    async def front_jump(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["FrontJump"]}
-    )
-        
-    async def front_pounce(self):
-        await self.connect.data_channel.pub_sub.publish_request_new(
-            RTC_TOPIC["SPORT_MOD"],
-            {"api_id": SPORT_COMMAND["FrontPounce"]}
-    )   
-
+current_webSocket: WebSocket | None = None # Current connected WebSocket
 app = FastAPI() # create FastAPI app instance
-robot = RobotSession() # create a RobotSession instance
 
-# Dispatch table: map command names to async functions
-COMMAND_HANDLERS = {
-    "connect": lambda msg: robot.connect(msg["ip"]),
-    "disconnect": lambda msg: robot.disconnect(),
-    "move": lambda msg: robot.move(msg["vx"], msg["vy"], msg["vyaw"]),
-    "stop": lambda msg: robot.stop(),
-    "hello": lambda msg: robot.hello()
-    # add remaining commands here...
-}
+
+async def notify_frontend(payload):
+    global current_webSocket # use the global variable
+    if current_webSocket is None:
+        return
+    try:
+        await current_webSocket.send_json(payload)
+    except Exception as e:
+        logging.exception("Failed to push message to GUI")
+        current_webSocket = None
 
 @app.websocket("/ws")
 async def ws_api(ws: WebSocket):
-    global current_ws
+    global current_webSocket
+    
     await ws.accept()
-
-    # ------------------------------------------------------------
-    # Track the GUI connection (only one exists)
-    # ------------------------------------------------------------
-    current_ws = ws
+    current_webSocket = ws
     try:
         while True:
             try:
                 msg = await ws.receive_json()
-            except Exception as e:
-                # Could be a malformed JSON or a disconnect
+               
+            except Exception as e: # Could be a malformed JSON or a disconnect
                 logging.exception("Failed to receive message:", e)
                 break  # exit loop if WS is closed
-
-            command = msg.get("command")
-            handler = COMMAND_HANDLERS.get(command)
-            
-            if not handler:
-                await ws.send_json({"ok": False, "error": "unknown command"})
-                continue
             
             try:
-                await handler(msg)
+                print("Received WS message:", msg)
+                match msg:
+                    case {"command": "connect", "ip": ip}:
+                        await robot.connect(ip)
+                    case {"command": "subscribe"}:
+                        await robot.subscribe_to_robotstate()
+                    case {"command": "set_mode", "parameter": {"name": name}}:
+                        await robot.set_mode(name)
+                    case {"command": _} | {"api_id": _}:
+                        await robot.handle_command(msg)
+                    case _:
+                        logging.warning("Unknown message type received:", msg)
                 await ws.send_json({"ok": True})
             except SystemExit as exc:
                 # Handle SystemExit to prevent the server from stopping
@@ -207,3 +134,30 @@ async def ws_api(ws: WebSocket):
             await ws.close()
         except Exception:
             logging.exception("Error while closing websocket")
+
+@app.websocket("/ws/video")
+async def ws_video(ws: WebSocket):
+    await ws.accept()
+    print("Video client connected")
+    try:
+        while True:
+            # wait for the next available frame
+            frame = await broadcaster.get_frame(timeout=1.0)
+            if frame:
+                try:
+                    await ws.send_bytes(frame)
+                except Exception:
+                    break  # client disconnected
+            else:
+                # no frame yet; avoid busy-looping
+                await asyncio.sleep(0.01)
+    except WebSocketDisconnect:
+        print("Video client disconnected")
+    except Exception as e:
+        print(f"Error in video WS: {e}")
+    finally:
+        try:
+            await ws.close()
+        except:
+            pass          
+robot = RobotSession() # create a RobotSession instance
