@@ -30,7 +30,11 @@
                 "name": "flag",
                 "type": "boolean"
             }
-        ]
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
     },
     {
         "api_id": "Damp",
@@ -106,7 +110,7 @@
         "working": true,
         "api_id": "Wallow",
         "mode_compatibility": {
-            "AI": true,
+            "AI": false,
             "SPORT": true
         },
         "exec_time": 10
@@ -166,7 +170,7 @@
         "working": true,
         "api_id": "FrontJump",
         "mode_compatibility": {
-            "AI": true,
+            "AI": false,
             "SPORT": true
         },
         "exec_time": 10
@@ -183,7 +187,11 @@
                 "name": "flag",
                 "type": "boolean"
             }
-        ]
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
     },
     {
         "working": false,
@@ -193,7 +201,11 @@
                 "name": "",
                 "type": "boolean"
             }
-        ]
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
     },
     {
         "working": false,
@@ -203,7 +215,11 @@
                 "name": "flag",
                 "type": "boolean"
             }
-        ]
+        ],
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
     },
     {
         "working": false,
@@ -218,7 +234,6 @@
     {
         "working": true,
         "api_id": "ContinuousGait"
-       
     },
     {
         "working": false,
@@ -251,7 +266,7 @@
         "command": "LeftFlip",
         "mode_compatibility": {
             "AI": true,
-            "SPORT": true
+            "SPORT": false
         },
         "args": [
             {
@@ -262,11 +277,19 @@
     },
     {
         "working": false,
-        "api_id": "RightFlip"
+        "api_id": "RightFlip",
+        "mode_compatibility": {
+            "AI": false,
+            "SPORT": false
+        }
     },
     {
         "working": false,
-        "api_id": "BackFlip"
+        "api_id": "BackFlip",
+        "mode_compatibility": {
+            "AI": false,
+            "SPORT": false
+        }
     },
     {
         "working": false,
@@ -310,7 +333,11 @@
     {
         "working": false,
         "api_id": "BackStand",
-        "command": "Backstand"
+        "command": "Backstand",
+        "mode_compatibility": {
+            "AI": true,
+            "SPORT": false
+        }
     },
     {
         "working": false,

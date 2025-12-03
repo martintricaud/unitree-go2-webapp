@@ -90,6 +90,8 @@ Apparently Euler angles can only be changed in Pose mode (and cannot be "frozen"
 After calling "Damp", the robot will not move until BalanceStand has been called
 
 The Euler is not the same in Classic and Normal mode
+
+FreeWalk in AI mode is the most nervous mode and natural (no parasite steps)
 ### DUMP
 
 Cursor prompts for later:
@@ -126,4 +128,35 @@ Svelte instantiates global variable in the component scope that should actually 
 
 Préparation et entrée du chien:
 - il fait bcp de bruit meme couché. ET il ne peut pas être allumé depuis la scène. (Éventuellement desactiver le Lidar)
-- 
+
+method|parameters|ai|normal|resulting mode|  
+|---|---|---|---|---|
+|Damp||✅|✅|
+|Balance Stand||✅|✅|
+|StopMove||✅|✅|
+|Stand Up||✅|✅|
+|Stand Down / Crouch|None|✅|✅|
+|Recovery Stand|None|✅|✅|
+|Pose||❌|✅|
+|Control Pitch Angle while Moving||❌|✅|
+|Move||✅|✅||
+|Sit|None|❌|✅|||
+|Rise from sitting position|None|❌|✅|||
+|Stretch||❌|✅||
+|HandStand||✅|❌|
+|FrontFlip|None|✅|✅|
+|Wallow / Roll over||❌|✅|
+|LeftFlip||✅|❌||
+|Scrape||❌|✅|
+|BackFlip||❌|❌|Agile|
+|FreeWalk||✅|❌|Agile|
+|FreeBound||✅|❌|Bound Run|
+|FreeJump||✅|❌|Jump|
+|FreeAvoid|Bool|✅|❌|Avoid|
+|WalkStair|Bool|✅|❌|
+|WalkUpright||✅|❌|
+|CrossStep||✅|❌|
+|FrontJump|None|❌|✅|
+|Pounce||❌|✅|
+|Dance1||❌|✅|
+|Dance2||❌|✅|
