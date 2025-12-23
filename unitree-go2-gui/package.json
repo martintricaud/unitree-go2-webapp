@@ -23,6 +23,8 @@
     "npm": "10.9.4"
   },
   "dependencies": {
+    "@types/ramda": "^0.31.1",
+    "ramda": "^0.32.0",
     "svelte-tweakpane-ui": "^1.5.11"
   }
 }

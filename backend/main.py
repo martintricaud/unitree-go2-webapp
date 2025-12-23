@@ -1,21 +1,26 @@
 
-from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection, WebRTCConnectionMethod
-from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD
-from fastapi import FastAPI, WebSocket
+version = 117
+
+if version==117:
+    from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection as WebRTCConnection, WebRTCConnectionMethod 
+    from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
+elif version==118:
+    from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
+    from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD, VUI_COLOR
+
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 import asyncio, logging, json, cv2
 from aiortc import MediaStreamTrack
-
+    
 broadcaster = FrameBroadcaster()
-
-with open("../commands.json", "r") as f:
-    COMMANDS = json.load(f)
 
 async def recv_camera_stream(track: MediaStreamTrack):
         while True:
             frame = await track.recv()  # wait for next frame
             img = frame.to_ndarray(format="bgr24")
-            _, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            _, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
             if current_webSocket:
                 try:
                     await current_webSocket.send_bytes(jpeg.tobytes())
@@ -24,7 +29,7 @@ async def recv_camera_stream(track: MediaStreamTrack):
         
 class RobotSession:
     def __init__(self):
-        self.conn: UnitreeWebRTCConnection | None = None
+        self.conn: WebRTCConnection | None = None
     
     ## Connect to the robot with a timeout, and notify the frontend of the connection status
     async def connect(self, ip: str, timeout: int = 5):
@@ -32,8 +37,8 @@ class RobotSession:
         if self.conn and self.conn.isConnected:
             return
         # Initialize the connection object with the defined connection method and IP
-        # self.conn = UnitreeWebRTCConnection(WebRTCConnectionMethod.LocalSTA,ip=ip )
-        self.conn = UnitreeWebRTCConnection(WebRTCConnectionMethod.LocalAP)
+        # self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalSTA,ip=ip )
+        self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalAP)
         
         try:
             await asyncio.wait_for(self.conn.connect(), timeout)  # Add timeout to connect
@@ -54,30 +59,23 @@ class RobotSession:
         except Exception as e:
             print(f"An error occurred during connection: {e}")  # Handle other exceptions
     
-    async def subscribe_to_robotstate(self):
-        self.conn.datachannel.pub_sub.subscribe(
-            RTC_TOPIC['MULTIPLE_STATE'], 
-            lambda message: asyncio.create_task(notify_frontend(json.loads(message['data']))) ## notify frontend asynchronously
-        )
-    
-    async def set_mode(self, mode_name: str):
-        await self.conn.datachannel.pub_sub.publish_request_new(
-            RTC_TOPIC["MOTION_SWITCHER"],
-            { "api_id": 1002, "parameter": {"name": "mcf"}}
-        )
-    
     async def disconnect(self):
         if self.conn:
             await self.conn.disconnect()
             self.conn = None
 
+    async def subscribe_to_robotstate(self):
+        self.conn.datachannel.pub_sub.subscribe(
+            RTC_TOPIC['MULTIPLE_STATE'], 
+            lambda message: asyncio.create_task(notify_frontend(json.loads(message['data']))) ## notify frontend asynchronously
+        )
+
     async def handle_command(self, msg):
-        payload = {"api_id": SPORT_CMD[msg.get("api_id")]}
+        payload = {"api_id": msg.get("api_code")}
+        topic = msg.get("topic")
         if("parameter" in msg):
             payload = {**payload, **{"parameter":msg.get("parameter")}}
-        await self.conn.datachannel.pub_sub.publish_request_new(
-              RTC_TOPIC["SPORT_MOD"], payload
-        )
+        await self.conn.datachannel.pub_sub.publish_request_new(RTC_TOPIC[topic], payload)
     
 current_webSocket: WebSocket | None = None # Current connected WebSocket
 app = FastAPI() # create FastAPI app instance
@@ -115,8 +113,6 @@ async def ws_api(ws: WebSocket):
                         await robot.connect(ip)
                     case {"command": "subscribe"}:
                         await robot.subscribe_to_robotstate()
-                    case {"command": "set_mode", "parameter": {"name": name}}:
-                        await robot.set_mode(name)
                     case {"command": _} | {"api_id": _}:
                         await robot.handle_command(msg)
                     case _:

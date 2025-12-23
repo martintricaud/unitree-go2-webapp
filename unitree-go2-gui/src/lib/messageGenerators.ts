@@ -11,10 +11,14 @@ export function speedChangeMessage(speedLevel: 'Slow' | 'Normal' | 'Fast') {
                 sendSpeedLevel = 1;
                 break;
         }
-    return { api_id: 'SpeedLevel', command: 'SpeedLevel', parameter: { level: sendSpeedLevel } };
+    return { command_name: 'SpeedLevel', api_code:1015, parameter: { data: sendSpeedLevel } };
 
 }
 
+export function booleanMessage(_command_name:string, _flag:boolean){
+    let flagToInt = _flag?1:0
+    return { command_name: _command_name, parameter: { flag: flagToInt } };
+}
 export function gaitChangeMessage(gait: 'Idle'
             | 'Trot'
             | 'Running'
@@ -38,5 +42,5 @@ export function gaitChangeMessage(gait: 'Idle'
                 sendGait = 4;
                 break;
         }
-    return { api_id: 'SwitchGait', command: 'SwitchGait', parameter: { d: sendGait } };
+    return { command_name: 'SwitchGait', api_code: 1011, parameter: { d: sendGait } };
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import * as R from 'ramda';
     import { onMount } from 'svelte';
     import {
         Checkbox,
@@ -7,6 +8,7 @@
         RadioGrid,
         Button,
         Pane,
+        Point,
         RotationEuler,
         type RotationEulerValueObject,
         type CheckboxChangeEvent,
@@ -17,35 +19,69 @@
         List,
         Separator,
     } from 'svelte-tweakpane-ui';
-    import commands from '../../commands.json';
+    import commands from '../../commands_1.1.7.json';
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
     import { speedChangeMessage, gaitChangeMessage } from './lib/messageGenerators';
     import Video from './components/Video.svelte';
 
+    let point2d: PointValue2d = { x: 0, y: 0 };
+
     ThemeUtils.setGlobalDefaultTheme(ThemeUtils.presets.retro);
-    type Mode = 'AI' | 'SPORT';
 
     type CommandArg = {
         name: string;
         type: string;
     };
 
+    // type Command = {
+    //     command_name: string;
+    //     api_code: number;
+    //     description?: string;
+    //     // args?: CommandArg[];
+    //     exec_time?: number;
+    // };
+
     type Command = {
-        api_id: string;
+        command_name: string;
+        api_code: number;
         description?: string;
         args?: CommandArg[];
-        mode_compatibility?: Record<string, boolean>;
+        working?: boolean;
         exec_time?: number;
+        topic: string;
     };
 
-    let mode: Mode = 'SPORT';
+    type ParametrizedCommand = Command & {
+        args: CommandArg[];
+    };
+
+    let colors = ['🤍 white', '❤️ red', '💛 yellow', '💙 blue', '💚 green', '🩵 cyan', '💜 purple'];
+    let color:
+        | '🤍 white'
+        | '❤️ red'
+        | '💛 yellow'
+        | '💙 blue'
+        | '💚 green'
+        | '🩵 cyan'
+        | '💜 purple' = '🤍 white';
+    let movementMode = '';
     let speedLevel: 'Slow' | 'Normal' | 'Fast' = 'Normal';
     let gait: 'Idle' | 'Trot' | 'Running' | 'Forward Climb' | 'Reverse Climb' = 'Trot';
+    let handStandOn = false;
 
     // Command that have no arguments (one-shot commands)
-    const commands_oneshot = commands.filter((cmd) => !cmd.args);
-    // Commands that toggle between states of the robot
-    const commands_switches: Command[] = commands.filter((cmd) => cmd.args?.[0].type === 'boolean');
+    const commands_oneshot: Command[] = R.filter(R.complement(R.has('args')))(
+        commands,
+    ) as Command[];
+
+    const commands_switches: Command[] = R.filter(
+        (cmd: Command) =>
+            R.has('args')(cmd) && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
+    )(commands) as ParametrizedCommand[];
+
+    const commands_switches_names: string[] = commands_switches.map(
+        (command) => command.command_name,
+    );
 
     let eulerAngles: RotationEulerValueObject = {
         x: 0,
@@ -70,9 +106,13 @@
         websocket.send({ command: 'disconnect' });
     }
 
-    function handleModeChange(event: RadioGridChangeEvent) {
-        mode = event.detail.value as Mode;
-        websocket.send({ api_id: '', command: 'set_mode', parameter: { name: mode } });
+    function handleMove(e: PointChangeEvent) {
+        const v = e.detail.value;
+        const [x, y] = Array.isArray(v) ? v : [v.x, v.y];
+        websocket.send({
+            command_name: 'Move',
+            parameter: { x, y, z: 0 },
+        });
     }
 
     function sendEuler(event: RotationEulerChangeEvent) {
@@ -82,6 +122,37 @@
         // websocket.send({ command: 'set_orientation', _x, _y, _z });
     }
 
+    function handleModeSwitch(event: RadioGridChangeEvent) {
+        let mode = event.detail.value as string;
+        //index commands by command_name for easy lookup of the one that was triggered by the radio change
+        let commands = R.indexBy(R.prop('command_name'), commands_switches);
+        //we are interested in the api_code and the name of the arguments expected by the command
+        let command: ParametrizedCommand = commands[mode] as ParametrizedCommand;
+        let payload = {
+            api_code: command.api_code,
+            parameter: R.objOf(command.args?.[0]?.name, true),
+        };
+        console.log(payload);
+        // websocket.send({
+        //     api_code: command.api_code,
+        //     parameter: R.objOf(command.args?.[0]?.name, true),
+        // });
+        //Todo: turn on the mode, turn off the others
+    }
+
+    function handleColorChange(event: RadioGridChangeEvent) {
+        let colorName = event.detail.value as string;
+        console.log(colorName);
+        websocket.send({
+            topic: 'VUI',
+            api_id: 1007,
+            parameter: {
+                color: colorName.split(' ')[1],
+                time: 5,
+                flash_cycle: 1000,
+            },
+        });
+    }
     function handleSpeedChange(event: RadioGridChangeEvent) {
         websocket.send(speedChangeMessage(event.detail.value as 'Slow' | 'Normal' | 'Fast'));
     }
@@ -100,104 +171,94 @@
     }
 </script>
 
-<Pane position="draggable">
-    <Button
-        on:click={() => {
-            $robotConnected ? disconnectRobot() : connectRobot();
-        }}
-        disabled={!$webSocketConnected || $robotConnected}
-        title={$robotConnected ? 'Disconnect' : 'Connect'}
-    />
-    <Element>
-        <div style="font-size:x-small">
-            <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
-            <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
-        </div>
-    </Element>
-    <Button on:click={() => websocket.send({ command: 'subscribe' })} title="Monitor State" />
+<Video/>
+<div class="ui-pane">
+    <div>
+        <Button
+            on:click={() => {
+                $robotConnected ? disconnectRobot() : connectRobot();
+            }}
+            disabled={!$webSocketConnected}
+            title={$robotConnected ? 'Disconnect' : 'Connect'}
+        />
+        <Element>
+            <div class="double-col" style="font-size:x-small">
+                <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
+                <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
+            </div>
+        </Element>
+        <Button on:click={() => websocket.send({ command: 'subscribe' })} title="Monitor State" />
+    </div>
+    <div class="button-grid">
+        {#each commands_oneshot as { api_code, working, command_name, topic }}
+            {#if working}
+                <Button
+                    on:click={() =>
+                        websocket.send({ api_id: api_code, command: command_name, topic: topic })}
+                    title={command_name}
+                />
+            {/if}
+        {/each}
+    </div>
     <RadioGrid
-        values={['SPORT', 'AI']}
-        value={mode}
-        on:change={handleModeChange}
+        values={commands_switches_names}
+        value={movementMode}
+        on:change={handleModeSwitch}
         label="Mode"
         columns={2}
     />
-    <Separator></Separator>
-    <Element>
-        <span>Commands</span>
-    </Element>
-    {#each commands_oneshot as { api_id, working }}
-        {#if working}
-            <Button
-                on:click={() => websocket.send({ api_id: api_id, command: api_id })}
-                title={api_id}
-            />
-        {/if}
-    {/each}
-    <Separator></Separator>
-    <Element>
-        <span>Movement modes</span>
-    </Element>
-    {#each commands_switches as cmd}
-        <Checkbox
-            label={cmd.api_id}
-            value={false}
-            on:change={(e) => {
-                console.log(e);
-                console.log(cmd.args?.[0]);
-                websocket.send({
-                    api_id: cmd.api_id,
-                    command: cmd.api_id,
-                    parameter: Object.fromEntries([[cmd.args?.[0].name, e.detail.value]]),
-                });
-            }}
-        />
-    {/each}
-    <Separator></Separator>
-    <Element>
-        <span>Movement</span>
-    </Element>
     <RadioGrid
-        values={['Slow', 'Normal', 'Fast']}
-        value={speedLevel}
-        on:change={handleSpeedChange}
-        label="Speed Level"
-        columns={3}
+        values={colors}
+        value={'white'}
+        on:change={handleColorChange}
+        label="Light Color"
+        columns={1}
     />
+
+    <Pane position="inline">
+        <RadioGrid
+            values={['Slow', 'Normal', 'Fast']}
+            value={speedLevel}
+            on:change={handleSpeedChange}
+            label="Speed Level"
+            columns={3}
+        />
+        <Point
+            bind:value={point2d}
+            expanded={true}
+            label="2D Point Picker"
+            picker="inline"
+            userExpandable={false}
+            on:change={handleMove}
+        />
+    </Pane>
+
     <RadioGrid
         values={['Idle', 'Trot', 'Running', 'Forward Climb', 'Reverse Climb']}
         value={gait}
         on:change={handleGaitChange}
         label="Gait"
-        columns={3}
+        columns={2}
     />
-    <RotationEuler
-        bind:value={eulerAngles}
-        expanded={true}
-        label="Euler Angles"
-        picker="inline"
-        on:change={sendEuler}
-    />
-    <Button
-        on:click={() =>
-            (eulerAngles = {
-                x: 0,
-                y: 0,
-                z: 0,
-            })}
-        title="Reset"
-    />
-</Pane>
-<Video ws={websocket} />
+    <Pane position="inline">
+        <RotationEuler
+            bind:value={eulerAngles}
+            expanded={true}
+            label="Euler Angles"
+            picker="inline"
+            on:change={sendEuler}
+        />
+        <Button
+            on:click={() =>
+                (eulerAngles = {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                })}
+            title="Reset"
+        />
+    </Pane>
+</div>
 
 <style>
-    .parent {
-        width: 100%;
-        height: 100%;
-        /* display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        grid-template-rows: auto repeat(4, 1fr);
-        grid-column-gap: 2px;
-        grid-row-gap: 2px; */
-    }
 </style>

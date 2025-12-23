@@ -7,6 +7,7 @@ export const videoFrame = writable<ImageBitmap | null>(null)
 
 export class WebSocketClient {
     private socket: WebSocket | null = null;
+    private previousBitmap: ImageBitmap | null = null;
     public onTrackCallback:  (stream: MediaStream) => void = () => {};
 
     connect() {
@@ -19,6 +20,8 @@ export class WebSocketClient {
         ws.onclose = () => {
             webSocketConnected.set(false);
             robotConnected.set(false);
+            this.previousBitmap?.close();
+            this.previousBitmap = null;
         };
 
         ws.onmessage = async (ev) => {
@@ -35,6 +38,8 @@ export class WebSocketClient {
              else if (msg instanceof Blob) {
                 try {
                     const bitmap = await createImageBitmap(msg);
+                    this.previousBitmap?.close();
+                    this.previousBitmap = bitmap;
                     videoFrame.set(bitmap);
                 } catch (err) {
                     console.error("Failed to decode video frame:", err);
@@ -47,6 +52,7 @@ export class WebSocketClient {
         this.socket = ws
     }
 
+    
     send(msg: any) {
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
             throw new Error("WebSocket not connected");

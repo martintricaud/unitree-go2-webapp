@@ -19,23 +19,22 @@
 </script>
 
 <div class="container">
-    <canvas bind:this={canvas}> </canvas>
+    <canvas bind:this={canvas} width="1280" height="720"> </canvas>
 </div>
 
 <style>
     .container {
+        width: 100%;
         display: flex;
-        width: 100%;
-        height: 100%;
-       position: fixed;
+        justify-content: center;
+        align-items: center;
         background-color: black;
-          align-items: center;
-    }   
+    }
     canvas {
-        position: fixed;
-      
-        width: 100%;
-        object-fit: contain; /* ensures aspect ratio is respected */
+        aspect-ratio: 16/9;
+        max-width: 100%;
+        max-height: 100%;
+        display: block;
         background-color: blue;
     }
 </style>

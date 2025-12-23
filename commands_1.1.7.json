@@ -1,0 +1,309 @@
+[
+    {
+        "command_name": "Damp",
+        "api_code": 1001,
+        "description": "Enters damped state",
+        "args": [
+            {
+                "name": "enabled",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "BalanceStand",
+        "description": "Enters balanced standing state",
+        "api_code": 1002,
+        "working": true,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "StopMove",
+        "working": true,
+        "api_code": 1003,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "StandUp",
+        "working": true,
+        "api_code": 1004,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "StandDown",
+        "description": "Lies down on the ground from standing position",
+        "api_code": 1005,
+        "working": true,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "RecoveryStand",
+        "description": "Recovers to standing position from a fall",
+        "api_code": 1006,
+        "working": true,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Euler",
+        "api_code": 1007,
+        "args": [
+            {
+                "name": "vx",
+                "type": "number"
+            },
+            {
+                "name": "vy",
+                "type": "number"
+            },
+            {
+                "name": "vyaw",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Move",
+        "api_code": 1008,
+        "description": "Move robot by the given amount",
+        "args": [
+            {
+                "name": "x",
+                "type": "number"
+            },
+            {
+                "name": "y",
+                "type": "number"
+            },
+            {
+                "name": "z",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Sit",
+        "description": "Sits the robot down",
+        "working": true,
+        "api_code": 1009,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "RiseSit",
+        "working": true,
+        "api_code": 1010,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "SwitchGait",
+        "api_code": 1011,
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "CrossStep",
+        "api_code": 1302,
+        "args": [
+            {
+                "name": "flag",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "BodyHeight",
+        "api_code": 1013,
+        "args": [
+            {
+                "name": "data",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Content",
+        "working": true,
+        "api_code": 1020,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FingerHeart",
+        "working": true,
+        "api_code": 1036,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Scrape",
+        "working": true,
+        "api_code": 1029,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Wallow",
+        "description": "Robot lies down and rolls to the right side",
+        "working": true,
+        "api_code": 1021,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FrontFlip",
+        "api_code": 1030,
+        "working": true,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FrontJump",
+        "working": true,
+        "api_code": 1031,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FrontPounce",
+        "working": true,
+        "api_code": 1032,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FreeBound",
+        "api_code": 1304,
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "FreeJump",
+        "api_code": 1047,
+        "description": "Enters a displacement mode where the robot moves by hopping around",
+        "working": true,
+        "args": [
+            {
+                "name": "flag",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Pose",
+        "api_code": 1028,
+        "description": "Enters a state where the robot holds a pose defined by the Euler angles, but cannot move",
+        "working": true,
+        "args": [
+            {
+                "name": "flag",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "ContinuousGait",
+        "working": true,
+        "api_code": 1019,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "WiggleHips",
+        "working": false,
+        "api_code": 1033,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "LeftFlip",
+        "working": false,
+        "api_code": 1,
+        "args": [
+            {
+                "name": "id",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "RightFlip",
+        "working": false,
+        "api_code": 1043,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "BackFlip",
+        "api_code": 1044,
+        "working": true,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "StandOut",
+        "api_code": 1039,
+        "working": false,
+        "args": [
+            {
+                "name": "flag",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "SpeedLevel",
+        "api_code": 1015,
+        "args": [
+            {
+                "name": "data",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Hello",
+        "working": true,
+        "api_code": 1016,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Stretch",
+        "working": true,
+        "api_code": 1017,
+        "exec_time": 10,
+        "topic": "SPORT_CMD"
+    },
+    {
+        "command_name": "Handstand",
+        "working": true,
+        "api_code": 1301,
+        "args": [
+            {
+                "name": "data",
+                "type": "number"
+            }
+        ],
+        "topic": "SPORT_CMD"
+    }
+]

@@ -25,9 +25,9 @@ a:hover {
 
 body {
   margin: 0;
-  place-items: center;
-  min-width: 600px;
-  min-height: 100vh;
+  height: 100vh;
+  width: 100vw;
+
 }
 
 h1 {
@@ -43,6 +43,8 @@ h1 {
   /* max-width: 1280px;
   margin: 0 auto; */
   height: 100vh;
+  display: grid;
+  grid-template-rows: calc(100vh - 20rem) 20rem
 }
 
 button {
@@ -55,6 +57,7 @@ button {
   background-color: #1a1a1a;
   cursor: pointer;
   transition: border-color 0.25s;
+  height: min-max(100%, 3em)
 }
 
 button:hover {
@@ -84,4 +87,40 @@ button:focus-visible {
 .video {
   background-color: black;
   margin: 0 auto;
+}
+
+.ui-pane {
+  height: 100%;
+  display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  width: 100vw;
+  overflow-x: scroll;
+  background-color: rgb(230, 230, 230);
+}
+
+.double-col {
+  display: flex;
+  gap: 0.5em;
+  flex-wrap: nowrap;
+  justify-content: space-around;
+}
+
+.button-grid {
+  column-fill: balance;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, 2em);
+  grid-auto-rows: 2em;
+  height: calc(100% - 0.5em);
+}
+
+.tp-lblv {
+  flex-direction: column !important;
+}
+
+.tp-radv_t {
+
+
+  text-align: left !important;
 }
