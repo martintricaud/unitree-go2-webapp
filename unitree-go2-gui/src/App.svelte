@@ -23,6 +23,7 @@
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
     import { speedChangeMessage, gaitChangeMessage } from './lib/messageGenerators';
     import Video from './components/Video.svelte';
+    import GamepadController from './components/GamepadController.svelte';
 
     let point2d: PointValue2d = { x: 0, y: 0 };
 
@@ -32,14 +33,6 @@
         name: string;
         type: string;
     };
-
-    // type Command = {
-    //     command_name: string;
-    //     api_code: number;
-    //     description?: string;
-    //     // args?: CommandArg[];
-    //     exec_time?: number;
-    // };
 
     type Command = {
         command_name: string;
@@ -133,11 +126,6 @@
             parameter: R.objOf(command.args?.[0]?.name, true),
         };
         console.log(payload);
-        // websocket.send({
-        //     api_code: command.api_code,
-        //     parameter: R.objOf(command.args?.[0]?.name, true),
-        // });
-        //Todo: turn on the mode, turn off the others
     }
 
     function handleColorChange(event: RadioGridChangeEvent) {
@@ -172,6 +160,7 @@
 </script>
 
 <Video/>
+<GamepadController/>
 <div class="ui-pane">
     <div>
         <Button
