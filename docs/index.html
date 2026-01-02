@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            padding: 20px;
+        }
+        main {
+            max-width: 900px;
+        }
+        table {
+            width: 100%;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div id="content">Loading...</div>
+    </main>
+
+    <script>
+        fetch('Notes.md')
+            .then(res => res.text())
+            .then(md => {
+                document.getElementById('content').innerHTML = marked(md);
+            })
+            .catch(error => {
+                document.getElementById('content').innerHTML = `<div class="error">Error loading Notes.md: ${error.message}</div>`;
+            });
+    </script>
+</body>
+</html>
