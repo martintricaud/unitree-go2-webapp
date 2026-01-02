@@ -28,7 +28,7 @@
         fetch('Notes.md')
             .then(res => res.text())
             .then(md => {
-                document.getElementById('content').innerHTML = marked(md);
+                document.getElementById('content').innerHTML = marked.parse(md);
             })
             .catch(error => {
                 document.getElementById('content').innerHTML = `<div class="error">Error loading Notes.md: ${error.message}</div>`;
