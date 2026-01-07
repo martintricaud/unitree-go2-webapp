@@ -9,40 +9,42 @@
                 "type": "boolean"
             }
         ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "BalanceStand",
-        "description": "Enters balanced standing state",
         "api_code": 1002,
+        "description": "Enters balanced standing state",
         "working": true,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "StopMove",
-        "working": true,
         "api_code": 1003,
-        "topic": "SPORT_CMD"
+        "working": true,
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "StandUp",
-        "working": true,
         "api_code": 1004,
-        "topic": "SPORT_CMD"
+        "working": true,
+        "topic": "SPORT_MOD",
+        "exec_time": 1.88
     },
     {
         "command_name": "StandDown",
         "description": "Lies down on the ground from standing position",
         "api_code": 1005,
         "working": true,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD",
+        "exec_time": 2.26
     },
     {
         "command_name": "RecoveryStand",
         "description": "Recovers to standing position from a fall",
         "api_code": 1006,
         "working": true,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "Euler",
@@ -61,7 +63,7 @@
                 "type": "number"
             }
         ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "Move",
@@ -81,7 +83,7 @@
                 "type": "number"
             }
         ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "Sit",
@@ -89,14 +91,14 @@
         "working": true,
         "api_code": 1009,
         "exec_time": 10,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "RiseSit",
         "working": true,
         "api_code": 1010,
         "exec_time": 10,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "SwitchGait",
@@ -108,166 +110,7 @@
                 "type": "number"
             }
         ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "CrossStep",
-        "api_code": 1302,
-        "args": [
-            {
-                "name": "flag",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "BodyHeight",
-        "api_code": 1013,
-        "args": [
-            {
-                "name": "data",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "Content",
-        "working": true,
-        "api_code": 1020,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FingerHeart",
-        "working": true,
-        "api_code": 1036,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "Scrape",
-        "working": true,
-        "api_code": 1029,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "Wallow",
-        "description": "Robot lies down and rolls to the right side",
-        "working": true,
-        "api_code": 1021,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FrontFlip",
-        "api_code": 1030,
-        "working": true,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FrontJump",
-        "working": true,
-        "api_code": 1031,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FrontPounce",
-        "working": true,
-        "api_code": 1032,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FreeBound",
-        "api_code": 1304,
-        "working": true,
-        "args": [
-            {
-                "name": "data",
-                "type": "boolean"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "FreeJump",
-        "api_code": 1047,
-        "description": "Enters a displacement mode where the robot moves by hopping around",
-        "working": true,
-        "args": [
-            {
-                "name": "flag",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "Pose",
-        "api_code": 1028,
-        "description": "Enters a state where the robot holds a pose defined by the Euler angles, but cannot move",
-        "working": true,
-        "args": [
-            {
-                "name": "flag",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "ContinuousGait",
-        "working": true,
-        "api_code": 1019,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "WiggleHips",
-        "working": false,
-        "api_code": 1033,
-        "exec_time": 10,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "LeftFlip",
-        "working": false,
-        "api_code": 1,
-        "args": [
-            {
-                "name": "id",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "RightFlip",
-        "working": false,
-        "api_code": 1043,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "BackFlip",
-        "api_code": 1044,
-        "working": true,
-        "topic": "SPORT_CMD"
-    },
-    {
-        "command_name": "StandOut",
-        "api_code": 1039,
-        "working": false,
-        "args": [
-            {
-                "name": "flag",
-                "type": "number"
-            }
-        ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "SpeedLevel",
@@ -278,32 +121,270 @@
                 "type": "number"
             }
         ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "Hello",
         "working": true,
         "api_code": 1016,
         "exec_time": 10,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
         "command_name": "Stretch",
-        "working": true,
         "api_code": 1017,
+        "working": true,
         "exec_time": 10,
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
     },
     {
-        "command_name": "Handstand",
+        "command_name": "ContinuousGait",
+        "api_code": 1019,
         "working": true,
-        "api_code": 1301,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Content",
+        "working": true,
+        "api_code": 1020,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Wallow",
+        "description": "Robot lies down and rolls to the right side",
+        "working": false,
+        "api_code": 1021,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Dance1",
+        "working": true,
+        "api_code": 1022,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Dance2",
+        "working": true,
+        "api_code": 1023,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "GetSpeedLevel",
+        "working": true,
+        "api_code": 1026,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "SwitchJoystick",
+        "working": true,
+        "api_code": 1027,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Pose",
+        "api_code": 1028,
+        "description": "Enters a state where the robot holds a pose defined by the Euler angles, but cannot move",
+        "working": true,
         "args": [
             {
                 "name": "data",
-                "type": "number"
+                "type": "boolean"
             }
         ],
-        "topic": "SPORT_CMD"
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Scrape",
+        "working": true,
+        "api_code": 1029,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "FrontFlip",
+        "api_code": 1030,
+        "working": true,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "FrontJump",
+        "working": true,
+        "api_code": 1031,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "FrontPounce",
+        "working": true,
+        "api_code": 1032,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+     {
+        "command_name": "WiggleHips",
+        "working": false,
+        "api_code": 1033,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+
+    {
+        "command_name": "GetState",
+        "working": true,
+        "api_code": 1034,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "FingerHeart",
+        "working": true,
+        "api_code": 1036,
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    
+   
+    {
+        "command_name": "StaticWalk",
+        "working": true,
+        "api_code": 1061,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Trot / Run",
+        "working": true,
+        "api_code": 1062,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "EconomicGait",
+        "working": true,
+        "api_code": 1063,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "exec_time": 10,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "LeftFlip",
+        "working": true,
+        "api_code": 2041,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "BackFlip",
+        "api_code": 2043,
+        "working": true,
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Handstand",
+        "api_code": 2044,
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+     {
+        "command_name": "FreeBound",
+        "api_code": 2046,
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "FreeJump",
+        "api_code": 2047,
+        "description": "Enters a displacement mode where the robot moves by hopping around",
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+     {
+        "command_name": "FreeAvoid",
+        "api_code": 2048,
+        "description": "",
+        "working": true,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "ClassicWalk",
+        "api_code": 2049,
+        "working": false,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "Backstand",
+        "api_code": 2050,
+        "working": false,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
+    },
+    {
+        "command_name": "CrossStep",
+        "api_code": 2051,
+        "args": [
+            {
+                "name": "data",
+                "type": "boolean"
+            }
+        ],
+        "topic": "SPORT_MOD"
     }
 ]

@@ -3,24 +3,26 @@ version = 117
 
 if version==117:
     from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection as WebRTCConnection, WebRTCConnectionMethod 
-    from go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
+    from go2_webrtc_driver.constants import RTC_TOPIC
 elif version==118:
     from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
-    from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD, VUI_COLOR
+    from unitree_webrtc_connect.constants import RTC_TOPIC
 
-
+from script_oz import action_sequence
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 import asyncio, logging, json, cv2
 from aiortc import MediaStreamTrack
-    
+import av
+av.logging.set_level(av.logging.ERROR)
+
 broadcaster = FrameBroadcaster()
 
 async def recv_camera_stream(track: MediaStreamTrack):
         while True:
             frame = await track.recv()  # wait for next frame
             img = frame.to_ndarray(format="bgr24")
-            _, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+            _, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if current_webSocket:
                 try:
                     await current_webSocket.send_bytes(jpeg.tobytes())
@@ -71,12 +73,37 @@ class RobotSession:
         )
 
     async def handle_command(self, msg):
-        payload = {"api_id": msg.get("api_code")}
+        payload = {"api_id": msg.get("api_id")}
         topic = msg.get("topic")
         if("parameter" in msg):
             payload = {**payload, **{"parameter":msg.get("parameter")}}
+        print(payload)
         await self.conn.datachannel.pub_sub.publish_request_new(RTC_TOPIC[topic], payload)
+        
+    async def test_joystick(self):
     
+        await asyncio.sleep(1)
+        # await self.conn.datachannel.pub_sub.publish(RTC_TOPIC["WIRELESS_CONTROLLER"], {"lx":0,"ly":0,"rx":0,"ry":0,"keys":4})
+       
+        await self.conn.datachannel.pub_sub.publish(RTC_TOPIC["WIRELESS_CONTROLLER"], {"lx":1,"ly":1,"rx":0,"ry":0,"keys":0})
+        await asyncio.sleep(0.1)
+        await self.conn.datachannel.pub_sub.publish(RTC_TOPIC["WIRELESS_CONTROLLER"], {"lx":1,"ly":1,"rx":0,"ry":0,"keys":0})
+
+    async def execute_script(self, actions_array):
+        # for each item in actions_array, send the command to the robot 
+        for action in actions_array:
+            topic = action.get("topic")
+            payload = {"api_id": action.get("api_id")}
+            if("parameter" in action):
+                payload = {**payload, **{"parameter":action.get("parameter")}}
+                print(payload)
+            await self.conn.datachannel.pub_sub.publish_request_new(RTC_TOPIC[topic], payload)
+            # wait for the specified delay before sending the next command
+            delay = action.get("delay", 0)
+            if delay > 0:
+                await asyncio.sleep(delay)
+        
+
 current_webSocket: WebSocket | None = None # Current connected WebSocket
 app = FastAPI() # create FastAPI app instance
 
@@ -101,7 +128,6 @@ async def ws_api(ws: WebSocket):
         while True:
             try:
                 msg = await ws.receive_json()
-               
             except Exception as e: # Could be a malformed JSON or a disconnect
                 logging.exception("Failed to receive message:", e)
                 break  # exit loop if WS is closed
@@ -113,6 +139,10 @@ async def ws_api(ws: WebSocket):
                         await robot.connect(ip)
                     case {"command": "subscribe"}:
                         await robot.subscribe_to_robotstate()
+                    case {"command": "joystick"}:
+                        await robot.test_joystick()
+                    case {"command": "execute_script"}:
+                        await robot.execute_script(action_sequence)
                     case {"command": _} | {"api_id": _}:
                         await robot.handle_command(msg)
                     case _:

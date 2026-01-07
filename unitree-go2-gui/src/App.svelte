@@ -1,6 +1,7 @@
 <script lang="ts">
     import * as R from 'ramda';
     import { onMount } from 'svelte';
+    import { derived, get } from 'svelte/store';
     import {
         Checkbox,
         Element,
@@ -24,11 +25,20 @@
     import { speedChangeMessage, gaitChangeMessage } from './lib/messageGenerators';
     import Video from './components/Video.svelte';
     import GamepadController from './components/GamepadController.svelte';
+    import { gamepadStore } from './lib/gamepadStore';
 
     let point2d: PointValue2d = { x: 0, y: 0 };
 
     ThemeUtils.setGlobalDefaultTheme(ThemeUtils.presets.retro);
 
+    let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
+    let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
+
+    let b2 = R.mapObjIndexed((value, key)=> derived(buttonsStore, state => state[key]), get(gamepadStore).buttonsState)
+    
+    b2.B.subscribe((v) => {
+        console.log('B button state changed:', v);
+    });
     type CommandArg = {
         name: string;
         type: string;
@@ -59,8 +69,6 @@
         | '💜 purple' = '🤍 white';
     let movementMode = '';
     let speedLevel: 'Slow' | 'Normal' | 'Fast' = 'Normal';
-    let gait: 'Idle' | 'Trot' | 'Running' | 'Forward Climb' | 'Reverse Climb' = 'Trot';
-    let handStandOn = false;
 
     // Command that have no arguments (one-shot commands)
     const commands_oneshot: Command[] = R.filter(R.complement(R.has('args')))(
@@ -84,6 +92,9 @@
 
     onMount(() => {
         websocket.connect();
+        window.addEventListener('keydown', (e) => {
+            console.log('keydown', e.code, e.key, e.keyCode);
+        });
     });
 
     async function connectRobot() {
@@ -122,10 +133,11 @@
         //we are interested in the api_code and the name of the arguments expected by the command
         let command: ParametrizedCommand = commands[mode] as ParametrizedCommand;
         let payload = {
-            api_code: command.api_code,
+            api_id: command.api_code,
             parameter: R.objOf(command.args?.[0]?.name, true),
+            topic: 'SPORT_MOD',
         };
-        console.log(payload);
+        websocket.send(payload);
     }
 
     function handleColorChange(event: RadioGridChangeEvent) {
@@ -145,22 +157,11 @@
         websocket.send(speedChangeMessage(event.detail.value as 'Slow' | 'Normal' | 'Fast'));
     }
 
-    function handleGaitChange(event: RadioGridChangeEvent) {
-        websocket.send(
-            gaitChangeMessage(
-                event.detail.value as
-                    | 'Idle'
-                    | 'Trot'
-                    | 'Running'
-                    | 'Forward Climb'
-                    | 'Reverse Climb',
-            ),
-        );
-    }
+    // function handleScriptLaunch(event: Bu)
 </script>
 
-<Video/>
-<GamepadController/>
+<Video />
+<GamepadController monitoring={true} />
 <div class="ui-pane">
     <div>
         <Button
@@ -177,7 +178,9 @@
             </div>
         </Element>
         <Button on:click={() => websocket.send({ command: 'subscribe' })} title="Monitor State" />
+        <Button on:click={() => websocket.send({ command: 'joystick' })} />
     </div>
+
     <div class="button-grid">
         {#each commands_oneshot as { api_code, working, command_name, topic }}
             {#if working}
@@ -221,14 +224,6 @@
             on:change={handleMove}
         />
     </Pane>
-
-    <RadioGrid
-        values={['Idle', 'Trot', 'Running', 'Forward Climb', 'Reverse Climb']}
-        value={gait}
-        on:change={handleGaitChange}
-        label="Gait"
-        columns={2}
-    />
     <Pane position="inline">
         <RotationEuler
             bind:value={eulerAngles}
