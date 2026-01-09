@@ -51,6 +51,8 @@
 
     let OBSTACLE_AVOIDANCE = true;
     let MONITOR_STATE = true;
+    let FACE_DETECTION = false;
+    let FACE_LANDMARKS = false;
     let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
     let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
 
@@ -154,7 +156,7 @@
     }
 </script>
 
-<Video />
+<Video faceDetectionEnabled={FACE_DETECTION} faceLandmarksEnabled={FACE_LANDMARKS}/>
 <GamepadController monitoring={false} />
 <div class="ui-pane">
     <div>
@@ -183,6 +185,12 @@
                     api_id: 1001,
                     parameter: { enable: value },
                 })
+        }/>
+         <Switch label={"Face Landmarks"} callback ={
+            (value:boolean) => {FACE_LANDMARKS = value}
+        }/>
+         <Switch label={"Face Detection"} callback ={
+            (value:boolean) =>  {FACE_DETECTION = value}
         }/>
         <!-- <Checkbox
             bind:value={OBSTACLE_AVOIDANCE}
