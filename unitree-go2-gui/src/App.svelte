@@ -9,36 +9,17 @@
         RadioGrid,
         Button,
         Pane,
-        Point,
-        RotationEuler,
-        type RotationEulerValueObject,
-        type CheckboxChangeEvent,
         type RadioGridChangeEvent,
-        type PointValue2d,
-        type PointChangeEvent,
-        type RotationEulerChangeEvent,
-        List,
-        Separator,
     } from 'svelte-tweakpane-ui';
     import commands from '../../commands_1.1.7.json';
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
     import { speedChangeMessage, gaitChangeMessage } from './lib/messageGenerators';
     import Video from './components/Video.svelte';
+    import Switch from './components/Switch.svelte';
     import GamepadController from './components/GamepadController.svelte';
     import { gamepadStore } from './lib/gamepadStore';
-
-    let point2d: PointValue2d = { x: 0, y: 0 };
-
     ThemeUtils.setGlobalDefaultTheme(ThemeUtils.presets.retro);
 
-    let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
-    let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
-
-    let b2 = R.mapObjIndexed((value, key)=> derived(buttonsStore, state => state[key]), get(gamepadStore).buttonsState)
-    
-    b2.B.subscribe((v) => {
-        console.log('B button state changed:', v);
-    });
     type CommandArg = {
         name: string;
         type: string;
@@ -49,14 +30,54 @@
         api_code: number;
         description?: string;
         args?: CommandArg[];
-        working?: boolean;
-        exec_time?: number;
+        working: boolean;
+        exec_time: number;
         topic: string;
+        gamepad_assignment: string;
     };
 
     type ParametrizedCommand = Command & {
         args: CommandArg[];
     };
+
+    type InputEvent<T> = {
+        index: number;
+        value: T;
+        timestamp: number;
+    };
+
+    type NonEmptyArray<T> = [T, ...T[]];
+    type EventsArray<T> = InputEvent<T>[];
+
+    let OBSTACLE_AVOIDANCE = true;
+    let MONITOR_STATE = true;
+    let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
+    let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
+
+    //create an object where each key is a button name and the value is a derived store for that button's state
+    // let arrayOfButtonStores = R.mapObjIndexed(
+    //     (value, key) => derived(buttonsStore, (state) => state[key]),
+    //     get(gamepadStore).buttonsState,
+    // );
+
+    // //index commands by gamepad assignment for easy lookup of which command to trigger on button press
+    // let gamepadMap: Record<string, any> = R.indexBy(R.prop('gamepad_assignment'), commands);
+
+    // //subscribe to each button store and send a command upon button release
+    // R.forEachObjIndexed(
+    //     (command:Command, gamepad_assignment:string) => {
+    //         arrayOfButtonStores[gamepad_assignment].subscribe((buttonState:NonEmptyArray<InputEvent<boolean>>) => {
+    //             //Todo: also add a check to verify that the timestamp of false is higher than the timestamp of the last false button press plus the debounce time of the corresponding last command
+    //             if (buttonState.length >= 2 && R.last(buttonState).value == false) {
+    //                 websocket.send({
+    //                     command: 'action',
+    //                     api_id: command.api_code,
+    //                     topic: command.topic,
+    //                 });
+    //             }
+    //         });
+    //     },gamepadMap
+    // )
 
     let colors = ['🤍 white', '❤️ red', '💛 yellow', '💙 blue', '💚 green', '🩵 cyan', '💜 purple'];
     let color:
@@ -74,7 +95,7 @@
     const commands_oneshot: Command[] = R.filter(R.complement(R.has('args')))(
         commands,
     ) as Command[];
-
+    // const commands_oneshot_piped: Command[] = R.compose(R.filter, R.complement, R.has('args'))(commands);
     const commands_switches: Command[] = R.filter(
         (cmd: Command) =>
             R.has('args')(cmd) && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
@@ -84,17 +105,8 @@
         (command) => command.command_name,
     );
 
-    let eulerAngles: RotationEulerValueObject = {
-        x: 0,
-        y: 0,
-        z: 0,
-    };
-
     onMount(() => {
         websocket.connect();
-        window.addEventListener('keydown', (e) => {
-            console.log('keydown', e.code, e.key, e.keyCode);
-        });
     });
 
     async function connectRobot() {
@@ -108,22 +120,6 @@
 
     function disconnectRobot() {
         websocket.send({ command: 'disconnect' });
-    }
-
-    function handleMove(e: PointChangeEvent) {
-        const v = e.detail.value;
-        const [x, y] = Array.isArray(v) ? v : [v.x, v.y];
-        websocket.send({
-            command_name: 'Move',
-            parameter: { x, y, z: 0 },
-        });
-    }
-
-    function sendEuler(event: RotationEulerChangeEvent) {
-        // let _x: number = event.detail.value.x;
-        // let _y: number = event.detail.value.y;
-        // let _z: number = event.detail.value.z;
-        // websocket.send({ command: 'set_orientation', _x, _y, _z });
     }
 
     function handleModeSwitch(event: RadioGridChangeEvent) {
@@ -148,7 +144,7 @@
             api_id: 1007,
             parameter: {
                 color: colorName.split(' ')[1],
-                time: 5,
+                time: 50,
                 flash_cycle: 1000,
             },
         });
@@ -156,12 +152,10 @@
     function handleSpeedChange(event: RadioGridChangeEvent) {
         websocket.send(speedChangeMessage(event.detail.value as 'Slow' | 'Normal' | 'Fast'));
     }
-
-    // function handleScriptLaunch(event: Bu)
 </script>
 
 <Video />
-<GamepadController monitoring={true} />
+<GamepadController monitoring={false} />
 <div class="ui-pane">
     <div>
         <Button
@@ -177,10 +171,45 @@
                 <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
             </div>
         </Element>
-        <Button on:click={() => websocket.send({ command: 'subscribe' })} title="Monitor State" />
-        <Button on:click={() => websocket.send({ command: 'joystick' })} />
+        <Switch label={"Monitor State"} callback ={
+            (value:boolean) =>  websocket.send({
+                    command: 'subscribe',
+                    switch: value,
+                })
+        }/>
+         <Switch label={"Obstacle Avoidance"} callback ={
+            (value:boolean) =>  websocket.send({
+                    topic: 'OBSTACLES_AVOID',
+                    api_id: 1001,
+                    parameter: { enable: value },
+                })
+        }/>
+        <!-- <Checkbox
+            bind:value={OBSTACLE_AVOIDANCE}
+            label="Avoidance"
+            on:change={() =>
+                websocket.send({
+                    topic: 'OBSTACLES_AVOID',
+                    api_id: 1001,
+                    parameter: { enable: OBSTACLE_AVOIDANCE },
+                })}
+        /> -->
+        <!-- <Button
+            on:click={() =>
+                websocket.send({
+                    topic: 'OBSTACLES_AVOID',
+                    api_id: 1004,
+                    parameter: { is_remote_commands_from_api: true },
+                })}
+                title = "Remote over API"
+        />
+        -->
     </div>
-
+    <div>
+         <Button on:click={() => websocket.send({ command: 'oz_overture' })} title="Oz Overture" />
+        <Button on:click={() => websocket.send({ command: 'test' })} title="Test" />
+        <Button on:click={() => websocket.send({ command: 'joystick' })} title="Test Joystick" />
+    </div>
     <div class="button-grid">
         {#each commands_oneshot as { api_code, working, command_name, topic }}
             {#if working}
@@ -214,32 +243,6 @@
             on:change={handleSpeedChange}
             label="Speed Level"
             columns={3}
-        />
-        <Point
-            bind:value={point2d}
-            expanded={true}
-            label="2D Point Picker"
-            picker="inline"
-            userExpandable={false}
-            on:change={handleMove}
-        />
-    </Pane>
-    <Pane position="inline">
-        <RotationEuler
-            bind:value={eulerAngles}
-            expanded={true}
-            label="Euler Angles"
-            picker="inline"
-            on:change={sendEuler}
-        />
-        <Button
-            on:click={() =>
-                (eulerAngles = {
-                    x: 0,
-                    y: 0,
-                    z: 0,
-                })}
-            title="Reset"
         />
     </Pane>
 </div>

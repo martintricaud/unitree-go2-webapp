@@ -35,7 +35,7 @@ export class WebSocketClient {
             if (msg.type === "robot_state") {
                 robotConnected.set(msg.connected);
             }
-             else if (msg instanceof Blob) {
+            else if (msg instanceof Blob) {
                 try {
                     const bitmap = await createImageBitmap(msg);
                     this.previousBitmap?.close();
