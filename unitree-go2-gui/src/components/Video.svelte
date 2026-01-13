@@ -5,29 +5,38 @@
         FilesetResolver,
         DrawingUtils,
         FaceDetector,
+        ImageClassifier,
     } from '@mediapipe/tasks-vision';
     import { onMount } from 'svelte';
     import { videoFrame } from '../lib/webSocketClient';
-    import type { NormalizedLandmark, Detection } from '@mediapipe/tasks-vision';
+    import type {
+        NormalizedLandmark,
+        Detection,
+        BoundingBox,
+        FaceDetectorResult,
+    } from '@mediapipe/tasks-vision';
 
     export let faceLandmarksEnabled: boolean = true;
     export let faceDetectionEnabled: boolean = true;
+    export let agePredictionEnabled: boolean = true;
     let canvas: HTMLCanvasElement;
     let liveView: HTMLElement;
     let ctx: CanvasRenderingContext2D;
     let faceLandmarker: FaceLandmarker | null = null;
     let faceDetector: FaceDetector | null = null;
+    let agePredictor: ImageClassifier | null = null;
     let drawingUtils: DrawingUtils;
     let lastTs = 0;
 
+    let cw, ch;
     // Keep a reference of all the child elements we create (for FaceDetection)so we can remove them easilly on each render.
-    let children:HTMLElement[] = [];
+    let children: HTMLElement[] = [];
     function initFaceDetection() {
         FilesetResolver.forVisionTasks('wasm')
             .then((resolver) =>
                 FaceDetector.createFromOptions(resolver, {
                     baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
+                        modelAssetPath: `blaze_face_short_range.tflite`,
                         delegate: 'GPU',
                     },
                     runningMode: 'VIDEO',
@@ -37,6 +46,49 @@
                 faceDetector = lm;
             });
     }
+
+    export function cropCanvasToBoundingBox(
+        source: HTMLCanvasElement,
+        box: BoundingBox,
+    ): HTMLCanvasElement {
+        const out = document.createElement('canvas');
+        out.width = Math.round(box.width);
+        out.height = Math.round(box.height);
+
+        const ctx = out.getContext('2d');
+        if (!ctx) {
+            throw new Error('Could not get 2D context');
+        }
+
+        ctx.drawImage(
+            source,
+            box.originX,
+            box.originY,
+            box.width,
+            box.height,
+            0,
+            0,
+            box.width,
+            box.height,
+        );
+
+        return out;
+    }
+    // function initAgePrediction() {
+    //     FilesetResolver.forVisionTasks('wasm')
+    //         .then((resolver) =>
+    //             FaceDetector.createFromOptions(resolver, {
+    //                 baseOptions: {
+    //                     modelAssetPath: 'model_lite_age_nonq.tflite',
+    //                     delegate: 'GPU',
+    //                 },
+    //                 runningMode: 'VIDEO',
+    //             }),
+    //         )
+    //         .then((lm) => {
+    //             agePredictor = lm;
+    //         });
+    // }
 
     function initFaceLandmarker() {
         FilesetResolver.forVisionTasks('wasm')
@@ -88,67 +140,8 @@
         }
     }
 
-    function displayVideoDetections(detections: Detection[], ) {
-        // Remove any highlighting from previous frame.
-
-        for (let child of children) {
-            liveView.removeChild(child);
-        }
-        children.splice(0);
-
-        // Iterate through predictions and draw them to the live view
-        for (let detection of detections) {
-            const p = document.createElement('p');
-            let boundingBox = detection.boundingBox??{width:0, height:0, originX:0, originY:0}
-            p.innerText =
-                'Confidence: ' +
-                Math.round(detection.categories[0].score * 100) +
-                '% .';
-            p.style =
-                'left: ' +
-                (canvas.offsetWidth - boundingBox.width - boundingBox.originX) +
-                'px;' +
-                'top: ' +
-                (boundingBox.originY - 30) +
-                'px; ' +
-                'width: ' +
-                (boundingBox.width - 10) +
-                'px;';
-
-            const highlighter = document.createElement('div');
-            highlighter.setAttribute('class', 'highlighter');
-            highlighter.style =
-                'left: ' +
-                (canvas.offsetWidth - boundingBox.width - boundingBox.originX) +
-                'px;' +
-                'top: ' +
-                boundingBox.originY +
-                'px;' +
-                'width: ' +
-                (boundingBox.width - 10) +
-                'px;' +
-                'height: ' +
-                boundingBox.height +
-                'px;';
-
-            liveView.appendChild(highlighter);
-            liveView.appendChild(p);
-
-            // Store drawn objects in memory so they are queued to delete at next call
-            children.push(highlighter);
-            children.push(p);
-            for (let keypoint of detection.keypoints) {
-                const keypointEl = document.createElement('spam');
-                keypointEl.className = 'key-point';
-                keypointEl.style.top = `${keypoint.y * canvas.offsetHeight - 3}px`;
-                keypointEl.style.left = `${
-                    canvas.offsetWidth - keypoint.x * canvas.offsetWidth - 3
-                }px`;
-                liveView.appendChild(keypointEl);
-                children.push(keypointEl);
-            }
-        }
-    }
+    let landmarkDetectionResult;
+    let faceDetectionResult: FaceDetectorResult = { detections: [] };
 
     onMount(() => {
         ctx = canvas.getContext('2d')!;
@@ -164,14 +157,18 @@
             if (now <= lastTs) return;
             lastTs = now;
             if (faceLandmarker && faceLandmarksEnabled) {
-                let result = faceLandmarker.detectForVideo(canvas, now);
-                if (!result.faceLandmarks) return;
-                drawFaceLandmarks(result.faceLandmarks);
+                landmarkDetectionResult = faceLandmarker.detectForVideo(canvas, now);
+                if (!landmarkDetectionResult.faceLandmarks) return;
+                drawFaceLandmarks(landmarkDetectionResult.faceLandmarks);
             }
             if (faceDetector && faceDetectionEnabled) {
-                let result = faceDetector.detectForVideo(canvas, now);
-                if (!result.detections) return;
-                displayVideoDetections(result.detections);
+                faceDetectionResult = faceDetector.detectForVideo(canvas, now);
+                if (!faceDetectionResult.detections) return;
+                // if (agePredictionEnabled) {
+                //     for(let detection of result2.detections){
+                //         let face = cropCanvasToBoundingBox(ctx, detection.boundingBox)
+                //     }
+                // }
             }
         });
 
@@ -179,17 +176,86 @@
     });
 </script>
 
-<div bind:this={liveView} class="container">
-    <canvas bind:this={canvas} width="1280" height="720"> </canvas>
+<div class="container">
+    <canvas
+        bind:this={canvas}
+        width="1280"
+        height="720"
+        bind:clientWidth={cw}
+        bind:clientHeight={ch}
+    >
+    </canvas>
+    <div bind:this={liveView} class="liveView" style="width: {cw}px;height: {ch}px;">
+        {#if faceDetectionResult.detections && faceDetectionResult.detections.length > 0}
+            {#each faceDetectionResult.detections as { boundingBox, categories, keypoints }}
+                {#if boundingBox}
+                    {@const { width, height, originX, originY } = boundingBox}
+                    <!-- Prediction text -->
+                    <p
+                        class="prediction"
+                        style="
+                        color: blue;
+                        left: {cw - width - originX}px;
+                        top: {originY}px;
+                        width: {width}px;"
+                    >
+                        Confidence: {Math.round((categories[0]?.score ?? 0) * 100)}%
+                    </p>
+
+                    <!-- Highlighter div -->
+                    <div
+                        style="
+                    border: 2px solid blue;
+                    left: {cw - width - originX}px;
+                    top: {originY}px;
+                    width: {width - 10}px;
+                    height: {height}px;"
+                        class="highlighter"
+                    ></div>
+                    <!-- Keypoints -->
+                    {#each keypoints as keypoint}
+                        <span
+                            class="key-point"
+                            style="top: {keypoint.y * ch - 3}px;
+                        left: {cw - keypoint.x * cw - 3}px;
+                        width: 6px; height: 6px;
+                        background-color: red"
+                        ></span>
+                    {/each}
+                {/if}
+            {/each}
+        {/if}
+    </div>
 </div>
 
 <style>
+    .prediction {
+        position: absolute;
+        color: white;
+        z-index: 1;
+    }
+    .highlighter {
+        position: absolute;
+        z-index: 1;
+    }
     .container {
         width: 100%;
         display: flex;
         justify-content: center;
         align-items: center;
         background-color: black;
+    }
+
+    .liveView {
+        position: absolute;
+    }
+    .key-point {
+        position: absolute;
+        z-index: 1;
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        display: block;
     }
     canvas {
         aspect-ratio: 16/9;
