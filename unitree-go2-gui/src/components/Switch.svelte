@@ -9,6 +9,7 @@
     export let callback: (a:boolean)=>any = R.identity
 </script>
 
+
 <div class="main">
     <div>{label}</div>
 <button
@@ -28,6 +29,7 @@
         display: flex;
         gap: 1em;
         align-items: center;
+        justify-content: space-between;
     }
     :root {
         --switch-width: 50px;

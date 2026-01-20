@@ -1,124 +1,107 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-
+	import { writable, get } from 'svelte/store';
+	import { gamepadStore } from '../lib/gamepadStore';
+	import * as R from 'ramda';
 	// Types for gamepad input
-	interface ButtonEvent {
-		buttonIndex: number;
-		pressed: boolean;
+
+	export let monitoring
+	type InputEvent<T> = {
+		index: number;
+		value: T;
 		timestamp: number;
+	};
+
+
+	type EventsArray<T> = InputEvent<T>[];
+
+	type MapEntry<T> = {
+		keyName: string;
+		callback: (event: InputEvent<T>) => void;
+	};
+
+
+	// Function that updates an array by appending an item to the end and removing the first one if the resulting length exceeds 4
+	function updateArray(newState: any) {
+		type T = ReturnType<typeof newState>;
+		return (array: T[]) =>
+			array.length >= 4 ? R.drop(1, R.append(newState, array)) : R.append(newState, array);
 	}
 
-	interface AxisEvent {
-		axisIndex: number;
-		value: number;
-		timestamp: number;
-	}
-
-	type ButtonEntry = {
-		keyName: string;
-		callback: (event: ButtonEvent, gamepadIndex: number) => any;
+	//Factory function that generates callbacks tuned to update gamepadStore using a lens at a given path.
+	let callbackFactory = (path: string[]) => (event: InputEvent<any>) => {
+		type T = ReturnType<typeof event.value>;
+		//stateLens is a lens over the state array of the given button
+		let stateLens = R.lensPath(path);
+		let stateArray: EventsArray<T> = R.view(stateLens, get(gamepadStore));
+		if (R.last(stateArray)?.value !== event.value) {
+			gamepadStore.update((state) => R.over(stateLens, updateArray(event), state));
+		}
 	};
 
-	type AxisEntry = {
-		keyName: string;
-		callback: (event: AxisEvent, gamepadIndex: number) => any;
+	const BUTTON_MAP: Record<number, MapEntry<Boolean>> = {
+		0: { keyName: 'A', callback: callbackFactory(['buttonsState', 'A']) },
+		1: { keyName: 'B', callback: callbackFactory(['buttonsState', 'B']) },
+		2: { keyName: 'X', callback: callbackFactory(['buttonsState', 'X']) },
+		3: { keyName: 'Y', callback: callbackFactory(['buttonsState', 'Y']) },
+		4: { keyName: 'LB', callback: callbackFactory(['buttonsState', 'LB']) },
+		5: { keyName: 'RB', callback: callbackFactory(['buttonsState', 'RB']) },
+		6: { keyName: 'LT', callback: callbackFactory(['buttonsState', 'LT']) },
+		7: { keyName: 'RT', callback: callbackFactory(['buttonsState', 'RT']) },
+		8: { keyName: 'MINUS', callback: callbackFactory(['buttonsState', 'MINUS']) },
+		9: { keyName: 'PLUS', callback: callbackFactory(['buttonsState', 'PLUS']) },
+		10: { keyName: 'LEFT_STICK', callback: callbackFactory(['buttonsState', 'LEFT_STICK']) },
+		11: { keyName: 'RIGHT_STICK', callback: callbackFactory(['buttonsState', 'RIGHT_STICK']) },
+		12: {keyName: 'UP', callback: callbackFactory(['buttonsState', 'UP']) },
+		13: {keyName: 'DOWN', callback: callbackFactory(['buttonsState', 'DOWN']) },
+		14: {keyName: 'LEFT', callback: callbackFactory(['buttonsState', 'LEFT']) },
+		15: {keyName: 'RIGHT', callback: callbackFactory(['buttonsState', 'RIGHT']) },
+		16: { keyName: 'HOME', callback: callbackFactory(['buttonsState', 'HOME']) },
 	};
 
-	const BUTTON_MAP: Record<number, ButtonEntry> = {
-		0: { keyName: 'A', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('A:', event) },
-		1: { keyName: 'B', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('B:', event) },
-		2: { keyName: 'X', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('X:', event) },
-		3: { keyName: 'Y', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('Y:', event) },
-		4: { keyName: 'LB', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('LB:', event) },
-		5: { keyName: 'RB', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('RB:', event) },
-		6: { keyName: 'LT', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('LT:', event) },
-		7: { keyName: 'RT', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('RT:', event) },
-		8: { keyName: 'BACK', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('BACK:', event) },
-		9: { keyName: 'START', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('START:', event) },
-		10: { keyName: 'LEFT_STICK', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('LEFT_STICK:', event) },
-		11: { keyName: 'RIGHT_STICK', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('RIGHT_STICK:', event) },
-		16: { keyName: 'XBOX', callback: (event: ButtonEvent, gamepadIndex: number) => console.log('XBOX:', event) }
+	const AXIS_MAP: Record<number, MapEntry<number>> = {
+		0: { keyName: 'LEFT_STICK_X', callback: callbackFactory(['axisState', 'LEFT_STICK_X']) },
+		1: { keyName: 'LEFT_STICK_Y', callback: callbackFactory(['axisState', 'LEFT_STICK_Y']) },
+		2: { keyName: 'RIGHT_STICK_X', callback: callbackFactory(['axisState', 'RIGHT_STICK_X']) },
+		3: { keyName: 'RIGHT_STICK_Y', callback: callbackFactory(['axisState', 'RIGHT_STICK_Y']) },
+		4: { keyName: 'LEFT_TRIGGER', callback: callbackFactory(['axisState', 'LEFT_TRIGGER']) },
+		5: { keyName: 'RIGHT_TRIGGER', callback: callbackFactory(['axisState', 'RIGHT_TRIGGER']) },
 	};
 
-	const AXIS_MAP: Record<number, AxisEntry> = {
-		0: { keyName: 'LEFT_STICK_X', callback: (event: AxisEvent, gamepadIndex: number) => console.log('LEFT_STICK_X:', event) },
-		1: { keyName: 'LEFT_STICK_Y', callback: (event: AxisEvent, gamepadIndex: number) => console.log('LEFT_STICK_Y:', event) },
-		2: { keyName: 'RIGHT_STICK_X', callback: (event: AxisEvent, gamepadIndex: number) => console.log('RIGHT_STICK_X:', event) },
-		3: { keyName: 'RIGHT_STICK_Y', callback: (event: AxisEvent, gamepadIndex: number) => console.log('RIGHT_STICK_Y:', event) },
-		4: { keyName: 'LEFT_TRIGGER', callback: (event: AxisEvent, gamepadIndex: number) => console.log('LEFT_TRIGGER:', event) },
-		5: { keyName: 'RIGHT_TRIGGER', callback: (event: AxisEvent, gamepadIndex: number) => console.log('RIGHT_TRIGGER:', event) }
-	};
-
-	let connectedGamepadIndex: number | null = null;
 	let animationFrameId: number;
 
-	/**
-	 * Polls the gamepad and passes current state to callbacks
-	 */
+	// Polls the gamepad and passes current state to callbacks
 	function pollGamepad() {
-		const gamepads = navigator.getGamepads?.();
-		if (!gamepads) {
-			animationFrameId = requestAnimationFrame(pollGamepad);
-			return;
-		}
-
-		// Find the first connected gamepad
-		let gamepad: Gamepad | null = null;
-		for (let i = 0; i < gamepads.length; i++) {
-			if (gamepads[i]) {
-				gamepad = gamepads[i];
-				connectedGamepadIndex = i;
-				break;
-			}
-		}
-
+		const gamepad = navigator.getGamepads?.()[0];
 		if (gamepad) {
 			const timestamp = performance.now();
-
 			// Invoke button callbacks
 			Object.keys(BUTTON_MAP).forEach((key: any) => {
-				const button = gamepad!.buttons[key];
-				BUTTON_MAP[key].callback(
-					{ buttonIndex: key, pressed: button.pressed, timestamp },
-					connectedGamepadIndex ?? 0
-				);
+				BUTTON_MAP[key].callback({
+					index: key,
+					value: gamepad.buttons[key].pressed,
+					timestamp,
+				});
 			});
-
 			// Invoke axis callbacks
 			Object.keys(AXIS_MAP).forEach((key: any) => {
-				const axisValue = gamepad!.axes[key];
-				AXIS_MAP[key].callback(
-					{ axisIndex: key, value: axisValue, timestamp },
-					connectedGamepadIndex ?? 0
-				);
+				AXIS_MAP[key].callback({ index: key, value: gamepad.axes[key], timestamp });
 			});
 		}
-
 		animationFrameId = requestAnimationFrame(pollGamepad);
 	}
 
 	onMount(() => {
 		// Start polling
 		pollGamepad();
-
-		// Listen for gamepad connection events
-		const handleGamepadConnected = (event: GamepadEvent) => {
-			console.log('Gamepad connected:', event.gamepad.id);
-			connectedGamepadIndex = event.gamepad.index;
+		// Listen for gamepad disconnection - scan for other available gamepads
+		const handleGamepadDisconnected = () => {
+			console.log('Gamepad disconnected, scanning for other gamepads...');
+			// The next poll cycle will call findGamepad() which will find any remaining connected gamepad
 		};
-
-		const handleGamepadDisconnected = (event: GamepadEvent) => {
-			console.log('Gamepad disconnected:', event.gamepad.id);
-			if (connectedGamepadIndex === event.gamepad.index) {
-				connectedGamepadIndex = null;
-			}
-		};
-
-		window.addEventListener('gamepadconnected', handleGamepadConnected);
 		window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
 
 		return () => {
-			window.removeEventListener('gamepadconnected', handleGamepadConnected);
 			window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
 		};
 	});
@@ -131,12 +114,21 @@
 </script>
 
 <!-- Component has no visual output, it's purely for handling input -->
-<div style="display: none;">
-	{#if connectedGamepadIndex !== null}
-		<span>Gamepad {connectedGamepadIndex} connected</span>
-	{:else}
-		<span>No gamepad connected</span>
+<div style="position: fixed; color: blue">
+	{#if monitoring==true}
+	<ul>
+		{#each Object.entries($gamepadStore.buttonsState) as [key, value]}
+			<li>{key}: {JSON.stringify(value)}</li>
+		{/each}
+	</ul>
+	<ul>
+		{#each Object.entries($gamepadStore.axisState) as [key, value]}
+			<li>{key}: {JSON.stringify(value)}</li>
+		{/each}
+	</ul>
+		
 	{/if}
+	
 </div>
 
 <style>
