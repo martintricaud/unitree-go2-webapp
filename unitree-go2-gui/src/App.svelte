@@ -83,14 +83,39 @@
     };
 
     let stepCounter = 0;
-    let actionSequence = [
-        { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand') },
+    let claquettes = {
+        sequence: [
+            { command: 'CrossStep', ...switchTo(true)('CrossStep'), ...buildPayload('CrossStep') },
+            { wait: 0.15 },
+            {
+                command: 'ClassicWalk',
+                ...switchTo(true)('ClassicWalk'),
+                ...buildPayload('ClassicWalk'),
+            },
+            { wait: 0.15 },
+            { command: 'CrossStep', ...switchTo(true)('CrossStep'), ...buildPayload('CrossStep') },
+            { wait: 0.15 },
+            {
+                command: 'ClassicWalk',
+                ...switchTo(true)('ClassicWalk'),
+                ...buildPayload('ClassicWalk'),
+            },
+            { wait: 0.1 },
+            { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
+        ],
+    };
+    let DANSE_DU_SABBAT = [
         {
             command: 'ClassicWalk',
             ...switchTo(true)('ClassicWalk'),
             ...buildPayload('ClassicWalk'),
         },
-        {
+        { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
+        { command: 'Euler', ...buildPayload('Euler') },
+        { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand') },
+    ];
+
+    let STRETCH_HELLO_JUMP = {
             sequence: [
                 { command: 'Stretch', ...buildPayload('Stretch') },
                 { command: 'Hello', ...buildPayload('Hello') },
@@ -98,9 +123,22 @@
                 { command: 'FrontJump', ...buildPayload('FrontJump') },
                 { wait: 1 },
                 { command: 'FrontJump', ...buildPayload('FrontJump') },
-                { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk'),},
+                { wait: 0.1 },
+                {
+                    command: 'ClassicWalk',
+                    ...switchTo(true)('ClassicWalk'),
+                    ...buildPayload('ClassicWalk'),
+                },
             ],
+        }
+    let actionSequence = [
+        { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand') },
+        {
+            command: 'ClassicWalk',
+            ...switchTo(true)('ClassicWalk'),
+            ...buildPayload('ClassicWalk'),
         },
+        STRETCH_HELLO_JUMP,
         { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
         { command: 'Handstand', ...switchTo(true)('Handstand'), ...buildPayload('Handstand') },
         {
@@ -203,7 +241,7 @@
             api_id: 1007,
             parameter: {
                 color: colorName.split(' ')[1],
-                time: 10,
+                // time: 10,
             },
         });
     }
@@ -297,8 +335,12 @@
     </div>
     <div>
         <Button on:click={() => websocket.send({ command: 'oz_overture' })} title="Oz Overture" />
-        <Button on:click={() => websocket.send({ command: 'test' })} title="Test" />
+        <Button
+            on:click={() => websocket.send(STRETCH_HELLO_JUMP)}
+            title="Stretch Hello"
+        />
         <Button on:click={() => websocket.send({ command: 'joystick' })} title="Test Joystick" />
+        <Button on:click={() => websocket.send(claquettes)} title="claquettes" />
     </div>
     <div class="button-grid">
         {#each CMD_actions as { api_id, working, command_name, topic }}
