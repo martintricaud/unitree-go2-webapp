@@ -8,7 +8,7 @@ elif version==118:
     from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
     from unitree_webrtc_connect.constants import RTC_TOPIC
 
-from script_oz import action_sequence
+from pythonosc import udp_client
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 import asyncio, logging, json, cv2
@@ -85,14 +85,14 @@ class RobotSession:
     async def subscribe_to_robotstate(self, switch):
         # callback = lambda message: asyncio.create_task(notify_frontend(json.loads(message['data'])))
         def callback(message):
-            print(message)
+            
             lambda message: asyncio.create_task(notify_frontend(json.loads(message['data'])))
             print(message)
         if switch:
             self.conn.datachannel.pub_sub.subscribe(
                 RTC_TOPIC['LF_SPORT_MOD_STATE'], 
                 # callback ## notify frontend asynchronous
-                broadcast_state
+                osc_callback
             )
             self.conn.datachannel.pub_sub.subscribe(
                 RTC_TOPIC['MULTIPLE_STATE'], 
@@ -268,3 +268,22 @@ async def ws_video(ws: WebSocket):
         except:
             pass          
 robot = RobotSession() # create a RobotSession instance
+
+#TODO: Replace with the target IP and port of your OSC receiver
+osc_client = udp_client.SimpleUDPClient("192.168.1.100", 9000)
+
+# @app.post("/data")
+# async def receive_data(data: dict):
+#     # Extract numerical values from the WebRTC stream
+#     value = data["value"]
+#     # Send as OSC message (e.g., address "/robot/data", value)
+#     osc_client.send_message("/robot/data", value)
+#     return {"status": "sent"}
+
+def osc_callback(data):
+    # Extract the numerical value(s) from the data
+    value = data["value"]  # Adjust based on the actual data structure
+    # Send as OSC message (e.g., address "/go2/data", value)
+    osc_client.send_message("/go2/data", value)
+    # Optional: Print for debugging
+    print(f"Sent OSC: {value}")
