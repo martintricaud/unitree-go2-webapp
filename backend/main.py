@@ -16,18 +16,9 @@ from aiortc import MediaStreamTrack
 import av
 av.logging.set_level(av.logging.ERROR)
 
+osc_client = udp_client.SimpleUDPClient("192.168.1.130", 6000)
 broadcaster = FrameBroadcaster()
-
-async def broadcast_state(state):
-        if current_webSocket:
-            asyncio.get_running_loop().create_task(
-            current_webSocket.send_json(json.loads(state))
-        )
-            # try:
-            #     await current_webSocket.send_json(json.loads(state))
-            # except Exception as e:
-            #     print(f"An error occurred while broadcasting state: {e}")  # Handle other exceptions 
-                
+            
 async def recv_camera_stream(track: MediaStreamTrack):
         while True:
             frame = await track.recv()  # wait for next frame
@@ -64,9 +55,7 @@ class RobotSession:
             })
                 except Exception as e:
                     print(f"An error occurred during connection: {e}")  # Handle other exceptions
-                    
-            # await notify_frontend()
-            print(self.conn.video)      
+                
             self.conn.video.add_track_callback(recv_camera_stream)
             await asyncio.wait_for(self.conn.video.switchVideoChannel(True), timeout)
 
@@ -83,26 +72,26 @@ class RobotSession:
             self.conn = None
 
     async def subscribe_to_robotstate(self, switch):
-        # callback = lambda message: asyncio.create_task(notify_frontend(json.loads(message['data'])))
         def callback(message):
-            
-            lambda message: asyncio.create_task(notify_frontend(json.loads(message['data'])))
             print(message)
+            osc_client.send_message("/go2/data", message.get('data'))
+            try:
+                asyncio.get_running_loop().create_task(
+                    notify_frontend({
+                        'type': 'state_stream',
+                        'data': message.get('data')
+                    })
+                )
+            except Exception as e:
+                logging.exception("Failed to schedule state notification")
         if switch:
             self.conn.datachannel.pub_sub.subscribe(
-                RTC_TOPIC['LF_SPORT_MOD_STATE'], 
-                # callback ## notify frontend asynchronous
-                osc_callback
-            )
-            self.conn.datachannel.pub_sub.subscribe(
-                RTC_TOPIC['MULTIPLE_STATE'], 
-                callback ## notify frontend asynchronously
-            )
+                RTC_TOPIC['LF_SPORT_MOD_STATE'], callback )
+            # the following topics have a subscribe method: MULTIPLE_STATE, SPORT_MOD_STATE, LOW_STATE
+   
         else :
             self.conn.datachannel.pub_sub.unsubscribe(RTC_TOPIC['LF_SPORT_MOD_STATE'])
-            self.conn.datachannel.pub_sub.unsubscribe(RTC_TOPIC['MULTIPLE_STATE'])
         
-
     async def handle_command(self, msg):
         payload = {"api_id": msg.get("api_id")}
         topic = msg.get("topic")
@@ -112,38 +101,49 @@ class RobotSession:
         await self.conn.datachannel.pub_sub.publish_request_new(RTC_TOPIC[topic], payload)
     
 
-    async def test_joystick(self):
+    async def send_joystick_command(self, lx: float, ly: float, rx: float, ry: float, keys: int = 0):
+        """Send a single joystick command without blocking"""
         try:
-            await asyncio.wait_for(
-                await self.conn.datachannel.pub_sub.publish(
-                    RTC_TOPIC["WIRELESS_CONTROLLER"],
-                    {
-                            "lx": 0.5,
-                            "ly": 0,
-                            "rx": 0,
-                            "ry": 0,
-                            "keys": 0
-                    }
-                ),
-                timeout=0.5  # seconds
+            await self.conn.datachannel.pub_sub.publish(
+                RTC_TOPIC["WIRELESS_CONTROLLER"],
+                {
+                    "lx": lx,
+                    "ly": ly,
+                    "rx": rx,
+                    "ry": ry,
+                    "keys": keys
+                }
             )
-            await asyncio.wait_for(
-                await self.conn.datachannel.pub_sub.publish(
-                    RTC_TOPIC["WIRELESS_CONTROLLER"],
-                    {
-                            "lx": 0,
-                            "ly": 1,
-                            "rx": 0,
-                            "ry": 0,
-                            "keys": 0
-                    }
-                ),
-                timeout=0.5  # seconds
-            )
-        except asyncio.TimeoutError:
-            print("Publish timed out!")
         except Exception as e:
-            print(f"Error during publish: {e}")
+            logging.exception(f"Error sending joystick command: {e}")
+
+    async def test_joystick(self):
+        """Test sending commands rapidly using create_task"""
+        try:
+            print("Starting rapid joystick test with create_task...")
+            start = asyncio.get_event_loop().time()
+            
+            # Send 5 commands rapidly as tasks (non-blocking)
+            tasks = []
+            for i in range(5):
+                print(f"[{i}] Scheduling command at T+{asyncio.get_event_loop().time() - start:.3f}s")
+                task = asyncio.get_running_loop().create_task(
+                    self.send_joystick_command(
+                        lx=float(i) * 0.2,
+                        ly=0,
+                        rx=0,
+                        ry=0,
+                        keys=0
+                    )
+                )
+                tasks.append(task)
+            
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks)
+            print(f"✓ All commands sent in {asyncio.get_event_loop().time() - start:.3f}s")
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
     async def execute_sequence(self, sequence):
         for msg in sequence:
             match msg:
@@ -152,37 +152,10 @@ class RobotSession:
                 case {"wait":_}:
                     await asyncio.sleep(msg.get("wait"))
 
-
-    async def oz_overture(self):
-        await self.handle_command({"topic":'SPORT_MOD',"api_id":1020 })
-        await self.handle_command({"topic":'SPORT_MOD',"api_id":2049, "parameter":{"data":True}})
-        await asyncio.sleep(3.1)
-        await self.handle_command({"topic":'SPORT_MOD',"api_id":1015,"parameter":{"data":-1}})
-        await self.handle_command({"topic":'SPORT_MOD',"api_id": 1008,"parameter":{"x":0,"y":0.0,"z":2}})
-        await asyncio.sleep(3)
-        await self.handle_command({"topic":'SPORT_MOD',"api_id": 1008, "parameter":{"x":0,"y":0.0,"z":-2}
-        })
-        
-    # async def stretch_hello_jump(self):
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id": 1003})  # Stop Move
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id":1017})  # Stretch 
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id":1016}) # Hello
-    #     await asyncio.sleep(0.3)
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id":1031})  # First jump
-    #     await asyncio.sleep(0.1)
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id":1031})  # Second jump
-    #     await asyncio.sleep(0.1)
-    #     await self.handle_command({"topic":'SPORT_MOD',"api_id":2049, "parameter":{"data":True}})  # Back to classic mode
-
 current_webSocket: WebSocket | None = None # Current connected WebSocket
 app = FastAPI() # create FastAPI app instance
 
 async def notify_frontend(payload):
-    # if current_webSocket:
-    #     try:
-    #         await current_webSocket.send_json(payload)
-    #     except Exception:
-    #         break  # client disconnected
     global current_webSocket # use the global variable
     if current_webSocket is None:
         return
@@ -220,15 +193,11 @@ async def ws_api(ws: WebSocket):
                         await robot.subscribe_to_robotstate(msg["switch"])
                     case {"command": "joystick"}:
                         await robot.test_joystick()
-                    case {"command": "stretch_hello"}:
-                        await robot.stretch_hello_jump()
-                    case {"command": "oz_overture"}:
-                        await robot.oz_overture()
                     case {"api_id": _}:
                         await robot.handle_command(msg)
                     case _:
                         logging.warning("Unknown message type received:", msg)
-                await ws.send_json({"ok": True})
+                await ws.send_json(msg)
             except SystemExit as exc:
                 # Handle SystemExit to prevent the server from stopping
                 logging.exception("SystemExit in command handler (treated as failure).")
@@ -269,21 +238,4 @@ async def ws_video(ws: WebSocket):
             pass          
 robot = RobotSession() # create a RobotSession instance
 
-#TODO: Replace with the target IP and port of your OSC receiver
-osc_client = udp_client.SimpleUDPClient("192.168.1.100", 9000)
 
-# @app.post("/data")
-# async def receive_data(data: dict):
-#     # Extract numerical values from the WebRTC stream
-#     value = data["value"]
-#     # Send as OSC message (e.g., address "/robot/data", value)
-#     osc_client.send_message("/robot/data", value)
-#     return {"status": "sent"}
-
-def osc_callback(data):
-    # Extract the numerical value(s) from the data
-    value = data["value"]  # Adjust based on the actual data structure
-    # Send as OSC message (e.g., address "/go2/data", value)
-    osc_client.send_message("/go2/data", value)
-    # Optional: Print for debugging
-    print(f"Sent OSC: {value}")
