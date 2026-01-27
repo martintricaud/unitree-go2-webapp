@@ -4,6 +4,7 @@ import { writable } from "svelte/store";
 export const webSocketConnected = writable(false);
 export const robotConnected = writable(false);
 export const videoFrame = writable<ImageBitmap | null>(null)
+export const robotData = writable();
 
 export class WebSocketClient {
     private socket: WebSocket | null = null;
@@ -35,6 +36,12 @@ export class WebSocketClient {
             if (msg.type === "robot_state") {
                 robotConnected.set(msg.connected);
             }
+            else if (msg.topic === 'rt/lf/sportmodestate'){
+                console.log(msg)
+            }
+            else if (msg.type ==="state_stream"){
+                console.log(msg)
+            }
             else if (msg instanceof Blob) {
                 try {
                     const bitmap = await createImageBitmap(msg);
@@ -47,6 +54,8 @@ export class WebSocketClient {
             } 
             else {
                 msg = ev.data
+                console.log(msg)
+                robotData.set(msg)
             }
         };
         this.socket = ws
