@@ -82,6 +82,10 @@
         return { parameter: R.objOf(commandIndex[cmd].args[0].name, newState) };
     };
 
+    let changeTo = (newValue: any) => (cmd: string) => {
+        return { parameter: {color: newValue} };
+    };
+
     let stepCounter = 0;
     let claquettes = {
         sequence: [
@@ -105,54 +109,48 @@
         ],
     };
     let DANSE_DU_SABBAT = [
-        {
-            command: 'ClassicWalk',
-            ...switchTo(true)('ClassicWalk'),
-            ...buildPayload('ClassicWalk'),
-        },
+        { command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk')},
         { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
-        { command: 'Euler', ...buildPayload('Euler') },
-        { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand') },
+        { command: 'Euler', ...buildPayload('Euler') },     
+        { 
+            displayName: 'Sabots',
+            sequence:[
+                { command: 'FreeWalk', ...switchTo(true)('FreeWalk'), ...buildPayload('FreeWalk')},
+                { wait: 0.1 },
+                { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand')},
+                {  wait: 0.1 },
+                { command: 'Headlight', ...changeTo('blue')('Headlight'), ...buildPayload('Headlight')},
+            ]
+        },
+        
+        { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk')},
     ];
 
     let STRETCH_HELLO_JUMP = {
-            sequence: [
-                { command: 'Stretch', ...buildPayload('Stretch') },
-                { command: 'Hello', ...buildPayload('Hello') },
-                { wait: 0.3 },
-                { command: 'FrontJump', ...buildPayload('FrontJump') },
-                { wait: 1 },
-                { command: 'FrontJump', ...buildPayload('FrontJump') },
-                { wait: 0.1 },
-                {
-                    command: 'ClassicWalk',
-                    ...switchTo(true)('ClassicWalk'),
-                    ...buildPayload('ClassicWalk'),
-                },
-            ],
-        }
+        displayName: 'Strello Jump',
+        sequence: [
+            { command: 'Stretch', ...buildPayload('Stretch') },
+            { command: 'Hello', ...buildPayload('Hello') },
+            { wait: 0.3 },
+            { command: 'FrontJump', ...buildPayload('FrontJump') },
+            { wait: 1 },
+            { command: 'FrontJump', ...buildPayload('FrontJump') },
+            { wait: 0.1 },
+            { command: 'ClassicWalk',...switchTo(true)('ClassicWalk'),...buildPayload('ClassicWalk')},
+        ],
+    };
+
     let actionSequence = [
-        { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand') },
-        {
-            command: 'ClassicWalk',
-            ...switchTo(true)('ClassicWalk'),
-            ...buildPayload('ClassicWalk'),
-        },
+        ...DANSE_DU_SABBAT,
+        { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'),...buildPayload('ClassicWalk')},
         STRETCH_HELLO_JUMP,
         { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
         { command: 'Handstand', ...switchTo(true)('Handstand'), ...buildPayload('Handstand') },
-        {
-            sequence: [
-                {
-                    command: 'ClassicWalk',
-                    ...switchTo(true)('ClassicWalk'),
-                    ...buildPayload('ClassicWalk'),
-                },
-                { wait: 1 },
-                { command: 'FingerHeart', ...buildPayload('FingerHeart') },
-            ],
-        },
-
+        {sequence: [
+            { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk')},
+            { wait: 1 },
+            { command: 'FingerHeart', ...buildPayload('FingerHeart') },
+        ]},
         { command: 'Sit', ...buildPayload('Sit') },
         { command: 'RiseSit', ...buildPayload('RiseSit') },
         { command: 'Jumping', ...switchTo(true)('Jumping'), ...buildPayload('Jumping') },
@@ -219,11 +217,9 @@
         websocket.send({ command: 'disconnect' });
     }
 
-    function handleModeSwitch(mode: string) {
-        //Look up the command triggered by the radio change
+    function handleModeChange(mode: string) {
+        //Look up the command triggered by the radio button change
         let cmd: Command | undefined = R.find((cmd) => cmd?.command_name == mode, CMD_switches);
-        //we are interested in the api_id and the name of the arguments expected by the command
-
         if (cmd != undefined) {
             websocket.send({
                 api_id: cmd.api_id,
@@ -245,9 +241,7 @@
             },
         });
     }
-    function handleSpeedChange(event: RadioGridChangeEvent) {
-        websocket.send(speedChangeMessage(event.detail.value as 'Slow' | 'Normal' | 'Fast'));
-    }
+
 </script>
 
 <Video
@@ -258,24 +252,31 @@
 <GamepadController monitoring={false} />
 <svelte:window
     on:keydown|preventDefault={(event) => {
+        let L = actionSequence.length
         switch (event.key) {
             case 'ArrowRight':
-                stepCounter = stepCounter >= actionSequence.length ? stepCounter : stepCounter + 1;
                 execute_step(actionSequence)(stepCounter);
-            // case 'ArrowLeft':
-            //     stepCounter -= 1;
-            //     execute_step(actionSequence)(stepCounter);
-            // case 'ArrowUp':
-            //     stepCounter += 1;
-            // case 'ArrowDown':
-            //     stepCounter -= 1;
-            // case 'Enter':
-            //     execute_step(actionSequence)(stepCounter);
+                stepCounter = R.clamp(0, L)(stepCounter+1);
+                break;
+            case 'ArrowLeft':
+                execute_step(actionSequence)(stepCounter);
+                stepCounter = R.clamp(0, L)(stepCounter-1);
+                break;
+            case 'ArrowDown':
+                stepCounter = R.clamp(0, L)(stepCounter+1);
+                break;
+            case 'ArrowUp':
+                stepCounter = R.clamp(0, L)(stepCounter-1);
+                break;
+            case 'Enter':
+                execute_step(actionSequence)(stepCounter);
+                break;
         }
     }}
 />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tiny.css@0.12/dist/tiny.css" />
 <div class="ui-pane">
-    <div>
+    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <Button
             on:click={() => {
                 $robotConnected ? disconnectRobot() : connectRobot();
@@ -334,11 +335,7 @@
         />
     </div>
     <div>
-        <Button on:click={() => websocket.send({ command: 'oz_overture' })} title="Oz Overture" />
-        <Button
-            on:click={() => websocket.send(STRETCH_HELLO_JUMP)}
-            title="Stretch Hello"
-        />
+        <Button on:click={() => websocket.send(STRETCH_HELLO_JUMP)} title="Stretch Hello" />
         <Button on:click={() => websocket.send({ command: 'joystick' })} title="Test Joystick" />
         <Button on:click={() => websocket.send(claquettes)} title="claquettes" />
     </div>
@@ -356,7 +353,7 @@
     <RadioGrid
         values={CMD_switches_names}
         value={movementMode}
-        on:change={(e: RadioGridChangeEvent) => handleModeSwitch(e.detail.value as string)}
+        on:change={(e: RadioGridChangeEvent) => handleModeChange(e.detail.value as string)}
         label="Mode"
         columns={2}
     />
@@ -367,17 +364,23 @@
         label="Light Color"
         columns={1}
     />
-
-    <Pane position="inline">
-        <RadioGrid
-            values={['Slow', 'Normal', 'Fast']}
-            value={speedLevel}
-            on:change={handleSpeedChange}
-            label="Speed Level"
-            columns={3}
-        />
-    </Pane>
+    <div id="actionsequence">
+        {#each actionSequence as action, i}
+            <button class={`${i == stepCounter ? 'active-step' : ''}`}>
+                {action.command ?? action.displayName ?? undefined}
+            </button>
+        {/each}
+    </div>
 </div>
 
 <style>
+    #actionsequence {
+        display: flex;
+        flex-direction: column;
+        max-height: 100%;
+        overflow-y: auto;
+    }
+    .active-step {
+        border: 2px solid blue;
+    }
 </style>
