@@ -1,39 +1,39 @@
 <script lang="ts">
-    import * as R from 'ramda'
+    import * as R from 'ramda';
     export let value: boolean = false;
-    export let label: string = "";
-    let baseCallback:(e:MouseEvent)=>boolean = (e) => {
-        value = !value
-        return value
-    }
-    export let callback: (a:boolean)=>any = R.identity
+    export let label: string = '';
+    export let callback: (a: boolean) => any = R.identity;
+    let baseCallback: (e: MouseEvent) => boolean = (e) => {
+        value = !value;
+        return value;
+    };
+    
 </script>
-
 
 <div class="main">
     <div>{label}</div>
-<button
-    aria-label="Basculer l'interrupteur"
-    aria-checked={value}
-    role="switch"
-    class="switch"
-    class:active={value}
-    on:click={R.pipe(baseCallback, callback)}>
-    <div class="slider"></div>
-</button>
+    <button
+        aria-label="Basculer l'interrupteur"
+        aria-checked={value}
+        role="switch"
+        class="switch"
+        class:active={value}
+        on:click={R.pipe(baseCallback, callback)}
+    >
+        <div class="slider"></div>
+    </button>
 </div>
 
-
 <style>
-    .main{
+    .main {
         display: flex;
         gap: 1em;
         align-items: center;
         justify-content: space-between;
     }
     :root {
-        --switch-width: 50px;
-        --switch-height: 25px;
+        --switch-width: 3em;
+        --switch-height: calc(var(--switch-width) / 2);
         --slider-size: calc(var(--switch-height) - 4px);
         --switch-padding: 2px;
         --switch-bg-color-off: #ccc;
@@ -42,6 +42,7 @@
     }
 
     .switch {
+        flex-shrink: 0;
         position: relative;
         width: var(--switch-width);
         height: var(--switch-height);
@@ -70,6 +71,6 @@
     }
 
     .switch.active .slider {
-        left: calc(var(--switch-width) - var(--slider-size) - var(--switch-padding));
+        left: calc(var(--switch-width) - calc(var(--slider-size)) - var(--switch-padding));
     }
 </style>
