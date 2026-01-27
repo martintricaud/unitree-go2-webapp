@@ -66,6 +66,18 @@ class RobotSession:
         except Exception as e:
             print(f"An error occurred during connection: {e}")  # Handle other exceptions
     
+    async def toggleLidar(self, switch: bool):
+        command = "on" if switch else "off"
+        def lidar_callback(message):
+            # Print the data received from the LIDAR sensor.
+            print(message["data"])
+            
+        if self.conn:
+            self.conn.datachannel.pub_sub.publish_without_callback("rt/utlidar/switch",command)
+            if switch:
+                # Subscribe to the LIDAR voxel map data and use the callback function to process incoming messages.
+                self.conn.datachannel.pub_sub.subscribe("rt/utlidar/voxel_map_compressed", lidar_callback)
+
     async def disconnect(self):
         if self.conn:
             await self.conn.disconnect()
@@ -128,13 +140,7 @@ class RobotSession:
             for i in range(5):
                 print(f"[{i}] Scheduling command at T+{asyncio.get_event_loop().time() - start:.3f}s")
                 task = asyncio.get_running_loop().create_task(
-                    self.send_joystick_command(
-                        lx=float(i) * 0.2,
-                        ly=0,
-                        rx=0,
-                        ry=0,
-                        keys=0
-                    )
+                    self.send_joystick_command(lx=float(i) * 0.2, ly=0,rx=0, ry=0,keys=0)
                 )
                 tasks.append(task)
             
@@ -182,6 +188,8 @@ async def ws_api(ws: WebSocket):
             try:
                 print("Received WS message:", msg)
                 match msg:
+                    case {"command": "lidar", "switch": switch}:
+                        await robot.toggleLidar(msg["switch"])
                     case {"command": "connect", "ip": ip}:
                         await robot.connect(ip)
                     case {"command": "disconnect"}:
