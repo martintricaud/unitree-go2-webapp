@@ -1,56 +1,18 @@
 <script lang="ts">
     import * as R from 'ramda';
     import { onMount } from 'svelte';
-    import { derived, get } from 'svelte/store';
-    import {
-        Checkbox,
-        Element,
-        ThemeUtils,
-        RadioGrid,
-        Button,
-        Pane,
-        type RadioGridChangeEvent,
-    } from 'svelte-tweakpane-ui';
+    import { derived, get, writable } from 'svelte/store';
+    import { RadioGrid, type RadioGridChangeEvent } from 'svelte-tweakpane-ui';
     import commands from '../../commands_1.1.7.json';
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
-    import { speedChangeMessage, gaitChangeMessage } from './lib/messageGenerators';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
+    import Radio from './components/Radio.svelte';
     import GamepadController from './components/GamepadController.svelte';
     import { gamepadStore } from './lib/gamepadStore';
-    ThemeUtils.setGlobalDefaultTheme(ThemeUtils.presets.retro);
-
-    type TypeMap = {
-        number: number;
-        string: string;
-        boolean: boolean;
-        // Add other types as needed
-    };
-
-    type CmdJson = {
-        keyName: string;
-        valueType: keyof TypeMap; // This will be "number", "string", "boolean", etc.
-    };
-
-    type GenerateTypeFromArray<T extends CmdJson[]> = {
-        [K in T[number] as K['keyName']]: TypeMap[K['valueType']];
-    };
-
-    type CommandArg = {
-        name: string;
-        type: string;
-    };
-
-    type Command = {
-        command_name: string;
-        api_id: number;
-        description?: string;
-        working: boolean;
-        exec_time: number;
-        topic: string;
-        gamepad_assignment: string;
-        args: CommandArg[];
-    };
+    import Lidar from './components/Lidar.svelte';
+    import { actionSequence, buildPayload, switchTo } from './lib/commandUtilities';
+    import type { Command } from './lib/commandUtilities';
 
     type InputEvent<T> = {
         index: number;
@@ -61,6 +23,12 @@
     type NonEmptyArray<T> = [T, ...T[]];
     type EventsArray<T> = InputEvent<T>[];
 
+    /* STATE VARIABLES */
+
+    let Pose_State: boolean = false;
+    let Sit_State: boolean = false;
+    let Leaping_State: boolean = false;
+    let BINDINGS_PRESETS = 'Christine';
     let OBSTACLE_AVOIDANCE = true;
     let MONITOR_STATE = true;
     let FACE_DETECTION = false;
@@ -70,91 +38,13 @@
     let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
     let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
 
-    let indexByCommandName: (list: Command[]) => Record<string, Command> = R.indexBy(
-        R.prop('command_name'),
+    let lightEmojiMap = R.zipObj(
+        ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
+        ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
     );
-    let commandIndex = indexByCommandName(commands as Command[]);
-
-    ///utility for generating a JSON message containing the api_id and topic fields
-    let buildPayload = (cmd: string) => R.pick(['api_id', 'topic'], commandIndex[cmd]);
-    ///utility for generating "toggle switch on" JSON messages
-    let switchTo = (newState: boolean) => (cmd: string) => {
-        return { parameter: R.objOf(commandIndex[cmd].args[0].name, newState) };
-    };
-
-    let changeTo = (newValue: any) => (cmd: string) => {
-        return { parameter: {color: newValue} };
-    };
-
+    let lightOptionsStore = writable({ options: R.keys(lightEmojiMap), currentOption: 'white' });
+    let speedLevelOptions = [-1, 0, 1];
     let stepCounter = 0;
-    let claquettes = {
-        sequence: [
-            { command: 'CrossStep', ...switchTo(true)('CrossStep'), ...buildPayload('CrossStep') },
-            { wait: 0.15 },
-            {
-                command: 'ClassicWalk',
-                ...switchTo(true)('ClassicWalk'),
-                ...buildPayload('ClassicWalk'),
-            },
-            { wait: 0.15 },
-            { command: 'CrossStep', ...switchTo(true)('CrossStep'), ...buildPayload('CrossStep') },
-            { wait: 0.15 },
-            {
-                command: 'ClassicWalk',
-                ...switchTo(true)('ClassicWalk'),
-                ...buildPayload('ClassicWalk'),
-            },
-            { wait: 0.1 },
-            { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
-        ],
-    };
-    let DANSE_DU_SABBAT = [
-        { command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk')},
-        { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
-        { command: 'Euler', ...buildPayload('Euler') },     
-        { 
-            displayName: 'Sabots',
-            sequence:[
-                { command: 'FreeWalk', ...switchTo(true)('FreeWalk'), ...buildPayload('FreeWalk')},
-                { wait: 0.1 },
-                { command: 'Backstand', ...switchTo(true)('Backstand'), ...buildPayload('Backstand')},
-                {  wait: 0.1 },
-                { command: 'Headlight', ...changeTo('blue')('Headlight'), ...buildPayload('Headlight')},
-            ]
-        },
-        
-        { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk')},
-    ];
-
-    let STRETCH_HELLO_JUMP = {
-        displayName: 'Strello Jump',
-        sequence: [
-            { command: 'Stretch', ...buildPayload('Stretch') },
-            { command: 'Hello', ...buildPayload('Hello') },
-            { wait: 0.3 },
-            { command: 'FrontJump', ...buildPayload('FrontJump') },
-            { wait: 1 },
-            { command: 'FrontJump', ...buildPayload('FrontJump') },
-            { wait: 0.1 },
-            { command: 'ClassicWalk',...switchTo(true)('ClassicWalk'),...buildPayload('ClassicWalk')},
-        ],
-    };
-
-    let actionSequence = [
-        ...DANSE_DU_SABBAT,
-        { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'),...buildPayload('ClassicWalk')},
-        STRETCH_HELLO_JUMP,
-        { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
-        { command: 'Handstand', ...switchTo(true)('Handstand'), ...buildPayload('Handstand') },
-        {sequence: [
-            { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk')},
-            { wait: 1 },
-            { command: 'FingerHeart', ...buildPayload('FingerHeart') },
-        ]},
-        { command: 'Sit', ...buildPayload('Sit') },
-        { command: 'RiseSit', ...buildPayload('RiseSit') },
-        { command: 'Jumping', ...switchTo(true)('Jumping'), ...buildPayload('Jumping') },
-    ];
 
     let execute_step = (_actionSequence: any) => (i: number) => {
         console.log(_actionSequence[i]);
@@ -185,9 +75,7 @@
     //     },gamepadMap
     // )
 
-    let colors = ['🤍 white', '❤️ red', '💛 yellow', '💙 blue', '💚 green', '🩵 cyan', '💜 purple'];
     let movementMode = '';
-    let speedLevel: 'Slow' | 'Normal' | 'Fast' = 'Normal';
 
     // Command that have no arguments (one-shot commands)
     const CMD_actions: Command[] = R.filter((x: Command) => x.args.length == 0 && x.working)(
@@ -207,9 +95,8 @@
     async function connectRobot() {
         try {
             await websocket.send({ command: 'connect', ip: '192.168.123.161' });
-            // Optionally, you can check for a successful connection response here
         } catch (error) {
-            console.error('Connection failed:', error); // Handle any errors
+            console.error('Connection failed:', error);
         }
     }
 
@@ -217,6 +104,13 @@
         websocket.send({ command: 'disconnect' });
     }
 
+    function handleSpeedChange(speed: number) {
+        websocket.send({
+            command: 'SpeedLevel',
+            parameter: { data: speed },
+            ...buildPayload('SpeedLevel'),
+        });
+    }
     function handleModeChange(mode: string) {
         //Look up the command triggered by the radio button change
         let cmd: Command | undefined = R.find((cmd) => cmd?.command_name == mode, CMD_switches);
@@ -229,19 +123,29 @@
         }
     }
 
-    function handleColorChange(event: RadioGridChangeEvent) {
-        let colorName = event.detail.value as string;
-        console.log(colorName);
+    function handleColorChange2(value: string) {
+        console.log(value);
         websocket.send({
             topic: 'VUI',
             api_id: 1007,
             parameter: {
-                color: colorName.split(' ')[1],
+                color: value,
                 // time: 10,
             },
         });
     }
-
+    // function handleColorChange(event: RadioGridChangeEvent) {
+    //     let colorName = event.detail.value as string;
+    //     console.log(colorName);
+    //     websocket.send({
+    //         topic: 'VUI',
+    //         api_id: 1007,
+    //         parameter: {
+    //             color: colorName.split(' ')[1],
+    //             // time: 10,
+    //         },
+    //     });
+    // }
 </script>
 
 <Video
@@ -249,47 +153,101 @@
     faceLandmarksEnabled={FACE_LANDMARKS}
     agePredictionEnabled={AGE_PREDICTION}
 />
+<!-- <Lidar /> -->
 <GamepadController monitoring={false} />
 <svelte:window
     on:keydown|preventDefault={(event) => {
-        let L = actionSequence.length
-        switch (event.key) {
-            case 'ArrowRight':
-                execute_step(actionSequence)(stepCounter);
-                stepCounter = R.clamp(0, L)(stepCounter+1);
+        let L = actionSequence.length;
+        switch (BINDINGS_PRESETS) {
+            case 'Martin':
+                switch (event.key) {
+                    case 'ArrowRight':
+                        execute_step(actionSequence)(stepCounter);
+                        stepCounter = R.clamp(0, L)(stepCounter + 1);
+                        break;
+                    case 'ArrowLeft':
+                        execute_step(actionSequence)(stepCounter);
+                        stepCounter = R.clamp(0, L)(stepCounter - 1);
+                        break;
+                    case 'ArrowDown':
+                        stepCounter = R.clamp(0, L)(stepCounter + 1);
+                        break;
+                    case 'ArrowUp':
+                        stepCounter = R.clamp(0, L)(stepCounter - 1);
+                        break;
+                    case 'Enter':
+                        execute_step(actionSequence)(stepCounter);
+                        break;
+                }
                 break;
-            case 'ArrowLeft':
-                execute_step(actionSequence)(stepCounter);
-                stepCounter = R.clamp(0, L)(stepCounter-1);
-                break;
-            case 'ArrowDown':
-                stepCounter = R.clamp(0, L)(stepCounter+1);
-                break;
-            case 'ArrowUp':
-                stepCounter = R.clamp(0, L)(stepCounter-1);
-                break;
-            case 'Enter':
-                execute_step(actionSequence)(stepCounter);
+            case 'Christine':
+                let exitPose = {
+                    sequence: [
+                        {command: 'Pose', ...switchTo(false)('Pose'),...buildPayload('Pose'),},
+                        {command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk'),}
+                    ]
+                }
+                let exitSit = {
+                    sequence: [
+                        {command: 'RiseSit',...buildPayload('RiseSit'),},
+                        {command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk'),}
+                    ]
+                }
+                switch (event.key) {
+                    case 'b':
+                        Leaping_State = !Leaping_State;
+                        websocket.send({
+                            command: 'Leaping',
+                            ...switchTo(Leaping_State)('Leaping'),
+                            ...buildPayload('Leaping'),
+                        });
+                        break;
+                    case 'a':
+                        Pose_State = !Pose_State;
+                        Pose_State?websocket.send({command: 'Pose',...switchTo(Pose_State)('Pose'),...buildPayload('Pose'),
+                        }):websocket.send(exitPose)
+                        break;
+                    case 'x':
+                        Sit_State = !Sit_State
+                        Sit_State? websocket.send({ command: 'Sit', ...buildPayload('Sit') }):websocket.send(exitSit)
+                        break;
+                    case 'y':
+                         websocket.send({
+                            command: 'Dance2',
+                            ...buildPayload('Dance2'),
+                        });
+                        break;     
+                }
                 break;
         }
     }}
 />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tiny.css@0.12/dist/tiny.css" />
+
 <div class="ui-pane">
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
-        <Button
+        <button
+            disabled={!$webSocketConnected}
             on:click={() => {
                 $robotConnected ? disconnectRobot() : connectRobot();
             }}
-            disabled={!$webSocketConnected}
-            title={$robotConnected ? 'Disconnect' : 'Connect'}
+        >
+            {$robotConnected ? 'Disconnect' : 'Connect'}
+        </button>
+        <div class="double-col">
+            <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
+            <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
+        </div>
+
+        <Switch
+            label={'Lidar'}
+            value={false}
+            callback={(value: boolean) => {
+                websocket.send({
+                    command: 'lidar',
+                    switch: value,
+                });
+            }}
         />
-        <Element>
-            <div class="double-col" style="font-size:x-small">
-                <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
-                <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
-            </div>
-        </Element>
         <Switch
             label={'Monitor State'}
             value={false}
@@ -334,19 +292,15 @@
             }}
         />
     </div>
-    <div>
-        <Button on:click={() => websocket.send(STRETCH_HELLO_JUMP)} title="Stretch Hello" />
-        <Button on:click={() => websocket.send({ command: 'joystick' })} title="Test Joystick" />
-        <Button on:click={() => websocket.send(claquettes)} title="claquettes" />
-    </div>
     <div class="button-grid">
         {#each CMD_actions as { api_id, working, command_name, topic }}
             {#if working}
-                <Button
+                <button
                     on:click={() =>
                         websocket.send({ api_id: api_id, command: command_name, topic: topic })}
-                    title={command_name}
-                />
+                >
+                    {command_name}
+                </button>
             {/if}
         {/each}
     </div>
@@ -357,20 +311,39 @@
         label="Mode"
         columns={2}
     />
-    <RadioGrid
+    <div style="display:flex; flex-wrap:nowrap; flex-direction: column;">
+        {#each $lightOptionsStore.options as option}
+            <Radio
+                radioGroupData={lightOptionsStore}
+                optionName={option}
+                callback={handleColorChange2}
+            />
+        {/each}
+    </div>
+    <!-- <RadioGrid
         values={colors}
         value={'white'}
         on:change={handleColorChange}
         label="Light Color"
         columns={1}
-    />
+    /> -->
     <div id="actionsequence">
         {#each actionSequence as action, i}
-            <button class={`${i == stepCounter ? 'active-step' : ''}`}>
+            <button
+                class={`${i == stepCounter ? 'active-step' : ''}`}
+                on:click={() => execute_step(actionSequence)(i)}
+            >
                 {action.command ?? action.displayName ?? undefined}
             </button>
         {/each}
     </div>
+    <RadioGrid
+        values={speedLevelOptions}
+        value={0}
+        on:change={(e: RadioGridChangeEvent) => handleSpeedChange(e.detail.value as number)}
+        label="SpeedLevel"
+        columns={1}
+    />
 </div>
 
 <style>
