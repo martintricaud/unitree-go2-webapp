@@ -52,7 +52,6 @@ let changeTo = (newValue: any) => (cmd: string) => {
 export let DANSE_DU_SABBAT = [
     { command: 'FreeWalk', ...switchTo(true)('FreeWalk'), ...buildPayload('FreeWalk') },
     { command: 'Pose', ...switchTo(true)('Pose'), ...buildPayload('Pose') },
-    { command: 'Euler', ...buildPayload('Euler') },
     {
         displayName: 'Sabots',
         sequence: [
@@ -110,9 +109,7 @@ export let actionSequence = [
     { command: 'Handstand', ...switchTo(true)('Handstand'), ...buildPayload('Handstand') },
     { command: 'ClassicWalk', ...switchTo(true)('ClassicWalk'), ...buildPayload('ClassicWalk') },
     { command: 'FingerHeart', ...buildPayload('FingerHeart') },
-    { command: 'Sit', ...buildPayload('Sit') },
-    { command: 'RiseSit', ...buildPayload('RiseSit') },
-    { command: 'Jumping', ...switchTo(true)('Jumping'), ...buildPayload('Jumping') },
+    { command: 'LeftFlip', ...buildPayload('LeftFlip') },
 ];
 
 export let execute_step = (_websocket: WebSocket) => (_actionSequence: any) => (i: number) => {
