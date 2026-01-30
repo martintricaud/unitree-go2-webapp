@@ -25,6 +25,7 @@
 
     /* STATE VARIABLES */
 
+    let gamepadUser = writable({currentOption:"Martin",options:[]})
     let Pose_State: boolean = false;
     let Sit_State: boolean = false;
     let Leaping_State: boolean = false;
@@ -88,6 +89,7 @@
 
     const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
 
+    let modeGroupData = writable({options:CMD_switches_names, currentOption:'FreeWalk'})
     onMount(() => {
         websocket.connect();
     });
@@ -148,17 +150,18 @@
     // }
 </script>
 
+<!-- 
 <Video
     faceDetectionEnabled={FACE_DETECTION}
     faceLandmarksEnabled={FACE_LANDMARKS}
     agePredictionEnabled={AGE_PREDICTION}
-/>
-<!-- <Lidar /> -->
+/> -->
+<Lidar />
 <GamepadController monitoring={false} />
 <svelte:window
     on:keydown|preventDefault={(event) => {
         let L = actionSequence.length;
-        switch (BINDINGS_PRESETS) {
+        switch ($gamepadUser.currentOption) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
@@ -183,16 +186,24 @@
             case 'Christine':
                 let exitPose = {
                     sequence: [
-                        {command: 'Pose', ...switchTo(false)('Pose'),...buildPayload('Pose'),},
-                        {command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk'),}
-                    ]
-                }
+                        { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
+                        {
+                            command: 'FreeWalk',
+                            ...switchTo(true)('FreeWalk'),
+                            ...buildPayload('FreeWalk'),
+                        },
+                    ],
+                };
                 let exitSit = {
                     sequence: [
-                        {command: 'RiseSit',...buildPayload('RiseSit'),},
-                        {command: 'FreeWalk', ...switchTo(true)('FreeWalk'),...buildPayload('FreeWalk'),}
-                    ]
-                }
+                        { command: 'RiseSit', ...buildPayload('RiseSit') },
+                        {
+                            command: 'FreeWalk',
+                            ...switchTo(true)('FreeWalk'),
+                            ...buildPayload('FreeWalk'),
+                        },
+                    ],
+                };
                 switch (event.key) {
                     case 'b':
                         Leaping_State = !Leaping_State;
@@ -204,19 +215,26 @@
                         break;
                     case 'a':
                         Pose_State = !Pose_State;
-                        Pose_State?websocket.send({command: 'Pose',...switchTo(Pose_State)('Pose'),...buildPayload('Pose'),
-                        }):websocket.send(exitPose)
+                        Pose_State
+                            ? websocket.send({
+                                  command: 'Pose',
+                                  ...switchTo(Pose_State)('Pose'),
+                                  ...buildPayload('Pose'),
+                              })
+                            : websocket.send(exitPose);
                         break;
                     case 'x':
-                        Sit_State = !Sit_State
-                        Sit_State? websocket.send({ command: 'Sit', ...buildPayload('Sit') }):websocket.send(exitSit)
+                        Sit_State = !Sit_State;
+                        Sit_State
+                            ? websocket.send({ command: 'Sit', ...buildPayload('Sit') })
+                            : websocket.send(exitSit);
                         break;
                     case 'y':
-                         websocket.send({
+                        websocket.send({
                             command: 'Dance2',
                             ...buildPayload('Dance2'),
                         });
-                        break;     
+                        break;
                 }
                 break;
         }
@@ -224,8 +242,8 @@
 />
 
 <div class="ui-pane">
-    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
-        <button
+      <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
+             <button
             disabled={!$webSocketConnected}
             on:click={() => {
                 $robotConnected ? disconnectRobot() : connectRobot();
@@ -233,6 +251,26 @@
         >
             {$robotConnected ? 'Disconnect' : 'Connect'}
         </button>
+        <div>
+            <Radio optionName={"Martin"} radioGroupData={gamepadUser}/>
+        <Radio optionName={"Christine"} radioGroupData={gamepadUser}/>
+        </div>
+        
+    </div>
+    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
+        <button
+            on:click={() =>
+                websocket.send({
+                    topic: 'VUI',
+                    api_id: 1005,
+                    parameter: {
+                        brightness: 2,
+                    },
+                })}
+        >
+            Light
+        </button>
+   
         <div class="double-col">
             <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
             <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
@@ -279,7 +317,7 @@
                 FACE_DETECTION = value;
             }}
         />
-        <Switch
+        <!-- <Switch
             label={'Age Prediction'}
             callback={(value: boolean) => {
                 AGE_PREDICTION = value;
@@ -290,7 +328,7 @@
             callback={(value: boolean) => {
                 GENDER_PREDICTION = value;
             }}
-        />
+        /> -->
     </div>
     <div class="button-grid">
         {#each CMD_actions as { api_id, working, command_name, topic }}
@@ -302,6 +340,11 @@
                     {command_name}
                 </button>
             {/if}
+        {/each}
+    </div>
+    <div class="button-grid">
+        {#each CMD_switches_names as switchName}
+            <Radio optionName = {switchName} radioGroupData = {modeGroupData}/>
         {/each}
     </div>
     <RadioGrid
