@@ -44,35 +44,55 @@
 | Passer en mode de déplacement **Classic**                                                           |           |        |                                       |             |
 
 ### Magicien d'Oz
-| Action                                                                                              | Timestamp | Durée  | Repère                                | Note        |
-| --------------------------------------------------------------------------------------------------- | --------- | ------ | ------------------------------------- | ----------- |
-| 💜 Demi tour pour se réaligner sur le rayon du cercle en visant entre jardin-avant et jardin-centre |           |        |                                       |             |
-| 💜 Avance droit jusqu'au cercle de 5m50                                                             |           |        |                                       |             |
-| 💜 Pivote sur place de 180º vers la gauche                                                          | 7"12      |        |                                       |             |
-| 💜 Pivote sur place de 180º vers la droite                                                          |           |        |                                       |             |
-| 💜 Suit un arc le long du cercle de 5m50, sur un angle de ~120º (jardin > lointain > cour)          |           |        |                                       |             |
-| 💜 Pivote pour se réaligner vers le centre du cercle                                                |           |        |                                       |             |
-| 💜 Stretch + Hello                                                                                  | 21        | 8"58 | *Just because...*                     |             |
-| 💜 Front jump                                                                                       | 30"1      | 3"56   | *I'd be gentle...*                    |             |
-| 💜 Front jump                                                                                       | 35"2      | 3"56   | *Regarding...*                        |             |
-| 💜 Reactiver ClassicWalk                                                                            |           |        |                                       |             |
-| 💜 Rotation ~90º horaire                                                                            |           |        | Trille musicale                       |             |
-| 💜 Déplacement latéral                                                                              |           |        | *I'd be friends with the sparrows...* |             |
-| 💜 Rotation ~180º horaire                                                                           |           |        | *If I only had a heart*               |             |
-| 💜 Déhanché circulaire                                                                              |           |        | *Picture me...*                       |             |
-| 💜 Déhanché latéral                                                                                 |           |        | *Wherefore art thou, Romeo?*          |             |
-| 💜 Mini twerk                                                                                       |           |        | *I hear a beat*                       |             |
-| 💜 Reactiver ClassicWalk                                                                            |           |        |                                       |             |
-| 💜 Avance de quelque pas vers cour-avant                                                            |           |        |                                       |             |
-| 💜 Handstand                                                                                        |           |        | *Just to register*                    |             |
-| 💜 Retour sur pattes avant                                                                          |           |        |                                       |             |
-| 💜 Coeur                                                                                            |           |        | Lancer la commande sur *if*           |             |
-| Salto                                                                                               |           |        | Avant *J'ai 12 moteurs*               |             |
+| Action                                                                                              | Timestamp       | Repère                                | Note                                          |
+| --------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------- | --------------------------------------------- |
+| 🕹️ Demi tour pour se réaligner sur le rayon du cercle en visant entre jardin-avant et jardin-centre |                 |                                       |                                               |
+| 🕹️ Avance droit jusqu'au cercle de 5m50                                                             |                 |                                       |                                               |
+| 🕹️ Rotation anti-horaire                                                                            | 00:7"12         |                                       |                                               |
+| 🕹️ Rotation horaire                                                                                 |                 |                                       |                                               |
+| 🕹️ Suit un arc le long du cercle de 5m50, sur un angle de ~120º (jardin > lointain > cour)          |                 |                                       |                                               |
+| 🕹️ Pivote pour se réaligner vers le centre du cercle                                                |                 |                                       |                                               |
+| ⏭️ Stretch + Hello                                                                                  | 00:21 (8"58)    | *Just because...*                     |                                               |
+| ⏭️ Front jump                                                                                       | 00:30"1 (3"56)  | *I'd be gentle...*                    |                                               |
+| ⏭️ Front jump                                                                                       | 00:35"2  (3"56) | *Regarding...*                        |                                               |
+| 🔘 Reactiver ClassicWalk                                                                            |                 |                                       |                                               |
+| 🕹️ Rotation ~90º horaire                                                                            |                 | 🎶 **Trille musicale**                 |                                               |
+| 🕹️ Déplacement latéral                                                                              |                 | *I'd be friends with the sparrows...* |                                               |
+| 🕹️ Rotation ~180º horaire                                                                           |                 | *If I only had a heart*               |                                               |
+| 🕹️ Coup de hanche à droite                                                                          |                 | *Picture me...*                       |$R9$                                          |
+| 🕹️ Coup de hanche à gauche                                                                          |                 | *A balcony...*                        |$R3$                                          |
+| 🕹️ Contorsion circulaire Joystick droit                                                             |                 | *Above, a voice sings low*            | $R3 \curvearrowleft R7$                       |
+| 🕹️ Déhanché latéral gauche                                                                          |                 | *Wherefore art thou*                  | $L3 \uparrow L0 \leftarrow L9$                |
+| 🕹️ Contorsion circulaire Joystick gauche                                                            |                 | *Romeo?*                              | $L9\circlearrowleft L9$                       |
+| 🕹️ Squat                                                                                            |                 | *I hear a beat*                       | $L6$                                          |
+| 🕹️ Twerk gauche - droite                                                                            |                 | 🎶 **Marimba beat**                   | $R0 \leftarrow R3 \uparrow R0 \rightarrow R3$ |
+| 🔘 Reactiver ClassicWalk                                                                            |                 |                                       |                                               |
+| 🕹️ Avance de quelque pas vers cour-avant                                                            |                 |                                       |                                               |
+| 🔘 Handstand                                                                                        |                 | *Just to register*                    |                                               |
+| 🔘 Retour sur pattes avant                                                                          |                 |                                       |                                               |
+| 💜 Coeur                                                                                            |                 | *_If_ I only had a heart*             |                                               |
+| ⏭️ Salto                                                                                            |                 | Avant *J'ai 12 moteurs*               |                                               |
 ### Monologue
 
-## Commandes
+- Angle de début = décalé de 1/4 de tour anti-horaire par rapport au magicien d'oz
+- Juste après "je n'ai pas d'humour" 90deg vers la droite. Doit avoir arrêté de bouger à l'aboiement
+- avance à partir de "*(dans n'importe quelle) **langue***" jusqu'à "***français***"
+- à chaque langue qu'il égrenne, fait un micromouvement de réorientation
+- après "***banglae***", il ne bouge pas
+- recommence à bouger sur le glitch en tournant de quelque pas dans le sens horaire puis suit l'arc du cercle vers le lointain, et s'arrête à ~13:00 sur le mot "***politique***"
+- reste sur place pendant "***je fais le bouffon***"
+- envoie son fessier vers le centre sur "***je ne fais pas mes besoins***"
+- pendant le silence qui suit recule vers le centre avec un créneau pour se retrouver de face
+- il s'assied juste avant "***je peux tout pour vous***"
+- il se relève de la position assise sur la voix accélérée "***je suis votre chose...***"
+- depuis "***l'univers*** *(dans lequel j'évolue)*" jusqu'à "**plaisir**", tourne très lentement sur place dans le sens horaire
+- passe en mode "bound" et se déplace comme un chien fou, jusqu'à la fin des halètements.
+- reste sur place de "***je n'apprends pas***" jusqu'à "***archive***"
+- ~~sur "***je vais vous confier mon secret***" longe le cercle dans le sens anti-horaire.~~
+- sur le deuxième **Baby Shark** lancer `Dance 2` (bouton `Y`)
+- sur ***cela fait une différence fondamentale***, allumage de la caméra
 
-Inconnues à ce stade: quels codes de l'API correspondent aux commandes "Classic", "Normal", "Running" sur la télécommande?
+## Commandes
 
 | Commande                 | Code API en 1.1.7          | Description                                                                                             | 1.1.7 | Utilisé                                                |
 | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
@@ -92,7 +112,7 @@ Inconnues à ce stade: quels codes de l'API correspondent aux commandes "Classic
 | Wallow / Rollover        | 1021                       | Le chien se roule sur lui même                                                                          | ✅     |                                                        |
 | Dance1                   | 1022                       | Danse préprogrammée nº1                                                                                 | ✅     | ?                                                      |
 | Dance2                   | 1023                       | Danse préprogrammée nº2                                                                                 | ✅     |                                                        |
-| Pose                     | 1028                       | Active le mode ou les angles d'Euler sont controlables                                                  | ✅     | Oui (mais potentiellement depuis la manette d'origine) |
+| Pose                     | 1028                       | Active le mode ou les angles d'Euler sont controlables                                                  | ✅     | Oui  |
 | Scrape                   | 1029                       | Le chien s'assoit, joint les pattes                                                                     | ✅     |                                                        |
 | Front Flip               | 1030                       | Salto avant                                                                                             | ✅     |                                                        |
 | Front Jump               | 1031                       | Le chien effectue un bon vers l'avant                                                                   | ✅     |                                                        |
@@ -108,30 +128,4 @@ Inconnues à ce stade: quels codes de l'API correspondent aux commandes "Classic
 | Cross Step               | 1302                       | le chien entre dans un mode de déplacement ou il est en équilibre sur ses pattes diagonalement opposées | ✅     |                                                        |
 | Free Bound               | 1304                       | Active / Desactive le mode de déplacement par bonds                                                     | ✅     | Oui                                                    |
 | TrotRun / Running        | Controle du pitch possible | ?                                                                                                       |       |                                                        |
-
-## Controleur
-
-| Keys                | Action      |
-| ------------------- | ----------- |
-| **L + ⬇️**           | Backflip    |
-| **L + ⬆️**           | Frontflip   |
-| **L + ⬅️**           | Leftflip    |
-| **L + ➡️**           | Rightflip   |
-| **L + ⊕**           |             |
-| **ZL + RIGHTSTICK** | Pose        |
-| **ZL + ⬆️**          | Handstand   |
-| **ZL + ⬇️**          | Backstand   |
-| **ZL + ➡️**          | CrossStep   |
-| **ZL + ⬅️**          | SideStep    |
-| X                   | Front Jump  |
-| B                   | Stretch     |
-| Y                   | Hello       |
-| A                   | FingerHeart |
-| ?+X                 | Pounce      |
-| ?+B                 | Scrape      |
-| ?+Y                 | Content     |
-| ?+A                 |             |
-
-Upon ZLRelease, if there hasn't been a button press and release between ZLPress and ZLRelease, call balanceStand, else do nothing.
-
-If the last value of ZL is true, i.e. while ZL is pressed, pressing arrowTop toggles handStand, arrowDown to
+<!-- b
