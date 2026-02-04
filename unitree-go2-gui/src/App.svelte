@@ -42,6 +42,16 @@
     let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
     let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
 
+    const CMD_actions: Command[] = R.filter((x: Command) => x.args.length == 0 && x.working)(
+        commands as Command[],
+    );
+ 
+    const CMD_switches: Command[] = R.filter(
+        (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
+    )(commands as Command[]) as Command[];
+
+    const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
+
     let lightEmojiMap = R.zipObj(
         ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
         ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
@@ -53,11 +63,9 @@
     });
     let speedValueMap: Record<string, number> = R.zipObj(['slow', 'normal', 'fast'], [-1, 0, 1]);
 
-    let speedLevelOptions = [-1, 0, 1];
     let stepCounter = 0;
 
     let execute_step = (_actionSequence: any) => (i: number) => {
-        console.log(_actionSequence[i]);
         websocket.send(_actionSequence[i]);
     };
     //create an object where each key is a button name and the value is a derived store for that button's state
@@ -84,19 +92,6 @@
     //         });
     //     },gamepadMap
     // )
-
-    let movementMode = '';
-
-    // Command that have no arguments (one-shot commands)
-    const CMD_actions: Command[] = R.filter((x: Command) => x.args.length == 0 && x.working)(
-        commands as Command[],
-    );
-    // const CMD_actions_piped: Command[] = R.compose(R.filter, R.complement, R.has('args'))(commands);
-    const CMD_switches: Command[] = R.filter(
-        (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
-    )(commands as Command[]) as Command[];
-
-    const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
 
     let modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
     onMount(() => {
@@ -134,32 +129,20 @@
         }
     }
 
-    function handleColorChange2(value: string) {
+    function handleColorChange(value: string) {
         console.log(value);
         value == 'white'
             ? websocket.send({
-                topic: 'VUI',
-                api_id: 1005,
-                parameter: { brightness: 1 },
-            })
+                  topic: 'VUI',
+                  api_id: 1005,
+                  parameter: { brightness: 1 },
+              })
             : websocket.send({
-                topic: 'VUI',
-                api_id: 1007,
-                parameter: { color: value},
-            });
+                  topic: 'VUI',
+                  api_id: 1007,
+                  parameter: { color: value },
+              });
     }
-    // function handleColorChange(event: RadioGridChangeEvent) {
-    //     let colorName = event.detail.value as string;
-    //     console.log(colorName);
-    //     websocket.send({
-    //         topic: 'VUI',
-    //         api_id: 1007,
-    //         parameter: {
-    //             color: colorName.split(' ')[1],
-    //             // time: 10,
-    //         },
-    //     });
-    // }
 </script>
 
 <Video
@@ -195,64 +178,6 @@
                 }
                 break;
             case 'Christine':
-                // let standContent = {
-                //     sequence: [
-                //         { wait: 0.1 },
-                //         { command: 'BalanceStand', ...buildPayload('BalanceStand') },
-                //         { wait: 0.1 },
-                //          {
-                //             command: 'FreeWalk',
-                //             ...switchTo(true)('FreeWalk'),
-                //             ...buildPayload('FreeWalk'),
-                //         },
-                //           { wait: 0.1 },
-                //         { command: 'Content', ...buildPayload('Content') },
-                //         { wait: 0.1 },
-                //         {
-                //             command: 'FreeWalk',
-                //             ...switchTo(true)('FreeWalk'),
-                //             ...buildPayload('FreeWalk'),
-                //         },
-                //      { wait: 0.1 },
-                //     ],
-                // };
-                // let dance = {
-                //     sequence: [
-                //         { command: 'Dance2', ...buildPayload('Dance2') },
-                //         { wait: 0.1 },
-                //         {
-                //             command: 'FreeWalk',
-                //             ...switchTo(true)('FreeWalk'),
-                //             ...buildPayload('FreeWalk'),
-                //         },
-                //     ],
-                // };
-                // let enterPose = {
-                //     sequence: [
-                //         { command: 'StopMove', ...buildPayload('StopMove') },
-                //         { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
-                //     ],
-                // }
-                // let exitPose = {
-                //     sequence: [
-                //         { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
-                //         {
-                //             command: 'FreeWalk',
-                //             ...switchTo(true)('FreeWalk'),
-                //             ...buildPayload('FreeWalk'),
-                //         },
-                //     ],
-                // };
-                // let exitSit = {
-                //     sequence: [
-                //         { command: 'RiseSit', ...buildPayload('RiseSit') },
-                //         {
-                //             command: 'FreeWalk',
-                //             ...switchTo(true)('FreeWalk'),
-                //             ...buildPayload('FreeWalk'),
-                //         },
-                //     ],
-                // };
                 switch (event.key) {
                     case 'ArrowUp':
                         websocket.send(presets.standContent);
@@ -288,37 +213,6 @@
                     case 'y':
                         websocket.send(presets.dance);
                         break;
-                    // case '-':
-                    //     Redlight_State = !Redlight_State;
-                    //     Redlight_State ? websocket.send({
-                    //         topic: 'VUI',
-                    //         api_id: 1007,
-                    //         parameter: {
-                    //             color: 'green',
-                    //         },
-                    //     }):websocket.send(presets.contentRed)
-                        
-                    //     break;
-                    // case '=':
-                    //     Whitelight_State = !Whitelight_State;
-                    //     Whitelight_State
-                    //         ? websocket.send({
-                    //               topic: 'VUI',
-                    //               api_id: 1005,
-                    //               parameter: {
-                    //                   brightness: 1,
-                    //                   // time: 10,
-                    //               },
-                    //           })
-                    //         : websocket.send({
-                    //               topic: 'VUI',
-                    //               api_id: 1007,
-                    //               parameter: {
-                    //                   color: 'green',
-                    //               },
-                    //           });
-
-                    //     break;
                 }
                 break;
         }
@@ -343,7 +237,8 @@
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <button
             on:click={() => {
-            websocket.send(presets.contentRed)}}
+                websocket.send(presets.contentRed);
+            }}
         >
             Content + Red
         </button>
@@ -395,18 +290,6 @@
                 FACE_DETECTION = value;
             }}
         />
-        <!-- <Switch
-            label={'Age Prediction'}
-            callback={(value: boolean) => {
-                AGE_PREDICTION = value;
-            }}
-        />
-        <Switch
-            label={'Gender Prediction'}
-            callback={(value: boolean) => {
-                GENDER_PREDICTION = value;
-            }}
-        /> -->
     </div>
     <div class="button-grid">
         {#each CMD_actions as { api_id, working, command_name, topic }}
@@ -429,30 +312,16 @@
             />
         {/each}
     </div>
-    <!-- <RadioGrid
-        values={CMD_switches_names}
-        value={movementMode}
-        on:change={(e: RadioGridChangeEvent) => handleModeChange(e.detail.value as string)}
-        label="Mode"
-        columns={2}
-    /> -->
+
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column;">
         {#each $lightOptionsStore.options as option}
             <Radio
                 radioGroupData={lightOptionsStore}
                 optionName={option}
-                callback={handleColorChange2}
+                callback={handleColorChange}
             />
         {/each}
     </div>
-
-    <!-- <RadioGrid
-        values={colors}
-        value={'white'}
-        on:change={handleColorChange}
-        label="Light Color"
-        columns={1}
-    /> -->
     <div id="actionsequence">
         {#each CONDUITE as action, i}
             <button
