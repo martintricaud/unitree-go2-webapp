@@ -77,6 +77,9 @@ class RobotSession:
             if switch:
                 # Subscribe to the LIDAR voxel map data and use the callback function to process incoming messages.
                 self.conn.datachannel.pub_sub.subscribe("rt/utlidar/voxel_map_compressed", lidar_callback)
+            else:
+                self.conn.datachannel.pub_sub.publish_without_callback("rt/utlidar/switch",'off')
+                self.conn.datachannel.pub_sub.unsubscribe("rt/utlidar/voxel_map_compressed")
 
     async def disconnect(self):
         if self.conn:
@@ -197,7 +200,6 @@ async def ws_api(ws: WebSocket):
                     case {"sequence": sequence}:
                         await robot.execute_sequence(sequence)
                     case {"command": "subscribe", "switch": _}:
-                        print(msg)
                         await robot.subscribe_to_robotstate(msg["switch"])
                     case {"command": "joystick"}:
                         await robot.test_joystick()
