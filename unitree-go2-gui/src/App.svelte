@@ -11,7 +11,7 @@
     import GamepadController from './components/GamepadController.svelte';
     import { gamepadStore } from './lib/gamepadStore';
     import Lidar from './components/Lidar.svelte';
-    import { actionSequence, buildPayload, switchTo } from './lib/commandUtilities';
+    import { CONDUITE, buildPayload, switchTo, presets } from './lib/commandUtilities';
     import type { Command } from './lib/commandUtilities';
 
     type InputEvent<T> = {
@@ -25,9 +25,12 @@
 
     /* STATE VARIABLES */
 
-    let gamepadUser = writable({currentOption:"Martin",options:[]})
+    let gamepadUser = writable({ currentOption: 'Martin', options: [] });
     let Pose_State: boolean = false;
+    let Running_State: boolean = false;
     let Sit_State: boolean = false;
+    let Redlight_State: boolean = false;
+    let Whitelight_State: boolean = false;
     let Leaping_State: boolean = false;
     let BINDINGS_PRESETS = 'Christine';
     let OBSTACLE_AVOIDANCE = true;
@@ -44,6 +47,12 @@
         ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
     );
     let lightOptionsStore = writable({ options: R.keys(lightEmojiMap), currentOption: 'white' });
+    let speedOptionsStore = writable({
+        options: ['slow', 'normal', 'fast'],
+        currentOption: 'normal',
+    });
+    let speedValueMap: Record<string, number> = R.zipObj(['slow', 'normal', 'fast'], [-1, 0, 1]);
+
     let speedLevelOptions = [-1, 0, 1];
     let stepCounter = 0;
 
@@ -89,7 +98,7 @@
 
     const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
 
-    let modeGroupData = writable({options:CMD_switches_names, currentOption:'FreeWalk'})
+    let modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
     onMount(() => {
         websocket.connect();
     });
@@ -106,10 +115,10 @@
         websocket.send({ command: 'disconnect' });
     }
 
-    function handleSpeedChange(speed: number) {
+    function handleSpeedChange(speed: string) {
         websocket.send({
             command: 'SpeedLevel',
-            parameter: { data: speed },
+            parameter: { data: speedValueMap[speed] },
             ...buildPayload('SpeedLevel'),
         });
     }
@@ -127,14 +136,17 @@
 
     function handleColorChange2(value: string) {
         console.log(value);
-        websocket.send({
-            topic: 'VUI',
-            api_id: 1007,
-            parameter: {
-                color: value,
-                // time: 10,
-            },
-        });
+        value == 'white'
+            ? websocket.send({
+                topic: 'VUI',
+                api_id: 1005,
+                parameter: { brightness: 1 },
+            })
+            : websocket.send({
+                topic: 'VUI',
+                api_id: 1007,
+                parameter: { color: value},
+            });
     }
     // function handleColorChange(event: RadioGridChangeEvent) {
     //     let colorName = event.detail.value as string;
@@ -150,26 +162,25 @@
     // }
 </script>
 
-<!-- 
 <Video
     faceDetectionEnabled={FACE_DETECTION}
     faceLandmarksEnabled={FACE_LANDMARKS}
     agePredictionEnabled={AGE_PREDICTION}
-/> -->
-<Lidar />
+/>
+<!-- <Lidar /> -->
 <GamepadController monitoring={false} />
 <svelte:window
     on:keydown|preventDefault={(event) => {
-        let L = actionSequence.length;
+        let L = CONDUITE.length;
         switch ($gamepadUser.currentOption) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
-                        execute_step(actionSequence)(stepCounter);
+                        execute_step(CONDUITE)(stepCounter);
                         stepCounter = R.clamp(0, L)(stepCounter + 1);
                         break;
                     case 'ArrowLeft':
-                        execute_step(actionSequence)(stepCounter);
+                        execute_step(CONDUITE)(stepCounter);
                         stepCounter = R.clamp(0, L)(stepCounter - 1);
                         break;
                     case 'ArrowDown':
@@ -179,32 +190,81 @@
                         stepCounter = R.clamp(0, L)(stepCounter - 1);
                         break;
                     case 'Enter':
-                        execute_step(actionSequence)(stepCounter);
+                        execute_step(CONDUITE)(stepCounter);
                         break;
                 }
                 break;
             case 'Christine':
-                let exitPose = {
-                    sequence: [
-                        { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
-                        {
-                            command: 'FreeWalk',
-                            ...switchTo(true)('FreeWalk'),
-                            ...buildPayload('FreeWalk'),
-                        },
-                    ],
-                };
-                let exitSit = {
-                    sequence: [
-                        { command: 'RiseSit', ...buildPayload('RiseSit') },
-                        {
-                            command: 'FreeWalk',
-                            ...switchTo(true)('FreeWalk'),
-                            ...buildPayload('FreeWalk'),
-                        },
-                    ],
-                };
+                // let standContent = {
+                //     sequence: [
+                //         { wait: 0.1 },
+                //         { command: 'BalanceStand', ...buildPayload('BalanceStand') },
+                //         { wait: 0.1 },
+                //          {
+                //             command: 'FreeWalk',
+                //             ...switchTo(true)('FreeWalk'),
+                //             ...buildPayload('FreeWalk'),
+                //         },
+                //           { wait: 0.1 },
+                //         { command: 'Content', ...buildPayload('Content') },
+                //         { wait: 0.1 },
+                //         {
+                //             command: 'FreeWalk',
+                //             ...switchTo(true)('FreeWalk'),
+                //             ...buildPayload('FreeWalk'),
+                //         },
+                //      { wait: 0.1 },
+                //     ],
+                // };
+                // let dance = {
+                //     sequence: [
+                //         { command: 'Dance2', ...buildPayload('Dance2') },
+                //         { wait: 0.1 },
+                //         {
+                //             command: 'FreeWalk',
+                //             ...switchTo(true)('FreeWalk'),
+                //             ...buildPayload('FreeWalk'),
+                //         },
+                //     ],
+                // };
+                // let enterPose = {
+                //     sequence: [
+                //         { command: 'StopMove', ...buildPayload('StopMove') },
+                //         { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
+                //     ],
+                // }
+                // let exitPose = {
+                //     sequence: [
+                //         { command: 'Pose', ...switchTo(false)('Pose'), ...buildPayload('Pose') },
+                //         {
+                //             command: 'FreeWalk',
+                //             ...switchTo(true)('FreeWalk'),
+                //             ...buildPayload('FreeWalk'),
+                //         },
+                //     ],
+                // };
+                // let exitSit = {
+                //     sequence: [
+                //         { command: 'RiseSit', ...buildPayload('RiseSit') },
+                //         {
+                //             command: 'FreeWalk',
+                //             ...switchTo(true)('FreeWalk'),
+                //             ...buildPayload('FreeWalk'),
+                //         },
+                //     ],
+                // };
                 switch (event.key) {
+                    case 'ArrowUp':
+                        websocket.send(presets.standContent);
+                        break;
+                    case 'ArrowDown':
+                        Running_State = !Running_State;
+                        websocket.send({
+                            command: 'Trotting',
+                            ...switchTo(Running_State)('Trotting'),
+                            ...buildPayload('Trotting'),
+                        });
+                        break;
                     case 'b':
                         Leaping_State = !Leaping_State;
                         websocket.send({
@@ -216,25 +276,49 @@
                     case 'a':
                         Pose_State = !Pose_State;
                         Pose_State
-                            ? websocket.send({
-                                  command: 'Pose',
-                                  ...switchTo(Pose_State)('Pose'),
-                                  ...buildPayload('Pose'),
-                              })
-                            : websocket.send(exitPose);
+                            ? websocket.send(presets.enterPose)
+                            : websocket.send(presets.exitPose);
                         break;
                     case 'x':
                         Sit_State = !Sit_State;
                         Sit_State
                             ? websocket.send({ command: 'Sit', ...buildPayload('Sit') })
-                            : websocket.send(exitSit);
+                            : websocket.send(presets.exitSit);
                         break;
                     case 'y':
-                        websocket.send({
-                            command: 'Dance2',
-                            ...buildPayload('Dance2'),
-                        });
+                        websocket.send(presets.dance);
                         break;
+                    // case '-':
+                    //     Redlight_State = !Redlight_State;
+                    //     Redlight_State ? websocket.send({
+                    //         topic: 'VUI',
+                    //         api_id: 1007,
+                    //         parameter: {
+                    //             color: 'green',
+                    //         },
+                    //     }):websocket.send(presets.contentRed)
+                        
+                    //     break;
+                    // case '=':
+                    //     Whitelight_State = !Whitelight_State;
+                    //     Whitelight_State
+                    //         ? websocket.send({
+                    //               topic: 'VUI',
+                    //               api_id: 1005,
+                    //               parameter: {
+                    //                   brightness: 1,
+                    //                   // time: 10,
+                    //               },
+                    //           })
+                    //         : websocket.send({
+                    //               topic: 'VUI',
+                    //               api_id: 1007,
+                    //               parameter: {
+                    //                   color: 'green',
+                    //               },
+                    //           });
+
+                    //     break;
                 }
                 break;
         }
@@ -242,8 +326,8 @@
 />
 
 <div class="ui-pane">
-      <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
-             <button
+    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
+        <button
             disabled={!$webSocketConnected}
             on:click={() => {
                 $robotConnected ? disconnectRobot() : connectRobot();
@@ -252,25 +336,18 @@
             {$robotConnected ? 'Disconnect' : 'Connect'}
         </button>
         <div>
-            <Radio optionName={"Martin"} radioGroupData={gamepadUser}/>
-        <Radio optionName={"Christine"} radioGroupData={gamepadUser}/>
+            <Radio optionName={'Martin'} radioGroupData={gamepadUser} />
+            <Radio optionName={'Christine'} radioGroupData={gamepadUser} />
         </div>
-        
     </div>
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <button
-            on:click={() =>
-                websocket.send({
-                    topic: 'VUI',
-                    api_id: 1005,
-                    parameter: {
-                        brightness: 2,
-                    },
-                })}
+            on:click={() => {
+            websocket.send(presets.contentRed)}}
         >
-            Light
+            Content + Red
         </button>
-   
+
         <div class="double-col">
             <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
             <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
@@ -284,6 +361,7 @@
                     command: 'lidar',
                     switch: value,
                 });
+                console.log(value);
             }}
         />
         <Switch
@@ -344,16 +422,20 @@
     </div>
     <div class="button-grid">
         {#each CMD_switches_names as switchName}
-            <Radio optionName = {switchName} radioGroupData = {modeGroupData}/>
+            <Radio
+                optionName={switchName}
+                radioGroupData={modeGroupData}
+                callback={handleModeChange}
+            />
         {/each}
     </div>
-    <RadioGrid
+    <!-- <RadioGrid
         values={CMD_switches_names}
         value={movementMode}
         on:change={(e: RadioGridChangeEvent) => handleModeChange(e.detail.value as string)}
         label="Mode"
         columns={2}
-    />
+    /> -->
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column;">
         {#each $lightOptionsStore.options as option}
             <Radio
@@ -363,6 +445,7 @@
             />
         {/each}
     </div>
+
     <!-- <RadioGrid
         values={colors}
         value={'white'}
@@ -371,22 +454,24 @@
         columns={1}
     /> -->
     <div id="actionsequence">
-        {#each actionSequence as action, i}
+        {#each CONDUITE as action, i}
             <button
                 class={`${i == stepCounter ? 'active-step' : ''}`}
-                on:click={() => execute_step(actionSequence)(i)}
+                on:click={() => execute_step(CONDUITE)(i)}
             >
                 {action.command ?? action.displayName ?? undefined}
             </button>
         {/each}
     </div>
-    <RadioGrid
-        values={speedLevelOptions}
-        value={0}
-        on:change={(e: RadioGridChangeEvent) => handleSpeedChange(e.detail.value as number)}
-        label="SpeedLevel"
-        columns={1}
-    />
+    <div class="button-grid">
+        {#each $speedOptionsStore.options as speedLevel}
+            <Radio
+                optionName={speedLevel}
+                radioGroupData={speedOptionsStore}
+                callback={handleSpeedChange}
+            />
+        {/each}
+    </div>
 </div>
 
 <style>
