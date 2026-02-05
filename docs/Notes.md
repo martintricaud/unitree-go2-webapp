@@ -18,6 +18,9 @@
 
 ## Conduite
 
+- Lancer l'enregistrement de la video
+- Vérifier que c'est la bonne fenêtre qui est streamée à Thomas
+- Allumer télécommande secondaire
 ### Danse du Sabbat
 | Action                                                                                              | Timestamp | Durée  | Repère                                | Note        |
 | --------------------------------------------------------------------------------------------------- | --------- | ------ | ------------------------------------- | ----------- |
@@ -44,6 +47,9 @@
 | Passer en mode de déplacement **Classic**                                                           |           |        |                                       |             |
 
 ### Magicien d'Oz
+
+
+  
 | Action                                                                                              | Timestamp       | Repère                                | Note                                          |
 | --------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------- | --------------------------------------------- |
 | 🕹️ Demi tour pour se réaligner sur le rayon du cercle en visant entre jardin-avant et jardin-centre |                 |                                       |                                               |

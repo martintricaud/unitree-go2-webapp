@@ -6,13 +6,17 @@
     <title>Notes</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+
     <style>
         body {
             padding: 20px;
         }
+
         main {
             max-width: 900px;
         }
+
         table {
             width: 100%;
             overflow-x: auto;
@@ -24,15 +28,29 @@
         <div id="content">Loading...</div>
     </main>
 
+
     <script>
-        fetch('Notes.md')
-            .then(res => res.text())
-            .then(md => {
-                document.getElementById('content').innerHTML = marked.parse(md);
-            })
-            .catch(error => {
-                document.getElementById('content').innerHTML = `<div class="error">Error loading Notes.md: ${error.message}</div>`;
-            });
+        // Wait for MathJax to be ready
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']] // Enable $...$ delimiters
+            },
+            startup: {
+                ready: () => {
+                    MathJax.startup.defaultReady();
+                    fetch('Notes.md')
+                        .then(res => res.text())
+                        .then(md => {
+                            document.getElementById('content').innerHTML = marked.parse(md);
+                            MathJax.typesetPromise(); // Use typesetPromise() for MathJax 3
+                        })
+                        .catch(error => {
+                            document.getElementById('content').innerHTML = `<div class="error">Error loading Notes.md: ${error.message}</div>`;
+                        });
+                }
+            }
+        };
+      
     </script>
 </body>
 </html>
