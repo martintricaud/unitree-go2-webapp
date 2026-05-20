@@ -48,7 +48,6 @@ export const CMD_switches_names: string[] = CMD_switches.map((command) => comman
 export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
 
 ///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload = (cmd: string): Pick<Command, 'api_id' | 'topic'> => pick(commandIndex[cmd], ['api_id', 'topic']);
 export let buildPayload2 = (cmd: string): Pick<Command, 'api_id' | 'topic' | 'command_name'> => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
 ///utility for generating "toggle switch on" JSON messages
 export let switchTo = (newState: boolean) => (cmd: string) => {
@@ -156,7 +155,7 @@ export let presets = {
     },
     holdAim: {
         sequence: [
-            { command_name: 'Euler', parameter: { x: 0, y: -1, z: 0 }, ...buildPayload('Euler') },
+            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ]
 
     },
@@ -165,16 +164,16 @@ export let presets = {
             buildPayload2('StopMove'),
             switchTo(true)('Pose'),
             { wait: 0.1 },
-            { command_name: 'Euler', parameter: { x: 0, y: -1, z: 0 }, ...buildPayload('Euler') },
+            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
             { wait: 0.1 },
-            { command_name: 'Euler', parameter: { x: 0, y: -1, z: 0 }, ...buildPayload('Euler') },
+            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
             { wait: 0.1 },
-            { command_name: 'Euler', parameter: { x: 0, y: -1, z: 0 }, ...buildPayload('Euler') },
+            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ],
     },
     stopAimAtPublic: {
         sequence: [
-            { command_name: 'Euler', parameter: { vx: 0, vy: 0, vyaw: 0 }, ...buildPayload('Euler') },
+            { ...buildPayload2('Euler'), parameter: { vx: 0, vy: 0, vyaw: 0 } },
             { wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ]

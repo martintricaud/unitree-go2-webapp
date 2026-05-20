@@ -11,7 +11,6 @@
     // import Lidar from './components/Lidar.svelte';
     import {
         CONDUITE,
-        buildPayload,
         modeGroupData,
         presets,
         switchTo,
@@ -110,9 +109,8 @@
 
     function handleSpeedChange(speed: string) {
         websocket.send({
-            command_name: 'SpeedLevel',
+            ...buildPayload2('SpeedLevel'),
             parameter: { data: speedValueMap[speed] },
-            ...buildPayload('SpeedLevel'),
         });
     }
     function handleModeChange(mode: string) {
@@ -353,7 +351,7 @@
         {/each}
     </div>
 
-    <div style="display:flex; flex-wrap:nowrap; flex-direction: column;">
+    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         {#each $lightOptionsStore.options as option}
             <Radio
                 radioGroupData={lightOptionsStore}

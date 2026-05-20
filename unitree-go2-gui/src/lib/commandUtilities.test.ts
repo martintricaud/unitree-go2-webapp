@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildPayload,
   buildPayload2,
   CMD_actions,
   CMD_switches,
@@ -8,27 +7,6 @@ import {
 } from './commandUtilities';
 
 describe('commandUtilities', () => {
-  describe('buildPayload', () => {
-    it('should return api_id and topic for a valid command', () => {
-      const result = buildPayload('BalanceStand');
-      expect(result).toHaveProperty('api_id');
-      expect(result).toHaveProperty('topic');
-      expect(result.api_id).toBe(1002);
-      expect(result.topic).toBe('SPORT_MOD');
-    });
-
-    it('should return correct fields for another command', () => {
-      const result = buildPayload('StandUp');
-      expect(result.api_id).toBe(1004);
-      expect(result.topic).toBe('SPORT_MOD');
-    });
-
-    it('should not include command_name in payload', () => {
-      const result = buildPayload('BalanceStand');
-      expect(result).not.toHaveProperty('command_name');
-    });
-  });
-
   describe('buildPayload2', () => {
     it('should return api_id, topic, and command_name', () => {
       const result = buildPayload2('BalanceStand');
@@ -40,12 +18,11 @@ describe('commandUtilities', () => {
       expect(result.command_name).toBe('BalanceStand');
     });
 
-    it('should include command_name unlike buildPayload', () => {
-      const payload1 = buildPayload('StandUp');
-      const payload2 = buildPayload2('StandUp');
-      expect(payload1).not.toHaveProperty('command_name');
-      expect(payload2).toHaveProperty('command_name');
-      expect(payload2.command_name).toBe('StandUp');
+    it('should return correct fields for another command', () => {
+      const result = buildPayload2('StandUp');
+      expect(result.api_id).toBe(1004);
+      expect(result.topic).toBe('SPORT_MOD');
+      expect(result.command_name).toBe('StandUp');
     });
   });
 
