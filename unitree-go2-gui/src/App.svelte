@@ -129,7 +129,6 @@
     }
 
     function handleColorChange(value: string) {
-        console.log(value);
         value == 'white'
             ? websocket.send({
                   topic: 'VUI',
@@ -184,7 +183,6 @@
 
                     //     break;
                     case 'ArrowLeft':
-                        console.log('YOUTEST');
                         hysteria = !hysteria;
                         websocket.send(hysteria ? presets.stopAndCrouch : presets.stopAndStand);
                         break;
@@ -297,7 +295,6 @@
                     command_name: 'lidar',
                     switch: value,
                 });
-                console.log(value);
             }}
         />
         <Switch

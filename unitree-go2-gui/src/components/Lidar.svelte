@@ -174,15 +174,6 @@
     *{
         cursor: none;
     }
-    .prediction {
-        position: absolute;
-        color: white;
-        z-index: 1;
-    }
-    .highlighter {
-        position: absolute;
-        z-index: 1;
-    }
     .container {
         width: 100%;
         display: flex;
@@ -190,18 +181,6 @@
         align-items: center;
         background-color: black;
         overflow: hidden;
-    }
-
-    .liveView {
-        position: absolute;
-    }
-    .key-point {
-        position: absolute;
-        z-index: 1;
-        width: 3px;
-        height: 3px;
-        border-radius: 50%;
-        display: block;
     }
     canvas {
         aspect-ratio: 16/9;

@@ -96,7 +96,6 @@
 		pollGamepad();
 		// Listen for gamepad disconnection - scan for other available gamepads
 		const handleGamepadDisconnected = () => {
-			console.log('Gamepad disconnected, scanning for other gamepads...');
 			// The next poll cycle will call findGamepad() which will find any remaining connected gamepad
 		};
 		window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);

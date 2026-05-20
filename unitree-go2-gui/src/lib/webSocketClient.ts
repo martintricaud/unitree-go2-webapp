@@ -39,10 +39,10 @@ export class WebSocketClient {
                 robotConnected.set(msg.connected);
             }
             else if (msg.topic === 'rt/lf/sportmodestate'){
-                console.log(msg)
+                // State update received
             }
             else if (msg.type ==="state_stream"){
-                console.log(msg)
+                // Stream data received
             }
             else if (msg instanceof Blob) {
                 try {
@@ -56,7 +56,6 @@ export class WebSocketClient {
             } 
             else {
                 msg = ev.data
-                console.log(msg)
                 robotData.set(msg)
             }
         };

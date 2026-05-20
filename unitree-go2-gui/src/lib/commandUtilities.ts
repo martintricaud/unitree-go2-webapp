@@ -234,6 +234,5 @@ export let presets = {
     }
 };
 export let execute_step = (_websocket: WebSocket) => (_actionSequence: any) => (i: number) => {
-    console.log(_actionSequence[i]);
     _websocket.send(_actionSequence[i]);
 };
