@@ -145,11 +145,11 @@
     {
         "command_name": "SpeedLevel",
         "api_id": 1015,
-        "working": false,
+        "working": true,
         "exec_time": 1,
         "args": [
             {
-                "name": "data",
+                "name": "level",
                 "type": "number"
             }
         ],
@@ -309,7 +309,7 @@
     },
     {
         "command_name": "GetState",
-        "working": true,
+        "working": false,
         "api_id": 1034,
         "exec_time": 10,
         "topic": "SPORT_MOD",

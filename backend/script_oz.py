@@ -86,9 +86,3 @@ action_sequence = [
     #     "delay": 3
     # }
 ]
-
-
-
-def DefineArc(arcCenterX: float, arcCenterY: float, arcRadius: float, arcAngle: float, speed: float):
-    return 0 
-

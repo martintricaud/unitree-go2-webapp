@@ -4,6 +4,8 @@ import { writable } from "svelte/store";
 export const webSocketConnected = writable(false);
 export const robotConnected = writable(false);
 export const videoFrame = writable<ImageBitmap | null>(null)
+// Not currently subscribed to by any component — reserved for when a
+// dedicated UI panel consumes the raw robot telemetry stream.
 export const robotData = writable();
 
 export class WebSocketClient {

@@ -67,13 +67,13 @@ class RobotSession:
             print(f"An error occurred during connection: {e}")  # Handle other exceptions
     
     async def toggleLidar(self, switch: bool):
-        command = "on" if switch else "off"
+        state = "on" if switch else "off"
         def lidar_callback(message):
             # Print the data received from the LIDAR sensor.
             print(message["data"])
             
         if self.conn:
-            self.conn.datachannel.pub_sub.publish_without_callback("rt/utlidar/switch",command)
+            self.conn.datachannel.pub_sub.publish_without_callback("rt/utlidar/switch",state)
             if switch:
                 # Subscribe to the LIDAR voxel map data and use the callback function to process incoming messages.
                 self.conn.datachannel.pub_sub.subscribe("rt/utlidar/voxel_map_compressed", lidar_callback)
@@ -156,7 +156,7 @@ class RobotSession:
     async def execute_sequence(self, sequence):
         for msg in sequence:
             match msg:
-                case {"command": _}:
+                case {"command_name": _}:
                     await robot.handle_command(msg)
                 case {"wait":_}:
                     await asyncio.sleep(msg.get("wait"))
@@ -191,17 +191,17 @@ async def ws_api(ws: WebSocket):
             try:
                 print("Received WS message:", msg)
                 match msg:
-                    case {"command": "lidar", "switch": switch}:
+                    case {"_name": "lidar", "switch": switch}:
                         await robot.toggleLidar(msg["switch"])
-                    case {"command": "connect", "ip": ip}:
+                    case {"command_name": "connect", "ip": ip}:
                         await robot.connect(ip)
-                    case {"command": "disconnect"}:
+                    case {"command_name": "disconnect"}:
                         await robot.disconnect()
                     case {"sequence": sequence}:
                         await robot.execute_sequence(sequence)
-                    case {"command": "subscribe", "switch": _}:
+                    case {"command_name": "subscribe", "switch": _}:
                         await robot.subscribe_to_robotstate(msg["switch"])
-                    case {"command": "joystick"}:
+                    case {"command_name": "joystick"}:
                         await robot.test_joystick()
                     case {"api_id": _}:
                         await robot.handle_command(msg)

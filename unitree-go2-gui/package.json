@@ -13,6 +13,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tsconfig/svelte": "^5.0.5",
     "@types/node": "^24.6.0",
+    "@types/three": "^0.184.0",
     "svelte": "^5.39.6",
     "svelte-check": "^4.3.2",
     "typescript": "~5.9.3",
@@ -23,8 +24,10 @@
     "npm": "10.9.4"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.22-rc.20250304",
     "@types/ramda": "^0.31.1",
+    "hack": "^0.8.1",
     "ramda": "^0.32.0",
-    "svelte-tweakpane-ui": "^1.5.11"
+    "three": "^0.182.0"
   }
 }

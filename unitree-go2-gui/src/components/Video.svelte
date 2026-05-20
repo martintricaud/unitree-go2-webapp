@@ -7,7 +7,9 @@
         FaceDetector,
         ImageClassifier,
     } from '@mediapipe/tasks-vision';
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
+    import { writable, derived } from 'svelte/store';
+    import type { Writable } from 'svelte/store';
     import { videoFrame } from '../lib/webSocketClient';
     import type {
         NormalizedLandmark,
@@ -16,12 +18,27 @@
         FaceDetectorResult,
     } from '@mediapipe/tasks-vision';
 
+    let webcamOn = false;
+    let horizontalScale = -1;
     export let faceLandmarksEnabled: boolean = true;
     export let faceDetectionEnabled: boolean = true;
-    export let agePredictionEnabled: boolean = true;
+    export let agePredictionEnabled: boolean = false;
     let canvas: HTMLCanvasElement;
     let liveView: HTMLElement;
     let ctx: CanvasRenderingContext2D;
+
+    let running = true;
+    let reader: ReadableStreamDefaultReader<VideoFrame> | undefined;
+    let stream: MediaStream | undefined;
+    let video: HTMLVideoElement;
+    let rafId: number;
+
+    const cameraFrame = writable<ImageBitmap | null>(null);
+
+    const aggregateFrameStore = derived([videoFrame, cameraFrame], ([videoFrame, cameraFrame]) => {
+        return webcamOn ? cameraFrame : videoFrame;
+    });
+
     let faceLandmarker: FaceLandmarker | null = null;
     let faceDetector: FaceDetector | null = null;
     let agePredictor: ImageClassifier | null = null;
@@ -29,66 +46,41 @@
     let lastTs = 0;
 
     let cw, ch;
-    // Keep a reference of all the child elements we create (for FaceDetection)so we can remove them easilly on each render.
-    let children: HTMLElement[] = [];
+
     function initFaceDetection() {
         FilesetResolver.forVisionTasks('wasm')
             .then((resolver) =>
                 FaceDetector.createFromOptions(resolver, {
                     baseOptions: {
                         modelAssetPath: `blaze_face_short_range.tflite`,
+                        // modelAssetPath: `face_detection_full_range_sparse.tflite`,
                         delegate: 'GPU',
                     },
                     runningMode: 'VIDEO',
+                    minDetectionConfidence: 0.4, 
                 }),
             )
             .then((lm) => {
                 faceDetector = lm;
+                faceDetector.setOptions({ })
             });
     }
 
-    export function cropCanvasToBoundingBox(
-        source: HTMLCanvasElement,
-        box: BoundingBox,
-    ): HTMLCanvasElement {
-        const out = document.createElement('canvas');
-        out.width = Math.round(box.width);
-        out.height = Math.round(box.height);
-
-        const ctx = out.getContext('2d');
-        if (!ctx) {
-            throw new Error('Could not get 2D context');
-        }
-
-        ctx.drawImage(
-            source,
-            box.originX,
-            box.originY,
-            box.width,
-            box.height,
-            0,
-            0,
-            box.width,
-            box.height,
-        );
-
-        return out;
-    }
-    // function initAgePrediction() {
-    //     FilesetResolver.forVisionTasks('wasm')
-    //         .then((resolver) =>
-    //             FaceDetector.createFromOptions(resolver, {
+    // let ageClassifier: ImageClassifier;
+    // const createAgeClassifier = async () => {
+    //     const vision = await FilesetResolver.forVisionTasks('wasm').then(
+    //         (resolver) =>
+    //             (ageClassifier = ImageClassifier.createFromOptions(resolver, {
     //                 baseOptions: {
     //                     modelAssetPath: 'model_lite_age_nonq.tflite',
     //                     delegate: 'GPU',
     //                 },
+    //                 maxResults: 1,
     //                 runningMode: 'VIDEO',
-    //             }),
-    //         )
-    //         .then((lm) => {
-    //             agePredictor = lm;
-    //         });
-    // }
+                    
+    //             })),
+    //     );
+    // };
 
     function initFaceLandmarker() {
         FilesetResolver.forVisionTasks('wasm')
@@ -99,7 +91,7 @@
                         delegate: 'GPU',
                     },
                     runningMode: 'VIDEO',
-                    numFaces: 1,
+                    numFaces: 5,
                 }),
             )
             .then((lm) => {
@@ -141,16 +133,59 @@
     }
 
     let landmarkDetectionResult;
-    let faceDetectionResult: FaceDetectorResult = { detections: [] };
-
+    let faceDetectionResult: Writable<FaceDetectorResult> = writable({ detections: [] });
+    let faces = derived(faceDetectionResult, ($faceDetectionResult) => {
+        return $faceDetectionResult.detections.map((face) => {
+            if (face.boundingBox === undefined) {
+                return null;
+            } else {
+                return createImageBitmap(
+                    canvas,
+                    face.boundingBox.originX,
+                    face.boundingBox.originY,
+                    face.boundingBox.width,
+                    face.boundingBox.height,
+                );
+            }
+        });
+    });
     onMount(() => {
+        // Start webcam
+        (async () => {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false,
+            });
+
+            video = document.createElement('video');
+            video.playsInline = true;
+            video.muted = true;
+            video.srcObject = stream;
+            await video.play();
+
+            const loop = async () => {
+                if (!running) return;
+                const bitmap = await createImageBitmap(video);
+                cameraFrame.update((prev) => {
+                    prev?.close();
+                    return bitmap;
+                });
+
+                rafId = requestAnimationFrame(loop);
+            };
+
+            loop();
+        })();
+
+        //Initialize canvas and drawing utils
         ctx = canvas.getContext('2d')!;
         drawingUtils = new DrawingUtils(ctx);
         initFaceLandmarker();
         initFaceDetection();
+        //createAgeClassifier();
 
         // Subscribe to the frame store
-        const unsubscribe = videoFrame.subscribe((bitmap) => {
+        const unsubscribe = aggregateFrameStore.subscribe((bitmap) => {
             if (!bitmap) return;
             ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
             const now = performance.now();
@@ -162,8 +197,9 @@
                 drawFaceLandmarks(landmarkDetectionResult.faceLandmarks);
             }
             if (faceDetector && faceDetectionEnabled) {
-                faceDetectionResult = faceDetector.detectForVideo(canvas, now);
-                if (!faceDetectionResult.detections) return;
+                // faceDetectionResult = faceDetector.detectForVideo(canvas, now);
+                faceDetectionResult.set(faceDetector.detectForVideo(canvas, now));
+                if (!$faceDetectionResult.detections) return;
                 // if (agePredictionEnabled) {
                 //     for(let detection of result2.detections){
                 //         let face = cropCanvasToBoundingBox(ctx, detection.boundingBox)
@@ -174,6 +210,16 @@
 
         return () => unsubscribe();
     });
+    onDestroy(() => {
+        running = false;
+        cancelAnimationFrame(rafId);
+        stream?.getTracks().forEach((t) => t.stop());
+
+        cameraFrame.update((frame) => {
+            frame?.close();
+            return null;
+        });
+    });
 </script>
 
 <div class="container">
@@ -183,11 +229,13 @@
         height="720"
         bind:clientWidth={cw}
         bind:clientHeight={ch}
+        style="-webkit-transform: scaleX({horizontalScale});
+  transform: scaleX({horizontalScale});"
     >
     </canvas>
     <div bind:this={liveView} class="liveView" style="width: {cw}px;height: {ch}px;">
-        {#if faceDetectionResult.detections && faceDetectionResult.detections.length > 0}
-            {#each faceDetectionResult.detections as { boundingBox, categories, keypoints }}
+        {#if $faceDetectionResult.detections && $faceDetectionResult.detections.length > 0}
+            {#each $faceDetectionResult.detections as { boundingBox, categories, keypoints }}
                 {#if boundingBox}
                     {@const { width, height, originX, originY } = boundingBox}
                     <!-- Prediction text -->
@@ -244,7 +292,7 @@
         justify-content: center;
         align-items: center;
         background-color: black;
-        overflow:hidden;
+        overflow: hidden;
     }
 
     .liveView {
