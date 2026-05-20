@@ -19,6 +19,7 @@
         CMD_actions,
         CMD_switches,
         CMD_switches_names,
+        execute_step as executeStepFn,
     } from './lib/commandUtilities';
     import type { Command } from './lib/commandUtilities';
 
@@ -65,9 +66,7 @@
 
     let stepCounter = 0;
 
-    let execute_step = (_actionSequence: any) => (i: number) => {
-        websocket.send(_actionSequence[i]);
-    };
+    let execute_step = executeStepFn(websocket);
     //create an object where each key is a button name and the value is a derived store for that button's state
     // let arrayOfButtonStores = R.mapObjIndexed(
     //     (value, key) => derived(buttonsStore, (state) => state[key]),
@@ -131,15 +130,15 @@
     function handleColorChange(value: string) {
         value == 'white'
             ? websocket.send({
-                  topic: 'VUI',
-                  api_id: 1005,
-                  parameter: { brightness: 1 },
-              })
+                topic: 'VUI',
+                api_id: 1005,
+                parameter: { brightness: 1 },
+            })
             : websocket.send({
-                  topic: 'VUI',
-                  api_id: 1007,
-                  parameter: { color: value },
-              });
+                topic: 'VUI',
+                api_id: 1007,
+                parameter: { color: value },
+            });
     }
 
     let keydownHandler = (event: KeyboardEvent) => {
@@ -224,7 +223,6 @@
 <Video
     faceDetectionEnabled={FACE_DETECTION}
     faceLandmarksEnabled={FACE_LANDMARKS}
-    agePredictionEnabled={AGE_PREDICTION}
 />
 <!-- <Lidar /> -->
 <GamepadController monitoring={false} />

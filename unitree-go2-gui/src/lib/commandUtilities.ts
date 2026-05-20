@@ -1,6 +1,7 @@
 import * as R from 'ramda'
 import commands from '../../../commands_1.1.7.json';
-    import { derived, get, writable } from 'svelte/store';
+import { writable } from 'svelte/store';
+import type { WebSocketClient } from './webSocketClient';
 export type TypeMap = {
     number: number;
     string: string;
@@ -233,6 +234,6 @@ export let presets = {
         ],
     }
 };
-export let execute_step = (_websocket: WebSocket) => (_actionSequence: any) => (i: number) => {
+export let execute_step = (_websocket: WebSocketClient) => (_actionSequence: any) => (i: number) => {
     _websocket.send(_actionSequence[i]);
 };
