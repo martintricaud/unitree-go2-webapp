@@ -42,6 +42,8 @@ const initialState: GamepadState = {
         LEFT: [{timestamp:0,index:14,value:false}],
         RIGHT: [{timestamp:0,index:15,value:false}],
 		HOME: [{timestamp:0,index:16,value:false}],
+		ZL: [{timestamp:0,index:17,value:false}],
+		ZR: [{timestamp:0,index:18,value:false}],
 	},
 	axisState: {
 		LEFT_STICK_X: [{timestamp:0,index:0,value:0}],
