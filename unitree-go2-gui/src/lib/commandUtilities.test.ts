@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildPayload2,
+  buildPayload,
   CMD_actions,
   CMD_switches,
   CMD_switches_names,
 } from './commandUtilities';
 
 describe('commandUtilities', () => {
-  describe('buildPayload2', () => {
+  describe('buildPayload', () => {
     it('should return api_id, topic, and command_name', () => {
-      const result = buildPayload2('BalanceStand');
+      const result = buildPayload('BalanceStand');
       expect(result).toHaveProperty('api_id');
       expect(result).toHaveProperty('topic');
       expect(result).toHaveProperty('command_name');
@@ -19,7 +19,7 @@ describe('commandUtilities', () => {
     });
 
     it('should return correct fields for another command', () => {
-      const result = buildPayload2('StandUp');
+      const result = buildPayload('StandUp');
       expect(result.api_id).toBe(1004);
       expect(result.topic).toBe('SPORT_MOD');
       expect(result.command_name).toBe('StandUp');

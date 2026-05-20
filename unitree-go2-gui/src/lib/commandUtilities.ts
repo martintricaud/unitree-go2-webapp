@@ -48,13 +48,13 @@ export const CMD_switches_names: string[] = CMD_switches.map((command) => comman
 export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
 
 ///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload2 = (cmd: string): Pick<Command, 'api_id' | 'topic' | 'command_name'> => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
+export let buildPayload = (cmd: string): Pick<Command, 'api_id' | 'topic' | 'command_name'> => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
 ///utility for generating "toggle switch on" JSON messages
 export let switchTo = (newState: boolean) => (cmd: string) => {
     modeGroupData.update((s) => ({ ...s, currentOption: newState ? cmd : 'FreeWalk' }))
     return {
         parameter: { [commandIndex[cmd].args[0].name]: newState },
-        ...buildPayload2(cmd)
+        ...buildPayload(cmd)
 
     }
 };
@@ -63,7 +63,7 @@ export let switchTo = (newState: boolean) => (cmd: string) => {
 let changeTo = (newValue: any) => (cmd: string) => {
     return {
         parameter: { color: newValue },
-        ...buildPayload2(cmd)
+        ...buildPayload(cmd)
     }
 }
 
@@ -95,14 +95,14 @@ export let DANSE_DU_SABBAT = [
 export let STRETCH_HELLO_JUMP = {
     displayName: 'Strello Jump',
     sequence: [
-        buildPayload2('StopMove'),
+        buildPayload('StopMove'),
         { wait: 0.1 },
-        buildPayload2('Stretch'),
-        buildPayload2('Hello'),
+        buildPayload('Stretch'),
+        buildPayload('Hello'),
         { wait: 0.3 },
-        buildPayload2('FrontJump'),
+        buildPayload('FrontJump'),
         { wait: 0.6 },
-        buildPayload2('FrontJump'),
+        buildPayload('FrontJump'),
         { wait: 0.1 },
         switchTo(true)('FreeWalk'),
     ],
@@ -114,7 +114,7 @@ export let CONDUITE = [
     {
         displayName: 'Content',
         sequence: [
-            buildPayload2('Content'),
+            buildPayload('Content'),
             { wait: 0.05 },
             switchTo(true)('FreeWalk'),
         ],
@@ -122,17 +122,17 @@ export let CONDUITE = [
     {
         displayName: 'Picture me...',
         sequence: [
-            buildPayload2('StopMove'),
+            buildPayload('StopMove'),
             switchTo(true)('Pose'),
         ],
     },
     switchTo(true)('Handstand'),
     switchTo(true)('ClassicWalk'),
-    buildPayload2('FingerHeart'),
+    buildPayload('FingerHeart'),
     {
         displayName: 'Salto',
         sequence: [
-            buildPayload2('LeftFlip'),
+            buildPayload('LeftFlip'),
             switchTo(true)('FreeWalk'),
         ],
     },
@@ -143,37 +143,37 @@ export let CONDUITE = [
 export let presets = {
     stopAndCrouch: {
         sequence: [
-            buildPayload2('StopMove'),
-            buildPayload2('StandDown'),
+            buildPayload('StopMove'),
+            buildPayload('StandDown'),
         ]
     },
     stopAndStand: {
         sequence: [
-            buildPayload2('StopMove'),
-            buildPayload2('StandUp'),
+            buildPayload('StopMove'),
+            buildPayload('StandUp'),
         ]
     },
     holdAim: {
         sequence: [
-            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
+            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ]
 
     },
     aimAtPublic: {
         sequence: [
-            buildPayload2('StopMove'),
+            buildPayload('StopMove'),
             switchTo(true)('Pose'),
             { wait: 0.1 },
-            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
+            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
             { wait: 0.1 },
-            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
+            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
             { wait: 0.1 },
-            { ...buildPayload2('Euler'), parameter: { x: 0, y: -1, z: 0 } },
+            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ],
     },
     stopAimAtPublic: {
         sequence: [
-            { ...buildPayload2('Euler'), parameter: { vx: 0, vy: 0, vyaw: 0 } },
+            { ...buildPayload('Euler'), parameter: { vx: 0, vy: 0, vyaw: 0 } },
             { wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ]
@@ -182,7 +182,7 @@ export let presets = {
         sequence: [
             changeTo('ref')('Headlight'),
             { wait: 0.1 },
-            buildPayload2('Content'),
+            buildPayload('Content'),
             { wait: 0.5 },
             switchTo(true)('FreeWalk'),
         ],
@@ -191,11 +191,11 @@ export let presets = {
     standContent: {
         sequence: [
             { wait: 0.1 },
-            buildPayload2('BalanceStand'),
+            buildPayload('BalanceStand'),
             { wait: 0.1 },
             switchTo(true)('FreeWalk'),
             { wait: 0.1 },
-            buildPayload2('Content'),
+            buildPayload('Content'),
             { wait: 0.1 },
             switchTo(true)('FreeWalk'),
             { wait: 0.1 },
@@ -203,7 +203,7 @@ export let presets = {
     },
     exitSit: {
         sequence: [
-            buildPayload2('RiseSit'),
+            buildPayload('RiseSit'),
             switchTo(true)('FreeWalk'),
         ],
     },
@@ -215,13 +215,13 @@ export let presets = {
     },
     enterPose: {
         sequence: [
-            buildPayload2('StopMove'),
+            buildPayload('StopMove'),
             switchTo(true)('Pose'),
         ],
     },
     dance: {
         sequence: [
-            buildPayload2('Dance2'),
+            buildPayload('Dance2'),
             { wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ],

@@ -14,7 +14,7 @@
         modeGroupData,
         presets,
         switchTo,
-        buildPayload2,
+        buildPayload,
         CMD_actions,
         CMD_switches,
         CMD_switches_names,
@@ -109,7 +109,7 @@
 
     function handleSpeedChange(speed: string) {
         websocket.send({
-            ...buildPayload2('SpeedLevel'),
+            ...buildPayload('SpeedLevel'),
             parameter: { data: speedValueMap[speed] },
         });
     }
@@ -207,7 +207,7 @@
                         break;
                     case 'x':
                         Sit_State = !Sit_State;
-                        websocket.send(Sit_State ? buildPayload2('Sit') : presets.exitSit);
+                        websocket.send(Sit_State ? buildPayload('Sit') : presets.exitSit);
                         break;
                     case 'y':
                         websocket.send(presets.dance);
