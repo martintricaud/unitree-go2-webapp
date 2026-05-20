@@ -1,4 +1,4 @@
-import * as R from 'ramda'
+import { filter, indexBy, pick, prop } from 'remeda';
 import commands from '../../../commands_1.1.7.json';
 import { writable } from 'svelte/store';
 import type { WebSocketClient } from './webSocketClient';
@@ -34,44 +34,39 @@ export type Command = {
     args: CommandArg[];
 };
 
-let indexByCommandName: (list: Command[]) => Record<string, Command> = R.indexBy(
-    R.prop('command_name'),
-);
-let commandIndex = indexByCommandName(commands as Command[]);
+let commandIndex = indexBy(commands as Command[], prop('command_name'));
 
-export const CMD_actions: Command[] = R.filter((x: Command) => x.args.length == 0 && x.working)(
+export const CMD_actions: Command[] = filter(
     commands as Command[],
+    (x: Command) => x.args.length == 0 && x.working,
 );
-export const CMD_switches: Command[] = R.filter(
+export const CMD_switches: Command[] = filter(
+    commands as Command[],
     (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
-)(commands as Command[]) as Command[];
+);
 export const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
 export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
 
 ///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload = (cmd: string) => R.pick(['api_id', 'topic'], commandIndex[cmd]);
-export let buildPayload2 = (cmd: string) => R.pick(['api_id', 'topic', 'command_name'], commandIndex[cmd]);
+export let buildPayload = (cmd: string): Pick<Command, 'api_id' | 'topic'> => pick(commandIndex[cmd], ['api_id', 'topic']);
+export let buildPayload2 = (cmd: string): Pick<Command, 'api_id' | 'topic' | 'command_name'> => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
 ///utility for generating "toggle switch on" JSON messages
 export let switchTo = (newState: boolean) => (cmd: string) => {
-    modeGroupData.update(R.assoc('currentOption',newState?cmd:'FreeWalk'))
+    modeGroupData.update((s) => ({ ...s, currentOption: newState ? cmd : 'FreeWalk' }))
     return {
-        parameter: R.objOf(commandIndex[cmd].args[0].name, newState),
+        parameter: { [commandIndex[cmd].args[0].name]: newState },
         ...buildPayload2(cmd)
 
     }
 };
 
 
-let changeTo2 = (newValue: any) => (cmd: string) => {
+let changeTo = (newValue: any) => (cmd: string) => {
     return {
         parameter: { color: newValue },
         ...buildPayload2(cmd)
     }
 }
-
-let changeTo = (newValue: any) => (cmd: string) => {
-    return { parameter: { color: newValue } };
-};
 
 export let DANSE_DU_SABBAT = [
     switchTo(true)('FreeWalk'),
@@ -83,8 +78,8 @@ export let DANSE_DU_SABBAT = [
             { wait: 0.1 },
             switchTo(true)('Backstand'),
             { wait: 0.1 },
-            changeTo2('blue')('Headlight')
-            // { command_name: 'Headlight', ...changeTo('blue')('Headlight'), ...buildPayload('Headlight') },
+            changeTo('blue')('Headlight')
+
         ],
     },
     {
@@ -92,8 +87,8 @@ export let DANSE_DU_SABBAT = [
         sequence: [
             switchTo(true)('ClassicWalk'),
             { wait: 0.1 },
-            changeTo2('green')('Headlight')
-            // { command_name: 'Headlight', ...changeTo('green')('Headlight'), ...buildPayload('Headlight') },
+            changeTo('green')('Headlight')
+
         ],
     },
 ];
@@ -148,13 +143,13 @@ export let CONDUITE = [
 
 export let presets = {
     stopAndCrouch: {
-        sequence:[
+        sequence: [
             buildPayload2('StopMove'),
             buildPayload2('StandDown'),
         ]
     },
-        stopAndStand: {
-        sequence:[
+    stopAndStand: {
+        sequence: [
             buildPayload2('StopMove'),
             buildPayload2('StandUp'),
         ]
@@ -186,8 +181,7 @@ export let presets = {
     },
     contentRed: {
         sequence: [
-            changeTo2('ref')('Headlight'),
-            // { command_name: 'Headlight', ...changeTo('red')('Headlight'), ...buildPayload('Headlight') },
+            changeTo('ref')('Headlight'),
             { wait: 0.1 },
             buildPayload2('Content'),
             { wait: 0.5 },
