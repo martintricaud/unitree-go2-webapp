@@ -1,17 +1,25 @@
 <script lang="ts">
     import * as R from 'ramda';
     import { onMount } from 'svelte';
-    import { derived, get, writable } from 'svelte/store';
-    import { RadioGrid, type RadioGridChangeEvent } from 'svelte-tweakpane-ui';
-    import commands from '../../commands_1.1.7.json';
+    import { derived, writable } from 'svelte/store';
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
     import GamepadController from './components/GamepadController.svelte';
     import { gamepadStore } from './lib/gamepadStore';
-    import Lidar from './components/Lidar.svelte';
-    import { CONDUITE, buildPayload, switchTo, presets } from './lib/commandUtilities';
+    // import Lidar from './components/Lidar.svelte';
+    import {
+        CONDUITE,
+        buildPayload,
+        modeGroupData,
+        presets,
+        switchTo,
+        buildPayload2,
+        CMD_actions,
+        CMD_switches,
+        CMD_switches_names,
+    } from './lib/commandUtilities';
     import type { Command } from './lib/commandUtilities';
 
     type InputEvent<T> = {
@@ -23,6 +31,7 @@
     type NonEmptyArray<T> = [T, ...T[]];
     type EventsArray<T> = InputEvent<T>[];
 
+    // let intervalId: any;
     /* STATE VARIABLES */
 
     let gamepadUser = writable({ currentOption: 'Martin', options: [] });
@@ -42,16 +51,7 @@
     let buttonsStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.buttonsState);
     let axisStore = derived(gamepadStore, ($gamepadStore) => $gamepadStore.axisState);
 
-    const CMD_actions: Command[] = R.filter((x: Command) => x.args.length == 0 && x.working)(
-        commands as Command[],
-    );
- 
-    const CMD_switches: Command[] = R.filter(
-        (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
-    )(commands as Command[]) as Command[];
-
-    const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
-
+    let hysteria: boolean = false;
     let lightEmojiMap = R.zipObj(
         ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
         ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
@@ -93,26 +93,25 @@
     //     },gamepadMap
     // )
 
-    let modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
     onMount(() => {
         websocket.connect();
     });
 
     async function connectRobot() {
         try {
-            await websocket.send({ command: 'connect', ip: '192.168.123.161' });
+            await websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
         } catch (error) {
             console.error('Connection failed:', error);
         }
     }
 
     function disconnectRobot() {
-        websocket.send({ command: 'disconnect' });
+        websocket.send({ command_name: 'disconnect' });
     }
 
     function handleSpeedChange(speed: string) {
         websocket.send({
-            command: 'SpeedLevel',
+            command_name: 'SpeedLevel',
             parameter: { data: speedValueMap[speed] },
             ...buildPayload('SpeedLevel'),
         });
@@ -143,17 +142,8 @@
                   parameter: { color: value },
               });
     }
-</script>
 
-<Video
-    faceDetectionEnabled={FACE_DETECTION}
-    faceLandmarksEnabled={FACE_LANDMARKS}
-    agePredictionEnabled={AGE_PREDICTION}
-/>
-<!-- <Lidar /> -->
-<GamepadController monitoring={false} />
-<svelte:window
-    on:keydown|preventDefault={(event) => {
+    let keydownHandler = (event: KeyboardEvent) => {
         let L = CONDUITE.length;
         switch ($gamepadUser.currentOption) {
             case 'Martin':
@@ -161,6 +151,9 @@
                     case 'ArrowRight':
                         execute_step(CONDUITE)(stepCounter);
                         stepCounter = R.clamp(0, L)(stepCounter + 1);
+                        if (stepCounter == CONDUITE.length) {
+                            gamepadUser.update(R.assoc('currentOption', 'Christine'));
+                        }
                         break;
                     case 'ArrowLeft':
                         execute_step(CONDUITE)(stepCounter);
@@ -179,36 +172,47 @@
                 break;
             case 'Christine':
                 switch (event.key) {
+                    // case 'ArrowRight':
+                    //     if ($modeGroupData.currentOption !== 'Pose') {
+                    //         modeGroupData.update(R.assoc('currentOption', 'Pose'));
+                    //         websocket.send(presets.enterPose);
+                    //     }
+                    //     intervalId = setInterval(() => {
+                    //         websocket.send(presets.holdAim);
+                    //         // Replace with your actual logic
+                    //     }, 100);
+
+                    //     break;
+                    case 'ArrowLeft':
+                        console.log('YOUTEST');
+                        hysteria = !hysteria;
+                        websocket.send(hysteria ? presets.stopAndCrouch : presets.stopAndStand);
+                        break;
                     case 'ArrowUp':
                         websocket.send(presets.standContent);
                         break;
                     case 'ArrowDown':
                         Running_State = !Running_State;
-                        websocket.send({
-                            command: 'Trotting',
-                            ...switchTo(Running_State)('Trotting'),
-                            ...buildPayload('Trotting'),
-                        });
+                        if (Running_State) {
+                            modeGroupData.update(R.assoc('currentOption', 'Trotting'));
+                        }
+                        websocket.send(
+                            Running_State
+                                ? switchTo(Running_State)('Trotting')
+                                : switchTo(true)('FreeWalk'),
+                        );
                         break;
                     case 'b':
                         Leaping_State = !Leaping_State;
-                        websocket.send({
-                            command: 'Leaping',
-                            ...switchTo(Leaping_State)('Leaping'),
-                            ...buildPayload('Leaping'),
-                        });
+                        websocket.send(switchTo(Leaping_State)('Leaping'));
                         break;
                     case 'a':
                         Pose_State = !Pose_State;
-                        Pose_State
-                            ? websocket.send(presets.enterPose)
-                            : websocket.send(presets.exitPose);
+                        websocket.send(Pose_State ? presets.enterPose : presets.exitPose);
                         break;
                     case 'x':
                         Sit_State = !Sit_State;
-                        Sit_State
-                            ? websocket.send({ command: 'Sit', ...buildPayload('Sit') })
-                            : websocket.send(presets.exitSit);
+                        websocket.send(Sit_State ? buildPayload2('Sit') : presets.exitSit);
                         break;
                     case 'y':
                         websocket.send(presets.dance);
@@ -216,7 +220,30 @@
                 }
                 break;
         }
+    };
+</script>
+
+<Video
+    faceDetectionEnabled={FACE_DETECTION}
+    faceLandmarksEnabled={FACE_LANDMARKS}
+    agePredictionEnabled={AGE_PREDICTION}
+/>
+<!-- <Lidar /> -->
+<GamepadController monitoring={false} />
+<svelte:window
+    on:keyup={(event) => {
+        // switch ($gamepadUser.currentOption) {
+        //     case 'Christine':
+        //         if (event.key === 'ArrowRight') {
+        //             clearInterval(intervalId);
+        //             websocket.send(switchTo(false)('Pose'));
+        //             modeGroupData.update(R.assoc('currentOption','FreeWalk'))
+        //             websocket.send(switchTo(true)('FreeWalk'));
+        //         }
+        //         break;
+        // }
     }}
+    on:keydown|preventDefault={keydownHandler}
 />
 
 <div class="ui-pane">
@@ -242,7 +269,21 @@
         >
             Content + Red
         </button>
+        <!-- <button
+            on:click={() => {
+                websocket.send(presets.aimAtPublic);
+            }}
+        >
+            Aim at public
+        </button>
 
+        <button
+            on:click={() => {
+                websocket.send(presets.stopAimAtPublic);
+            }}
+        >
+            Stop aiming at public
+        </button> -->
         <div class="double-col">
             <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
             <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
@@ -253,7 +294,7 @@
             value={false}
             callback={(value: boolean) => {
                 websocket.send({
-                    command: 'lidar',
+                    command_name: 'lidar',
                     switch: value,
                 });
                 console.log(value);
@@ -264,7 +305,7 @@
             value={false}
             callback={(value: boolean) =>
                 websocket.send({
-                    command: 'subscribe',
+                    command_name: 'subscribe',
                     switch: value,
                 })}
         />
@@ -296,7 +337,11 @@
             {#if working}
                 <button
                     on:click={() =>
-                        websocket.send({ api_id: api_id, command: command_name, topic: topic })}
+                        websocket.send({
+                            api_id: api_id,
+                            command_name: command_name,
+                            topic: topic,
+                        })}
                 >
                     {command_name}
                 </button>
@@ -328,7 +373,7 @@
                 class={`${i == stepCounter ? 'active-step' : ''}`}
                 on:click={() => execute_step(CONDUITE)(i)}
             >
-                {action.command ?? action.displayName ?? undefined}
+                {action.command_name ?? action.displayName ?? undefined}
             </button>
         {/each}
     </div>

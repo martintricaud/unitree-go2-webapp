@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "test": "vitest"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
@@ -17,7 +18,8 @@
     "svelte": "^5.39.6",
     "svelte-check": "^4.3.2",
     "typescript": "~5.9.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^4.1.7"
   },
   "volta": {
     "node": "22.12.0",
@@ -27,6 +29,7 @@
     "@mediapipe/tasks-vision": "^0.10.22-rc.20250304",
     "@types/ramda": "^0.31.1",
     "hack": "^0.8.1",
+    "modern-normalize": "^3.0.1",
     "ramda": "^0.32.0",
     "three": "^0.182.0"
   }
