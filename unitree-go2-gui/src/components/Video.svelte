@@ -5,7 +5,6 @@
         FilesetResolver,
         DrawingUtils,
         FaceDetector,
-        ImageClassifier,
     } from '@mediapipe/tasks-vision';
     import { onMount, onDestroy } from 'svelte';
     import { writable, derived } from 'svelte/store';
@@ -22,7 +21,6 @@
     let horizontalScale = -1;
     export let faceLandmarksEnabled: boolean = true;
     export let faceDetectionEnabled: boolean = true;
-    export let agePredictionEnabled: boolean = false;
     let canvas: HTMLCanvasElement;
     let liveView: HTMLElement;
     let ctx: CanvasRenderingContext2D;
@@ -41,7 +39,6 @@
 
     let faceLandmarker: FaceLandmarker | null = null;
     let faceDetector: FaceDetector | null = null;
-    let agePredictor: ImageClassifier | null = null;
     let drawingUtils: DrawingUtils;
     let lastTs = 0;
 
