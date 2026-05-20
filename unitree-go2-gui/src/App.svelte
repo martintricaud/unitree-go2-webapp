@@ -22,14 +22,7 @@
     } from './lib/commandUtilities';
     import type { Command } from './lib/commandUtilities';
 
-    type InputEvent<T> = {
-        index: number;
-        value: T;
-        timestamp: number;
-    };
-
-    type NonEmptyArray<T> = [T, ...T[]];
-    type EventsArray<T> = InputEvent<T>[];
+    const CONDUITE_SEQ = CONDUITE.sequence;
 
     // let intervalId: any;
     /* STATE VARIABLES */
@@ -66,31 +59,7 @@
     let stepCounter = 0;
 
     let execute_step = executeStepFn(websocket);
-    //create an object where each key is a button name and the value is a derived store for that button's state
-    // let arrayOfButtonStores = R.mapObjIndexed(
-    //     (value, key) => derived(buttonsStore, (state) => state[key]),
-    //     get(gamepadStore).buttonsState,
-    // );
-
-    // //index commands by gamepad assignment for easy lookup of which command to trigger on button press
-    // let gamepadMap: Record<string, any> = R.indexBy(R.prop('gamepad_assignment'), commands);
-
-    // //subscribe to each button store and send a command upon button release
-    // R.forEachObjIndexed(
-    //     (command:Command, gamepad_assignment:string) => {
-    //         arrayOfButtonStores[gamepad_assignment].subscribe((buttonState:NonEmptyArray<InputEvent<boolean>>) => {
-    //             //Todo: also add a check to verify that the timestamp of false is higher than the timestamp of the last false button press plus the debounce time of the corresponding last command
-    //             if (buttonState.length >= 2 && R.last(buttonState).value == false) {
-    //                 websocket.send({
-    //                     command: 'action',
-    //                     api_id: command.api_id,
-    //                     topic: command.topic,
-    //                 });
-    //             }
-    //         });
-    //     },gamepadMap
-    // )
-
+    
     onMount(() => {
         websocket.connect();
     });
@@ -140,19 +109,19 @@
     }
 
     let keydownHandler = (event: KeyboardEvent) => {
-        let L = CONDUITE.length;
+        let L = CONDUITE_SEQ.length;
         switch ($gamepadUser.currentOption) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
-                        execute_step(CONDUITE)(stepCounter);
+                        execute_step(CONDUITE_SEQ)(stepCounter);
                         stepCounter = R.clamp(0, L)(stepCounter + 1);
-                        if (stepCounter == CONDUITE.length) {
+                        if (stepCounter == CONDUITE_SEQ.length) {
                             gamepadUser.update(R.assoc('currentOption', 'Christine'));
                         }
                         break;
                     case 'ArrowLeft':
-                        execute_step(CONDUITE)(stepCounter);
+                        execute_step(CONDUITE_SEQ)(stepCounter);
                         stepCounter = R.clamp(0, L)(stepCounter - 1);
                         break;
                     case 'ArrowDown':
@@ -162,7 +131,7 @@
                         stepCounter = R.clamp(0, L)(stepCounter - 1);
                         break;
                     case 'Enter':
-                        execute_step(CONDUITE)(stepCounter);
+                        execute_step(CONDUITE_SEQ)(stepCounter);
                         break;
                 }
                 break;
@@ -256,27 +225,12 @@
         </div>
     </div>
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
-        <button
+        <!-- <button
             on:click={() => {
                 websocket.send(presets.contentRed);
             }}
         >
             Content + Red
-        </button>
-        <!-- <button
-            on:click={() => {
-                websocket.send(presets.aimAtPublic);
-            }}
-        >
-            Aim at public
-        </button>
-
-        <button
-            on:click={() => {
-                websocket.send(presets.stopAimAtPublic);
-            }}
-        >
-            Stop aiming at public
         </button> -->
         <div class="double-col">
             <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
@@ -351,7 +305,7 @@
         {/each}
     </div>
 
-    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
+    <div class="button-grid">
         {#each $lightOptionsStore.options as option}
             <Radio
                 radioGroupData={lightOptionsStore}
@@ -360,15 +314,8 @@
             />
         {/each}
     </div>
-    <div id="actionsequence">
-        {#each CONDUITE as action, i}
-            <button
-                class={`${i == stepCounter ? 'active-step' : ''}`}
-                on:click={() => execute_step(CONDUITE)(i)}
-            >
-                {action.command_name ?? action.displayName ?? undefined}
-            </button>
-        {/each}
+    <div id="actionsequence" style="width:max-content">
+       
     </div>
     <div class="button-grid">
         {#each $speedOptionsStore.options as speedLevel}
@@ -380,9 +327,19 @@
         {/each}
     </div>
 </div>
+<div id="sidebar" class="actionsequence">
+ {#each CONDUITE_SEQ as action, i}
+            <button
+                class={`${i == stepCounter ? 'active-step' : ''}`}
+                on:click={() => execute_step(CONDUITE_SEQ)(i)}
+            >
+                {action.command_name ?? action.displayName ?? undefined}
+            </button>
+        {/each}
+</div>
 
 <style>
-    #actionsequence {
+    .actionsequence {
         display: flex;
         flex-direction: column;
         max-height: 100%;

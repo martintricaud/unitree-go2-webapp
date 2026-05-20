@@ -34,6 +34,22 @@ export type Command = {
     args: CommandArg[];
 };
 
+export type Payload = {
+    api_id: number;
+    topic: string;
+    command_name: string;
+    parameter?: Record<string, any>;
+}
+
+export type Wait = {
+    wait: number;
+};
+
+export type Sequence = {
+    displayName?: string;
+    sequence: (Payload | Wait | Sequence)[];
+}
+
 let commandIndex = indexBy(commands as Command[], prop('command_name'));
 
 export const CMD_actions: Command[] = filter(
@@ -48,7 +64,7 @@ export const CMD_switches_names: string[] = CMD_switches.map((command) => comman
 export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
 
 ///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload = (cmd: string): Pick<Command, 'api_id' | 'topic' | 'command_name'> => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
+export let buildPayload = (cmd: string): Payload => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
 ///utility for generating "toggle switch on" JSON messages
 export let switchTo = (newState: boolean) => (cmd: string) => {
     modeGroupData.update((s) => ({ ...s, currentOption: newState ? cmd : 'FreeWalk' }))
@@ -67,32 +83,36 @@ let changeTo = (newValue: any) => (cmd: string) => {
     }
 }
 
-export let DANSE_DU_SABBAT = [
-    switchTo(true)('FreeWalk'),
-    switchTo(true)('Pose'),
-    {
-        displayName: 'Sabots',
-        sequence: [
-            switchTo(true)('FreeWalk'),
-            { wait: 0.1 },
-            switchTo(true)('Backstand'),
-            { wait: 0.1 },
-            changeTo('blue')('Headlight')
+export let DANSE_DU_SABBAT: Sequence = {
+    displayName: 'Sabbat',
+    sequence: [
+        switchTo(true)('FreeWalk'),
+        switchTo(true)('Pose'),
+        {
+            displayName: 'Sabots',
+            sequence: [
+                switchTo(true)('FreeWalk'),
+                { wait: 0.1 },
+                switchTo(true)('Backstand'),
+                { wait: 0.1 },
+                changeTo('blue')('Headlight')
 
-        ],
-    },
-    {
-        displayName: 'Wizard of Oz',
-        sequence: [
-            switchTo(true)('ClassicWalk'),
-            { wait: 0.1 },
-            changeTo('green')('Headlight')
+            ],
+        },
+        {
+            displayName: 'Wizard of Oz',
+            sequence: [
+                switchTo(true)('ClassicWalk'),
+                { wait: 0.1 },
+                changeTo('green')('Headlight')
 
-        ],
-    },
-];
+            ],
+        },
+    ]
+}
 
-export let STRETCH_HELLO_JUMP = {
+
+export let STRETCH_HELLO_JUMP: Sequence = {
     displayName: 'Strello Jump',
     sequence: [
         buildPayload('StopMove'),
@@ -108,39 +128,7 @@ export let STRETCH_HELLO_JUMP = {
     ],
 };
 
-export let CONDUITE = [
-    ...DANSE_DU_SABBAT,
-    STRETCH_HELLO_JUMP,
-    {
-        displayName: 'Content',
-        sequence: [
-            buildPayload('Content'),
-            { wait: 0.05 },
-            switchTo(true)('FreeWalk'),
-        ],
-    },
-    {
-        displayName: 'Picture me...',
-        sequence: [
-            buildPayload('StopMove'),
-            switchTo(true)('Pose'),
-        ],
-    },
-    switchTo(true)('Handstand'),
-    switchTo(true)('ClassicWalk'),
-    buildPayload('FingerHeart'),
-    {
-        displayName: 'Salto',
-        sequence: [
-            buildPayload('LeftFlip'),
-            switchTo(true)('FreeWalk'),
-        ],
-    },
-
-];
-
-
-export let presets = {
+export let presets: Record<string, Sequence> = {
     stopAndCrouch: {
         sequence: [
             buildPayload('StopMove'),
@@ -227,6 +215,88 @@ export let presets = {
         ],
     }
 };
+
+const MONOLOGUE: Sequence = {
+    displayName: 'Monologue',
+    sequence: [
+        buildPayload('Sit'),
+        buildPayload('RiseSit'),
+        switchTo(true)('FreeWalk'),
+        {
+            displayName: 'Chien',
+            sequence: [
+                switchTo(true)('Leaping')
+            ],
+        },
+        switchTo(true)('FreeWalk'),
+        buildPayload('Content'),
+        {
+            displayName: 'Visée Public 1',
+            sequence: [
+                buildPayload('StopMove'),
+                switchTo(true)('Pose'),
+            ],
+        },
+
+        switchTo(true)('FreeWalk'),
+        {
+            displayName: 'Visée Public 2',
+            sequence: [
+                buildPayload('StopMove'),
+                switchTo(true)('Pose'),
+            ],
+        },
+        switchTo(true)('FreeWalk'),
+        {
+            displayName: 'Visée Public 3',
+            sequence: [
+                buildPayload('StopMove'),
+                switchTo(true)('Pose'),
+            ],
+        },
+        switchTo(true)('FreeWalk'),
+        { ...presets.contentRed, displayName: 'Content Red' },
+
+    ]
+}
+
+export let CONDUITE: Sequence = {
+    sequence:
+        [
+            ...DANSE_DU_SABBAT.sequence,
+            STRETCH_HELLO_JUMP,
+            {
+                displayName: 'Content',
+                sequence: [
+                    buildPayload('Content'),
+                    { wait: 0.05 },
+                    switchTo(true)('FreeWalk'),
+                ],
+            },
+            {
+                displayName: 'Picture me...',
+                sequence: [
+                    buildPayload('StopMove'),
+                    switchTo(true)('Pose'),
+                ],
+            },
+            switchTo(true)('Handstand'),
+            switchTo(true)('ClassicWalk'),
+            buildPayload('FingerHeart'),
+            {
+                displayName: 'Salto',
+                sequence: [
+                    buildPayload('LeftFlip'),
+                    switchTo(true)('FreeWalk'),
+                ],
+            },
+            ...MONOLOGUE.sequence,
+        ]
+}
+
+
+
+
 export let execute_step = (_websocket: WebSocketClient) => (_actionSequence: any) => (i: number) => {
     _websocket.send(_actionSequence[i]);
 };

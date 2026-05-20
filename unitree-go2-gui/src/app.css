@@ -17,13 +17,16 @@ body {
 
 
 #app {
+  border: .5em solid rgb(230, 230, 230);
   /* max-width: 1280px;
   margin: 0 auto; */
 
   width: 100vw;
   height: 100vh;
   display: grid;
+  grid-template-columns: 1fr minmax(10ch, max-content);
   grid-template-rows: calc(100vh - 20rem) 20rem;
+  grid-template-areas: "topleft sidebar" "bottomleft sidebar";
 }
 
 button {
@@ -36,10 +39,11 @@ button {
   font-family: inherit;
   cursor: pointer;
   min-height: 3em;
+  white-space: nowrap;
 
 }
 
-button:hover {
+button:hover{
   font-weight: bold;
 }
 
@@ -59,6 +63,11 @@ button:focus-visible {
   }
 }
 
+#sidebar {
+  padding: 1em;;
+  grid-area: sidebar;
+  background-color: rgb(230, 230, 230);
+}
 
 .ui-pane {
   margin: 0!important;
@@ -66,13 +75,15 @@ button:focus-visible {
   display: flex;
   flex-wrap: nowrap;
   flex-direction: row;
-  width: 100vw;
+ 
   overflow-y: hidden;
   background-color: rgb(230, 230, 230);
   gap: 1em;
+  grid-area: bottomleft;
 }
 
 .ui-pane>*{
+  width: max-content;
   height: 100%;
   overflow-y: scroll;
   padding-top: 1em;
