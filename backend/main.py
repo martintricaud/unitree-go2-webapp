@@ -45,7 +45,8 @@ class RobotSession:
         
         try:
             await asyncio.wait_for(self.conn.connect(), timeout)  # Add timeout to connect
-            self.conn.datachannel.heartbeat.start_heartbeat()
+            # The driver starts the heartbeat in on_validate; starting it here too leaves
+            # a timer chain stop_heartbeat cannot cancel.
             # notify the frontend about connection status
             if current_webSocket:
                 try:
@@ -57,7 +58,8 @@ class RobotSession:
                     print(f"An error occurred during connection: {e}")  # Handle other exceptions
                 
             self.conn.video.add_track_callback(recv_camera_stream)
-            await asyncio.wait_for(self.conn.video.switchVideoChannel(True), timeout)
+            # switchVideoChannel is a plain def returning None, so it cannot be awaited.
+            self.conn.video.switchVideoChannel(True)
 
         
         except asyncio.TimeoutError:
@@ -183,15 +185,25 @@ async def ws_api(ws: WebSocket):
     try:
         while True:
             try:
-                msg = await ws.receive_json()
-            except Exception as e: # Could be a malformed JSON or a disconnect
-                logging.exception("Failed to receive message:", e)
-                break  # exit loop if WS is closed
-            
+                raw = await ws.receive_text()
+            except WebSocketDisconnect:
+                logging.info("Control channel closed by the client.")
+                break
+            except RuntimeError:
+                logging.exception("Control channel is no longer readable.")
+                break
+
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                # One bad frame must not end the performance: log it and keep reading.
+                logging.exception("Discarding an unparseable control frame: %r", raw)
+                continue
+
             try:
                 print("Received WS message:", msg)
                 match msg:
-                    case {"_name": "lidar", "switch": switch}:
+                    case {"command_name": "lidar", "switch": switch}:
                         await robot.toggleLidar(msg["switch"])
                     case {"command_name": "connect", "ip": ip}:
                         await robot.connect(ip)
@@ -206,7 +218,7 @@ async def ws_api(ws: WebSocket):
                     case {"api_id": _}:
                         await robot.handle_command(msg)
                     case _:
-                        logging.warning("Unknown message type received:", msg)
+                        logging.warning("Unknown message type received: %r", msg)
                 await ws.send_json(msg)
             except SystemExit as exc:
                 # Handle SystemExit to prevent the server from stopping

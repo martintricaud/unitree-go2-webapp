@@ -109,26 +109,27 @@
     }
 
     let keydownHandler = (event: KeyboardEvent) => {
-        let L = CONDUITE_SEQ.length;
+        // R.clamp throws when min > max, so an empty cue sheet needs the 0 floor.
+        let lastCue = Math.max(0, CONDUITE_SEQ.length - 1);
         switch ($gamepadUser.currentOption) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
                         execute_step(CONDUITE_SEQ)(stepCounter);
-                        stepCounter = R.clamp(0, L)(stepCounter + 1);
+                        stepCounter = R.clamp(0, lastCue)(stepCounter + 1);
                         if (stepCounter == CONDUITE_SEQ.length) {
                             gamepadUser.update(R.assoc('currentOption', 'Christine'));
                         }
                         break;
                     case 'ArrowLeft':
                         execute_step(CONDUITE_SEQ)(stepCounter);
-                        stepCounter = R.clamp(0, L)(stepCounter - 1);
+                        stepCounter = R.clamp(0, lastCue)(stepCounter - 1);
                         break;
                     case 'ArrowDown':
-                        stepCounter = R.clamp(0, L)(stepCounter + 1);
+                        stepCounter = R.clamp(0, lastCue)(stepCounter + 1);
                         break;
                     case 'ArrowUp':
-                        stepCounter = R.clamp(0, L)(stepCounter - 1);
+                        stepCounter = R.clamp(0, lastCue)(stepCounter - 1);
                         break;
                     case 'Enter':
                         execute_step(CONDUITE_SEQ)(stepCounter);
