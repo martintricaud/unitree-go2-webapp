@@ -75,6 +75,12 @@ export let switchTo = (newState: boolean) => (cmd: string) => {
     }
 };
 
+let dimTo = (newValue: number) => (cmd:string) => {
+    return {
+        parameter: { brightness: newValue },
+        ...buildPayload(cmd)
+    }
+}
 
 let changeTo = (newValue: any) => (cmd: string) => {
     return {
@@ -113,7 +119,7 @@ export let DANSE_DU_SABBAT: Sequence = {
 
 
 export let STRETCH_HELLO_JUMP: Sequence = {
-    displayName: 'Strello Jump',
+    displayName: 'Stretch 👋 Jump',
     sequence: [
         buildPayload('StopMove'),
         { wait: 0.1 },
@@ -168,7 +174,7 @@ export let presets: Record<string, Sequence> = {
     },
     contentRed: {
         sequence: [
-            changeTo('ref')('Headlight'),
+            changeTo('red')('Headlight'),
             { wait: 0.1 },
             buildPayload('Content'),
             { wait: 0.5 },
@@ -198,6 +204,7 @@ export let presets: Record<string, Sequence> = {
     exitPose: {
         sequence: [
             switchTo(false)('Pose'),
+            { wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ],
     },
@@ -208,6 +215,7 @@ export let presets: Record<string, Sequence> = {
         ],
     },
     dance: {
+        displayName: 'Dance',
         sequence: [
             buildPayload('Dance2'),
             { wait: 0.1 },
@@ -220,8 +228,7 @@ const MONOLOGUE: Sequence = {
     displayName: 'Monologue',
     sequence: [
         buildPayload('Sit'),
-        buildPayload('RiseSit'),
-        switchTo(true)('FreeWalk'),
+        { ...presets.exitSit, displayName: 'FreeWalk' },
         {
             displayName: 'Chien',
             sequence: [
@@ -229,33 +236,48 @@ const MONOLOGUE: Sequence = {
             ],
         },
         switchTo(true)('FreeWalk'),
-        buildPayload('Content'),
-        {
-            displayName: 'Visée Public 1',
-            sequence: [
-                buildPayload('StopMove'),
-                switchTo(true)('Pose'),
-            ],
-        },
+        {...presets.dance},
+        // buildPayload('Content'),
+        // {
+        //     displayName: 'Visée Public 1',
+        //     sequence: [
+        //         buildPayload('StopMove'),
+        //         switchTo(true)('Pose'),
+        //     ],
+        // },
 
-        switchTo(true)('FreeWalk'),
+        // switchTo(true)('FreeWalk'),
+        // {
+        //     displayName: 'Visée Public 2',
+        //     sequence: [
+        //         buildPayload('StopMove'),
+        //         switchTo(true)('Pose'),
+        //     ],
+        // },
+        // switchTo(true)('FreeWalk'),
+        // {
+        //     displayName: 'Visée Public 3',
+        //     sequence: [
+        //         buildPayload('StopMove'),
+        //         switchTo(true)('Pose'),
+        //     ],
+        // },
+        // switchTo(true)('FreeWalk'),
+        { ...presets.contentRed, displayName: 'Ahahah Redlight' },
         {
-            displayName: 'Visée Public 2',
+            displayName: 'Assis Whitelight',
             sequence: [
-                buildPayload('StopMove'),
-                switchTo(true)('Pose'),
+                buildPayload('StandUp'),
+                { wait: 0.1 },
+                buildPayload('Sit'),
+                { wait: 0.1 },
+                changeTo('white')('Headlight'),
+                dimTo(4)('Brightness'),
+
             ],
         },
-        switchTo(true)('FreeWalk'),
-        {
-            displayName: 'Visée Public 3',
-            sequence: [
-                buildPayload('StopMove'),
-                switchTo(true)('Pose'),
-            ],
-        },
-        switchTo(true)('FreeWalk'),
-        { ...presets.contentRed, displayName: 'Content Red' },
+        buildPayload('StandDown'),
+
 
     ]
 }

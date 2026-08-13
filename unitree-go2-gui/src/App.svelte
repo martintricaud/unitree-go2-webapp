@@ -117,9 +117,9 @@
                     case 'ArrowRight':
                         execute_step(CONDUITE_SEQ)(stepCounter);
                         stepCounter = R.clamp(0, lastCue)(stepCounter + 1);
-                        if (stepCounter == CONDUITE_SEQ.length) {
-                            gamepadUser.update(R.assoc('currentOption', 'Christine'));
-                        }
+                        // if (stepCounter == CONDUITE_SEQ.length) {
+                        //     gamepadUser.update(R.assoc('currentOption', 'Christine'));
+                        // }
                         break;
                     case 'ArrowLeft':
                         execute_step(CONDUITE_SEQ)(stepCounter);
@@ -133,6 +133,21 @@
                         break;
                     case 'Enter':
                         execute_step(CONDUITE_SEQ)(stepCounter);
+                        break;
+                    case 'a':
+                        Pose_State = !Pose_State;
+                        websocket.send(Pose_State ? presets.enterPose : presets.exitPose);
+                        break;
+                    case 'b':
+                        Leaping_State = !Leaping_State;
+                        websocket.send(switchTo(Leaping_State)('Leaping'));
+                        break;
+                    case 'x':
+                        Sit_State = !Sit_State;
+                        websocket.send(Sit_State ? buildPayload('Sit') : presets.exitSit);
+                        break;
+                    case 'y':
+                        websocket.send(presets.dance);
                         break;
                 }
                 break;
@@ -316,7 +331,7 @@
         {/each}
     </div>
     <div id="actionsequence" style="width:max-content">
-       
+
     </div>
     <div class="button-grid">
         {#each $speedOptionsStore.options as speedLevel}

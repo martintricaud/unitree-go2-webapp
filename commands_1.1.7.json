@@ -528,5 +528,20 @@
         ],
         "topic": "VUI",
         "gamepad_assignment": ""
+    },
+    {
+        "command_name": "Brightness",
+        "description": "Changes the headlight state with the provided parameters",
+        "api_id": 1005,
+        "working": true,
+        "exec_time": null,
+        "args": [
+            {
+                "name": "brightness",
+                "type": "number"
+            }
+        ],
+        "topic": "VUI",
+        "gamepad_assignment": ""
     }
 ]
