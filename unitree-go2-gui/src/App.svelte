@@ -1,7 +1,6 @@
 <script lang="ts">
     import * as R from 'ramda';
     import { onMount } from 'svelte';
-    import { writable } from 'svelte/store';
     import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
@@ -11,46 +10,93 @@
     // import Lidar from './components/Lidar.svelte';
     import {
         CONDUITE,
+        changeTo,
         cueLabel,
         cuePointer,
-        modeGroupData,
+        dimTo,
+        mode,
         presets,
         switchTo,
         buildPayload,
         CMD_actions,
-        CMD_switches,
         CMD_switches_names,
         execute_step as executeStepFn,
     } from './lib/commandUtilities';
-    import type { Command } from './lib/commandUtilities';
+    import type { CueItem } from './lib/commandUtilities';
+    import { confirmable, displayed } from './lib/confirmable';
+    import type { Confirmable, ConfirmableStore } from './lib/confirmable';
+    import type { OutcomeName } from './lib/outcomes';
 
     const CONDUITE_SEQ = CONDUITE.sequence;
 
     // let intervalId: any;
     /* STATE VARIABLES */
 
-    let gamepadUser = writable({ currentOption: 'Martin', options: [] });
-    let Pose_State: boolean = false;
-    let Running_State: boolean = false;
-    let Sit_State: boolean = false;
-    let Leaping_State: boolean = false;
+    /// Who is driving. Each operator runs their own key bindings.
+    const OPERATORS = ['Martin', 'Christine'];
+    let operator = 'Martin';
+
+    /// Local display only: these two toggle what the video overlay draws and reach no robot.
     let FACE_DETECTION = false;
     let FACE_LANDMARKS = false;
 
-    let hysteria: boolean = false;
+    /// Relay controls. The relay acts on these itself, through a publish that expects no reply
+    /// or through a subscription, so there is no robot verdict to wait for and nothing to
+    /// confirm. Each switch records what the relay was told.
+    let lidarOn = false;
+    let monitoringState = false;
+
+    /// Robot commands. Each control holds the value the robot confirmed and, while the robot
+    /// has not answered, the value the operator asked for. A refusal takes the asked-for value
+    /// back; silence leaves it in place and marks it unconfirmed.
+    const obstacleAvoidance = confirmable(true);
+    const headlight = confirmable('white');
+    const speed = confirmable('normal');
+    const sitting = confirmable(false);
+    const crouched = confirmable(false);
+
     let lightEmojiMap = R.zipObj(
         ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
         ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
     );
-    let lightOptionsStore = writable({ options: R.keys(lightEmojiMap), currentOption: 'white' });
-    let speedOptionsStore = writable({
-        options: ['slow', 'normal', 'fast'],
-        currentOption: 'normal',
-    });
     let speedValueMap: Record<string, number> = R.zipObj(['slow', 'normal', 'fast'], [-1, 0, 1]);
+    const LIGHT_OPTIONS = R.keys(lightEmojiMap);
+    const SPEED_OPTIONS = R.keys(speedValueMap);
 
     let execute_step = executeStepFn(websocket);
-    
+
+    /// Tells one proposal from the next, so a verdict answers only the proposal that produced
+    /// it. It never leaves the browser: WebSocketClient mints the ids the relay sees.
+    let lastProposal = 0;
+
+    /// Show the operator's choice at once, send it, and let the robot's verdict settle it or
+    /// take it back. Every control that represents robot state goes through here.
+    async function attempt<T>(control: ConfirmableStore<T>, proposed: T, item: CueItem) {
+        const reqId = (lastProposal += 1);
+        control.propose(proposed, reqId);
+        control.resolve(reqId, await websocket.request(item));
+    }
+
+    /// What a control says about its own value: waiting for the robot, or the verdict on the
+    /// last thing it asked for. A confirmed value says nothing.
+    const MARK: Record<OutcomeName, string> = {
+        confirmed: '',
+        failed: '✗',
+        rejected: '⊘',
+        unknown: '?',
+    };
+
+    function markerOf(state: Confirmable<unknown>): string {
+        if (state.pending !== null) return '…';
+        if (state.lastOutcome === null) return '';
+        return MARK[state.lastOutcome.outcome];
+    }
+
+    /// In a radio group the marker belongs to the option the group is showing; the others
+    /// carry none.
+    const markerFor = (state: Confirmable<string>, option: string): string =>
+        displayed(state) === option ? markerOf(state) : '';
+
     onMount(() => {
         websocket.connect();
     });
@@ -67,43 +113,66 @@
         websocket.send({ command_name: 'disconnect' });
     }
 
-    function handleSpeedChange(speed: string) {
-        websocket.send({
-            ...buildPayload('SpeedLevel'),
-            parameter: { data: speedValueMap[speed] },
-        });
-    }
-    function handleModeChange(mode: string) {
-        //Look up the command triggered by the radio button change
-        let cmd: Command | undefined = R.find((cmd) => cmd?.command_name == mode, CMD_switches);
-        if (cmd != undefined) {
-            websocket.send({
-                kind: 'command',
-                api_id: cmd.api_id,
-                parameter: R.objOf(cmd.args[0]?.name, true),
-                topic: cmd.topic,
-            });
-        }
-    }
+    const setLidar = (next: boolean) => {
+        if (websocket.send({ command_name: 'lidar', switch: next })) lidarOn = next;
+    };
 
-    function handleColorChange(value: string) {
-        value == 'white'
-            ? websocket.send({
-                kind: 'command',
-                topic: 'VUI',
-                api_id: 1005,
-                parameter: { brightness: 1 },
-            })
-            : websocket.send({
-                kind: 'command',
-                topic: 'VUI',
-                api_id: 1007,
-                parameter: { color: value },
-            });
-    }
+    const setMonitoringState = (next: boolean) => {
+        if (websocket.send({ command_name: 'subscribe', switch: next })) monitoringState = next;
+    };
+
+    /// Obstacle avoidance has no entry in the command table, so its payload is written out
+    /// here; `command_name` names it in the outcome log.
+    const obstaclePayload = (enable: boolean): CueItem => ({
+        kind: 'command',
+        topic: 'OBSTACLES_AVOID',
+        api_id: 1001,
+        command_name: 'ObstaclesAvoid',
+        parameter: { enable },
+    });
+
+    /// The white option is sent as a brightness rather than as a colour.
+    const headlightPayload = (colour: string): CueItem =>
+        colour === 'white' ? dimTo(1)('Brightness') : changeTo(colour)('Headlight');
+
+    const handleSpeedChange = (level: string) =>
+        attempt(speed, level, {
+            ...buildPayload('SpeedLevel'),
+            parameter: { data: speedValueMap[level] },
+        });
+
+    const handleModeChange = (name: string) => attempt(mode, name, switchTo(true)(name));
+
+    const handleColorChange = (colour: string) =>
+        attempt(headlight, colour, headlightPayload(colour));
+
+    /// The keys both operators share. Each asks for the opposite of what its control shows, so
+    /// a refused command leaves the next press asking for the same thing again.
+    const togglePose = () => {
+        const entering = displayed($mode) !== 'Pose';
+        void attempt(
+            mode,
+            entering ? 'Pose' : 'FreeWalk',
+            entering ? presets.enterPose : presets.exitPose,
+        );
+    };
+
+    const toggleLeaping = () => {
+        const entering = displayed($mode) !== 'Leaping';
+        void attempt(mode, entering ? 'Leaping' : 'FreeWalk', switchTo(entering)('Leaping'));
+    };
+
+    const toggleSit = () => {
+        const sittingDown = !displayed($sitting);
+        void attempt(sitting, sittingDown, sittingDown ? buildPayload('Sit') : presets.exitSit);
+    };
+
+    /// Both cues end on FreeWalk, which is what they propose to the mode radio.
+    const dance = () => void attempt(mode, 'FreeWalk', presets.dance);
+    const standContent = () => void attempt(mode, 'FreeWalk', presets.standContent);
 
     let keydownHandler = (event: KeyboardEvent) => {
-        switch ($gamepadUser.currentOption) {
+        switch (operator) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
@@ -124,27 +193,23 @@
                         execute_step(CONDUITE_SEQ)($cuePointer);
                         break;
                     case 'a':
-                        Pose_State = !Pose_State;
-                        websocket.send(Pose_State ? presets.enterPose : presets.exitPose);
+                        togglePose();
                         break;
                     case 'b':
-                        Leaping_State = !Leaping_State;
-                        websocket.send(switchTo(Leaping_State)('Leaping'));
+                        toggleLeaping();
                         break;
                     case 'x':
-                        Sit_State = !Sit_State;
-                        websocket.send(Sit_State ? buildPayload('Sit') : presets.exitSit);
+                        toggleSit();
                         break;
                     case 'y':
-                        websocket.send(presets.dance);
+                        dance();
                         break;
                 }
                 break;
             case 'Christine':
                 switch (event.key) {
                     // case 'ArrowRight':
-                    //     if ($modeGroupData.currentOption !== 'Pose') {
-                    //         modeGroupData.update(R.assoc('currentOption', 'Pose'));
+                    //     if (displayed($mode) !== 'Pose') {
                     //         websocket.send(presets.enterPose);
                     //     }
                     //     intervalId = setInterval(() => {
@@ -153,38 +218,38 @@
                     //     }, 100);
 
                     //     break;
-                    case 'ArrowLeft':
-                        hysteria = !hysteria;
-                        websocket.send(hysteria ? presets.stopAndCrouch : presets.stopAndStand);
-                        break;
-                    case 'ArrowUp':
-                        websocket.send(presets.standContent);
-                        break;
-                    case 'ArrowDown':
-                        Running_State = !Running_State;
-                        if (Running_State) {
-                            modeGroupData.update(R.assoc('currentOption', 'Trotting'));
-                        }
-                        websocket.send(
-                            Running_State
-                                ? switchTo(Running_State)('Trotting')
-                                : switchTo(true)('FreeWalk'),
+                    case 'ArrowLeft': {
+                        const crouching = !displayed($crouched);
+                        void attempt(
+                            crouched,
+                            crouching,
+                            crouching ? presets.stopAndCrouch : presets.stopAndStand,
                         );
                         break;
+                    }
+                    case 'ArrowUp':
+                        standContent();
+                        break;
+                    case 'ArrowDown': {
+                        const running = displayed($mode) !== 'Trotting';
+                        void attempt(
+                            mode,
+                            running ? 'Trotting' : 'FreeWalk',
+                            switchTo(true)(running ? 'Trotting' : 'FreeWalk'),
+                        );
+                        break;
+                    }
                     case 'b':
-                        Leaping_State = !Leaping_State;
-                        websocket.send(switchTo(Leaping_State)('Leaping'));
+                        toggleLeaping();
                         break;
                     case 'a':
-                        Pose_State = !Pose_State;
-                        websocket.send(Pose_State ? presets.enterPose : presets.exitPose);
+                        togglePose();
                         break;
                     case 'x':
-                        Sit_State = !Sit_State;
-                        websocket.send(Sit_State ? buildPayload('Sit') : presets.exitSit);
+                        toggleSit();
                         break;
                     case 'y':
-                        websocket.send(presets.dance);
+                        dance();
                         break;
                 }
                 break;
@@ -201,12 +266,11 @@
 <StatusStrip />
 <svelte:window
     on:keyup={(event) => {
-        // switch ($gamepadUser.currentOption) {
+        // switch (operator) {
         //     case 'Christine':
         //         if (event.key === 'ArrowRight') {
         //             clearInterval(intervalId);
         //             websocket.send(switchTo(false)('Pose'));
-        //             modeGroupData.update(R.assoc('currentOption','FreeWalk'))
         //             websocket.send(switchTo(true)('FreeWalk'));
         //         }
         //         break;
@@ -226,8 +290,13 @@
             {$robotConnected ? 'Disconnect' : 'Connect'}
         </button>
         <div>
-            <Radio optionName={'Martin'} radioGroupData={gamepadUser} />
-            <Radio optionName={'Christine'} radioGroupData={gamepadUser} />
+            {#each OPERATORS as name}
+                <Radio
+                    optionName={name}
+                    selected={operator === name}
+                    callback={() => (operator = name)}
+                />
+            {/each}
         </div>
     </div>
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
@@ -245,51 +314,39 @@
 
         <Switch
             label={'Lidar'}
-            value={false}
-            callback={(value: boolean) => {
-                websocket.send({
-                    command_name: 'lidar',
-                    switch: value,
-                });
-            }}
+            value={lidarOn}
+            disabled={!$robotConnected}
+            callback={setLidar}
         />
         <Switch
             label={'Monitor State'}
-            value={false}
-            callback={(value: boolean) =>
-                websocket.send({
-                    command_name: 'subscribe',
-                    switch: value,
-                })}
+            value={monitoringState}
+            disabled={!$robotConnected}
+            callback={setMonitoringState}
         />
         <Switch
-            value={true}
             label={'Obstacle Avoidance'}
-            callback={(value: boolean) =>
-                websocket.send({
-                    kind: 'command',
-                    topic: 'OBSTACLES_AVOID',
-                    api_id: 1001,
-                    parameter: { enable: value },
-                })}
+            value={displayed($obstacleAvoidance)}
+            marker={markerOf($obstacleAvoidance)}
+            disabled={!$robotConnected}
+            callback={(next: boolean) => attempt(obstacleAvoidance, next, obstaclePayload(next))}
         />
         <Switch
             label={'Face Landmarks'}
-            callback={(value: boolean) => {
-                FACE_LANDMARKS = value;
-            }}
+            value={FACE_LANDMARKS}
+            callback={(next: boolean) => (FACE_LANDMARKS = next)}
         />
         <Switch
             label={'Face Detection'}
-            callback={(value: boolean) => {
-                FACE_DETECTION = value;
-            }}
+            value={FACE_DETECTION}
+            callback={(next: boolean) => (FACE_DETECTION = next)}
         />
     </div>
     <div class="button-grid">
         {#each CMD_actions as { api_id, working, command_name, topic }}
             {#if working}
                 <button
+                    disabled={!$robotConnected}
                     on:click={() =>
                         websocket.send({
                             kind: 'command',
@@ -307,18 +364,22 @@
         {#each CMD_switches_names as switchName}
             <Radio
                 optionName={switchName}
-                radioGroupData={modeGroupData}
-                callback={handleModeChange}
+                selected={displayed($mode) === switchName}
+                marker={markerFor($mode, switchName)}
+                disabled={!$robotConnected}
+                callback={() => handleModeChange(switchName)}
             />
         {/each}
     </div>
 
     <div class="button-grid">
-        {#each $lightOptionsStore.options as option}
+        {#each LIGHT_OPTIONS as colour}
             <Radio
-                radioGroupData={lightOptionsStore}
-                optionName={option}
-                callback={handleColorChange}
+                optionName={colour}
+                selected={displayed($headlight) === colour}
+                marker={markerFor($headlight, colour)}
+                disabled={!$robotConnected}
+                callback={() => handleColorChange(colour)}
             />
         {/each}
     </div>
@@ -326,11 +387,13 @@
 
     </div>
     <div class="button-grid">
-        {#each $speedOptionsStore.options as speedLevel}
+        {#each SPEED_OPTIONS as speedLevel}
             <Radio
                 optionName={speedLevel}
-                radioGroupData={speedOptionsStore}
-                callback={handleSpeedChange}
+                selected={displayed($speed) === speedLevel}
+                marker={markerFor($speed, speedLevel)}
+                disabled={!$robotConnected}
+                callback={() => handleSpeedChange(speedLevel)}
             />
         {/each}
     </div>

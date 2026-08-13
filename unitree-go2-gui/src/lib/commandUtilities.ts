@@ -1,6 +1,7 @@
 import { clamp, filter, indexBy, pick, prop } from 'remeda';
 import commands from '../../../commands_1.1.7.json';
 import { writable } from 'svelte/store';
+import { confirmable } from './confirmable';
 import type { WebSocketClient } from './webSocketClient';
 export type TypeMap = {
     number: number;
@@ -80,7 +81,11 @@ export const CMD_switches: Command[] = filter(
     (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
 );
 export const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
-export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
+
+/// The locomotion mode the robot is believed to be in, and whether it confirmed it. Every mode
+/// command proposes a value here and the robot's verdict settles or reverts it, so what the
+/// mode radio shows is what the robot answered rather than what the browser asked for.
+export const mode = confirmable('FreeWalk');
 
 ///utility for generating a JSON message containing the api_id and topic fields
 export let buildPayload = (cmd: string): Payload => ({
@@ -89,7 +94,6 @@ export let buildPayload = (cmd: string): Payload => ({
 });
 ///utility for generating "toggle switch on" JSON messages
 export let switchTo = (newState: boolean) => (cmd: string): Payload => {
-    modeGroupData.update((s) => ({ ...s, currentOption: newState ? cmd : 'FreeWalk' }))
     return {
         parameter: { [commandIndex[cmd].args[0].name]: newState },
         ...buildPayload(cmd)
@@ -97,14 +101,14 @@ export let switchTo = (newState: boolean) => (cmd: string): Payload => {
     }
 };
 
-let dimTo = (newValue: number) => (cmd: string): Payload => {
+export let dimTo = (newValue: number) => (cmd: string): Payload => {
     return {
         parameter: { brightness: newValue },
         ...buildPayload(cmd)
     }
 }
 
-let changeTo = (newValue: any) => (cmd: string): Payload => {
+export let changeTo = (newValue: any) => (cmd: string): Payload => {
     return {
         parameter: { color: newValue },
         ...buildPayload(cmd)
