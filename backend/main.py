@@ -267,28 +267,43 @@ class RobotSession:
             
         except Exception as e:
             print(f"❌ Error: {e}")
-    async def run_sequence(self, sequence):
-        """Execute a cue's steps in order and reduce them to one verdict."""
-        step_outcomes = []
+    async def step_outcomes(self, sequence):
+        """Execute a cue's steps in order and return one outcome per command it dispatched.
+
+        A nested sequence belongs to the enclosing cue: its steps answer to the same request id,
+        so their outcomes are collected here and reduced once, by run_sequence.
+        """
+        outcomes = []
         for msg in sequence:
             match msg:
-                case {"command_name": _}:
+                case {"kind": "command"}:
                     # OPEN QUESTION, awaiting a decision: a step that raises aborts the steps
                     # behind it, which is today's behaviour and is kept deliberately. Running
                     # the remaining steps and reporting the aggregate is the alternative.
-                    step_outcomes.append(await self.dispatch(msg))
-                case {"wait":_}:
-                    await asyncio.sleep(msg.get("wait"))
-        return cue_outcome(step_outcomes)
+                    outcomes.append(await self.dispatch(msg))
+                case {"kind": "wait", "wait": seconds}:
+                    await asyncio.sleep(seconds)
+                case {"kind": "sequence", "sequence": nested}:
+                    outcomes.extend(await self.step_outcomes(nested))
+                case _:
+                    logging.warning("Skipping a cue item of no recognised kind: %r", msg)
+        return outcomes
+
+    async def run_sequence(self, sequence):
+        """Execute a cue's steps in order and reduce them to the one verdict its request id gets."""
+        return cue_outcome(await self.step_outcomes(sequence))
 
     async def execute(self, msg):
         """Run one queued item and record its verdict."""
         try:
             match msg:
-                case {"sequence": sequence}:
+                case {"kind": "sequence", "sequence": sequence}:
                     verdict = await self.run_sequence(sequence)
-                case _:
+                case {"kind": "command"}:
                     verdict = await self.dispatch(msg)
+                case _:
+                    # A lone wait, or a kind the relay cannot read: step_outcomes logs it.
+                    verdict = await self.run_sequence([msg])
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -385,9 +400,10 @@ async def ws_api(ws: WebSocket):
                         await robot.subscribe_to_robotstate(msg["switch"])
                     case {"command_name": "joystick"}:
                         await robot.test_joystick()
-                    case {"sequence": _} | {"api_id": _}:
-                        # Robot commands are queued, never awaited here: waiting for the robot
-                        # inside this loop is what stops the operator reaching the next cue.
+                    case {"kind": _}:
+                        # `kind` marks a cue item; the session controls above carry none. Cue
+                        # items are queued, never awaited here: waiting for the robot inside
+                        # this loop is what stops the operator reaching the next cue.
                         robot.commands.put_nowait(msg)
                     case _:
                         logging.warning("Unknown message type received: %r", msg)

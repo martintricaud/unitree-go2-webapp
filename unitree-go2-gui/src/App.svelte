@@ -20,9 +20,20 @@
         CMD_switches_names,
         execute_step as executeStepFn,
     } from './lib/commandUtilities';
-    import type { Command } from './lib/commandUtilities';
+    import type { Command, CueItem } from './lib/commandUtilities';
 
     const CONDUITE_SEQ = CONDUITE.sequence;
+
+    const cueLabel = (item: CueItem): string => {
+        switch (item.kind) {
+            case 'command':
+                return item.command_name;
+            case 'wait':
+                return `⏱ ${item.wait}s`;
+            case 'sequence':
+                return item.displayName ?? 'unnamed sequence';
+        }
+    };
 
     // let intervalId: any;
     /* STATE VARIABLES */
@@ -87,6 +98,7 @@
         let cmd: Command | undefined = R.find((cmd) => cmd?.command_name == mode, CMD_switches);
         if (cmd != undefined) {
             websocket.send({
+                kind: 'command',
                 api_id: cmd.api_id,
                 parameter: R.objOf(cmd.args[0]?.name, true),
                 topic: cmd.topic,
@@ -97,11 +109,13 @@
     function handleColorChange(value: string) {
         value == 'white'
             ? websocket.send({
+                kind: 'command',
                 topic: 'VUI',
                 api_id: 1005,
                 parameter: { brightness: 1 },
             })
             : websocket.send({
+                kind: 'command',
                 topic: 'VUI',
                 api_id: 1007,
                 parameter: { color: value },
@@ -277,6 +291,7 @@
             label={'Obstacle Avoidance'}
             callback={(value: boolean) =>
                 websocket.send({
+                    kind: 'command',
                     topic: 'OBSTACLES_AVOID',
                     api_id: 1001,
                     parameter: { enable: value },
@@ -301,6 +316,7 @@
                 <button
                     on:click={() =>
                         websocket.send({
+                            kind: 'command',
                             api_id: api_id,
                             command_name: command_name,
                             topic: topic,
@@ -349,7 +365,7 @@
                 class={`${i == stepCounter ? 'active-step' : ''}`}
                 on:click={() => execute_step(CONDUITE_SEQ)(i)}
             >
-                {action.command_name ?? action.displayName ?? undefined}
+                {cueLabel(action)}
             </button>
         {/each}
 </div>

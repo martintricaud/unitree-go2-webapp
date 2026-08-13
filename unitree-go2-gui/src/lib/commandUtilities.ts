@@ -35,6 +35,7 @@ export type Command = {
 };
 
 export type Payload = {
+    kind: 'command';
     api_id: number;
     topic: string;
     command_name: string;
@@ -42,13 +43,19 @@ export type Payload = {
 }
 
 export type Wait = {
+    kind: 'wait';
     wait: number;
 };
 
 export type Sequence = {
+    kind: 'sequence';
     displayName?: string;
-    sequence: (Payload | Wait | Sequence)[];
+    sequence: CueItem[];
 }
+
+/// `kind` tells the reader of a cue item which of the three shapes it is holding, both in the
+/// browser and on the relay, which dispatches on it.
+export type CueItem = Payload | Wait | Sequence;
 
 let commandIndex = indexBy(commands as Command[], prop('command_name'));
 
@@ -64,9 +71,12 @@ export const CMD_switches_names: string[] = CMD_switches.map((command) => comman
 export const modeGroupData = writable({ options: CMD_switches_names, currentOption: 'FreeWalk' });
 
 ///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload = (cmd: string): Payload => pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']);
+export let buildPayload = (cmd: string): Payload => ({
+    kind: 'command',
+    ...pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']),
+});
 ///utility for generating "toggle switch on" JSON messages
-export let switchTo = (newState: boolean) => (cmd: string) => {
+export let switchTo = (newState: boolean) => (cmd: string): Payload => {
     modeGroupData.update((s) => ({ ...s, currentOption: newState ? cmd : 'FreeWalk' }))
     return {
         parameter: { [commandIndex[cmd].args[0].name]: newState },
@@ -75,14 +85,14 @@ export let switchTo = (newState: boolean) => (cmd: string) => {
     }
 };
 
-let dimTo = (newValue: number) => (cmd:string) => {
+let dimTo = (newValue: number) => (cmd: string): Payload => {
     return {
         parameter: { brightness: newValue },
         ...buildPayload(cmd)
     }
 }
 
-let changeTo = (newValue: any) => (cmd: string) => {
+let changeTo = (newValue: any) => (cmd: string): Payload => {
     return {
         parameter: { color: newValue },
         ...buildPayload(cmd)
@@ -90,26 +100,29 @@ let changeTo = (newValue: any) => (cmd: string) => {
 }
 
 export let DANSE_DU_SABBAT: Sequence = {
+    kind: 'sequence',
     displayName: 'Sabbat',
     sequence: [
         switchTo(true)('FreeWalk'),
         switchTo(true)('Pose'),
         {
+            kind: 'sequence',
             displayName: 'Sabots',
             sequence: [
                 switchTo(true)('FreeWalk'),
-                { wait: 0.1 },
+                { kind: 'wait', wait: 0.1 },
                 switchTo(true)('Backstand'),
-                { wait: 0.1 },
+                { kind: 'wait', wait: 0.1 },
                 changeTo('blue')('Headlight')
 
             ],
         },
         {
+            kind: 'sequence',
             displayName: 'Wizard of Oz',
             sequence: [
                 switchTo(true)('ClassicWalk'),
-                { wait: 0.1 },
+                { kind: 'wait', wait: 0.1 },
                 changeTo('green')('Headlight')
 
             ],
@@ -119,117 +132,131 @@ export let DANSE_DU_SABBAT: Sequence = {
 
 
 export let STRETCH_HELLO_JUMP: Sequence = {
+    kind: 'sequence',
     displayName: 'Stretch 👋 Jump',
     sequence: [
         buildPayload('StopMove'),
-        { wait: 0.1 },
+        { kind: 'wait', wait: 0.1 },
         buildPayload('Stretch'),
         buildPayload('Hello'),
-        { wait: 0.3 },
+        { kind: 'wait', wait: 0.3 },
         buildPayload('FrontJump'),
-        { wait: 0.6 },
+        { kind: 'wait', wait: 0.6 },
         buildPayload('FrontJump'),
-        { wait: 0.1 },
+        { kind: 'wait', wait: 0.1 },
         switchTo(true)('FreeWalk'),
     ],
 };
 
 export let presets: Record<string, Sequence> = {
     stopAndCrouch: {
+        kind: 'sequence',
         sequence: [
             buildPayload('StopMove'),
             buildPayload('StandDown'),
         ]
     },
     stopAndStand: {
+        kind: 'sequence',
         sequence: [
             buildPayload('StopMove'),
             buildPayload('StandUp'),
         ]
     },
     holdAim: {
+        kind: 'sequence',
         sequence: [
             { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ]
 
     },
     aimAtPublic: {
+        kind: 'sequence',
         sequence: [
             buildPayload('StopMove'),
             switchTo(true)('Pose'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
         ],
     },
     stopAimAtPublic: {
+        kind: 'sequence',
         sequence: [
             { ...buildPayload('Euler'), parameter: { vx: 0, vy: 0, vyaw: 0 } },
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ]
     },
     contentRed: {
+        kind: 'sequence',
         sequence: [
             changeTo('red')('Headlight'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             buildPayload('Content'),
-            { wait: 0.5 },
+            { kind: 'wait', wait: 0.5 },
             switchTo(true)('FreeWalk'),
         ],
     },
 
     standContent: {
+        kind: 'sequence',
         sequence: [
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             buildPayload('BalanceStand'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             switchTo(true)('FreeWalk'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             buildPayload('Content'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             switchTo(true)('FreeWalk'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
         ],
     },
     exitSit: {
+        kind: 'sequence',
         sequence: [
             buildPayload('RiseSit'),
             switchTo(true)('FreeWalk'),
         ],
     },
     exitPose: {
+        kind: 'sequence',
         sequence: [
             switchTo(false)('Pose'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ],
     },
     enterPose: {
+        kind: 'sequence',
         sequence: [
             buildPayload('StopMove'),
             switchTo(true)('Pose'),
         ],
     },
     dance: {
+        kind: 'sequence',
         displayName: 'Dance',
         sequence: [
             buildPayload('Dance2'),
-            { wait: 0.1 },
+            { kind: 'wait', wait: 0.1 },
             switchTo(true)('FreeWalk'),
         ],
     }
 };
 
 const MONOLOGUE: Sequence = {
+    kind: 'sequence',
     displayName: 'Monologue',
     sequence: [
         buildPayload('Sit'),
         { ...presets.exitSit, displayName: 'FreeWalk' },
         {
+            kind: 'sequence',
             displayName: 'Chien',
             sequence: [
                 switchTo(true)('Leaping')
@@ -265,12 +292,13 @@ const MONOLOGUE: Sequence = {
         // switchTo(true)('FreeWalk'),
         { ...presets.contentRed, displayName: 'Ahahah Redlight' },
         {
+            kind: 'sequence',
             displayName: 'Assis Whitelight',
             sequence: [
                 buildPayload('StandUp'),
-                { wait: 0.1 },
+                { kind: 'wait', wait: 0.1 },
                 buildPayload('Sit'),
-                { wait: 0.1 },
+                { kind: 'wait', wait: 0.1 },
                 changeTo('white')('Headlight'),
                 dimTo(4)('Brightness'),
 
@@ -283,19 +311,22 @@ const MONOLOGUE: Sequence = {
 }
 
 export let CONDUITE: Sequence = {
+    kind: 'sequence',
     sequence:
         [
             ...DANSE_DU_SABBAT.sequence,
             STRETCH_HELLO_JUMP,
             {
+                kind: 'sequence',
                 displayName: 'Content',
                 sequence: [
                     buildPayload('Content'),
-                    { wait: 0.05 },
+                    { kind: 'wait', wait: 0.05 },
                     switchTo(true)('FreeWalk'),
                 ],
             },
             {
+                kind: 'sequence',
                 displayName: 'Picture me...',
                 sequence: [
                     buildPayload('StopMove'),
@@ -306,6 +337,7 @@ export let CONDUITE: Sequence = {
             switchTo(true)('ClassicWalk'),
             buildPayload('FingerHeart'),
             {
+                kind: 'sequence',
                 displayName: 'Salto',
                 sequence: [
                     buildPayload('LeftFlip'),

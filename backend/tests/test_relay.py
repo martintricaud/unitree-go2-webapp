@@ -3,6 +3,7 @@ exactly one of four outcomes. No robot and no network: see conftest for the stub
 
 import asyncio
 import json
+import logging
 import time
 
 import pytest
@@ -20,7 +21,16 @@ OK, FAILS, MUTE, SILENT, REFUSED = 9001, 9002, 9003, 9004, 9005
 
 def command(api_id, name="Test", topic="SPORT_MOD"):
     """One robot command in the shape the browser sends it."""
-    return {"api_id": api_id, "topic": topic, "command_name": name}
+    return {"kind": "command", "api_id": api_id, "topic": topic, "command_name": name}
+
+
+def wait(seconds=0.0):
+    return {"kind": "wait", "wait": seconds}
+
+
+def nested(*items, name="Nested"):
+    """A sequence item, as the browser sends one inside a cue."""
+    return {"kind": "sequence", "displayName": name, "sequence": list(items)}
 
 
 # ── Reading one reply ────────────────────────────────────────────────────────────────────
@@ -140,7 +150,7 @@ async def test_dispatch_bounds_the_wait_it_hands_the_driver(session, pub_sub):
 
 def cue(*api_ids):
     steps = [command(api_id, name=f"step{api_id}") for api_id in api_ids]
-    return [steps[0], {"wait": 0.0}, *steps[1:]]
+    return [steps[0], wait(), *steps[1:]]
 
 
 async def test_a_cue_confirms_only_when_every_step_confirms(session, fast_timeouts):
@@ -167,7 +177,7 @@ async def test_a_failure_outranks_silence_in_a_cue(session, pub_sub, fast_timeou
 
 
 async def test_a_cue_with_nothing_dispatchable_is_unknown(session, fast_timeouts):
-    outcome, _, detail = await session.run_sequence([{"wait": 0.0}])
+    outcome, _, detail = await session.run_sequence([wait()])
     assert outcome == main.UNKNOWN
     assert "no dispatchable command" in detail
 
@@ -176,15 +186,73 @@ async def test_a_step_that_raises_aborts_the_steps_behind_it(session, pub_sub, f
     """Today's behaviour, kept deliberately. Whether it should continue instead is an open
     question the plan records as undecided."""
     pub_sub.behaviour = {FAILS: ("raise", RuntimeError("Data channel is not open"))}
-    await session.execute({"sequence": cue(FAILS, OK)})
+    await session.execute(nested(*cue(FAILS, OK)))
     assert [entry["options"]["api_id"] for entry in pub_sub.sent] == [FAILS]
     assert session.results[-1]["outcome"] == main.FAILED
 
 
 async def test_a_cue_step_waits_the_time_it_asks_for(session, pub_sub, fast_timeouts):
     started = time.perf_counter()
-    await session.run_sequence([command(OK), {"wait": 0.05}])
+    await session.run_sequence([command(OK), wait(0.05)])
     assert time.perf_counter() - started >= 0.05
+
+
+# ── Nested sequences, and items the relay cannot read ────────────────────────────────────
+
+
+async def test_a_nested_sequence_dispatches_every_leaf(session, pub_sub, fast_timeouts):
+    """Two levels of nesting. Matching on command_name alone dropped the nested item silently."""
+    leaves = [9201, 9202, 9203, 9204]
+    outcome, code, detail = await session.run_sequence(
+        [
+            command(leaves[0], name="first"),
+            nested(
+                command(leaves[1], name="second"),
+                wait(),
+                nested(command(leaves[2], name="third"), name="inner"),
+                name="middle",
+            ),
+            command(leaves[3], name="fourth"),
+        ]
+    )
+    assert [entry["options"]["api_id"] for entry in pub_sub.sent] == leaves
+    assert (outcome, code) == (main.CONFIRMED, 0)
+    assert detail == "4 steps confirmed", "a leaf's outcome must count towards the enclosing cue"
+
+
+async def test_a_failed_leaf_fails_the_enclosing_cue(session, pub_sub, fast_timeouts):
+    pub_sub.behaviour = {FAILS: ("code", 3203)}
+    outcome, code, _ = await session.run_sequence([command(OK), nested(command(FAILS))])
+    assert (outcome, code) == (main.FAILED, 3203)
+
+
+async def test_a_silent_leaf_leaves_the_enclosing_cue_unknown(session, pub_sub, fast_timeouts):
+    pub_sub.behaviour = {SILENT: "silent"}
+    assert (await session.run_sequence([nested(command(SILENT)), command(OK)]))[0] == main.UNKNOWN
+
+
+async def test_a_failed_leaf_outranks_a_silent_leaf_in_another_branch(session, pub_sub, fast_timeouts):
+    """Precedence holds across nesting levels because every leaf feeds the one reduction."""
+    pub_sub.behaviour = {SILENT: "silent", FAILS: ("code", 3203)}
+    outcome, code, _ = await session.run_sequence(
+        [nested(command(SILENT), name="left"), nested(command(FAILS), name="right")]
+    )
+    assert (outcome, code) == (main.FAILED, 3203)
+
+
+async def test_an_item_of_an_unrecognised_kind_is_logged_and_not_sent(session, pub_sub, fast_timeouts, caplog):
+    with caplog.at_level(logging.WARNING):
+        outcome, _, _ = await session.run_sequence([{"kind": "pirouette", "api_id": OK, "topic": "SPORT_MOD"}])
+    assert pub_sub.sent == [], "an item the relay cannot read must not reach the robot"
+    assert "pirouette" in caplog.text
+    assert outcome == main.UNKNOWN
+
+
+async def test_an_item_with_no_kind_is_logged_rather_than_dropped(session, pub_sub, fast_timeouts, caplog):
+    with caplog.at_level(logging.WARNING):
+        await session.run_sequence([{"api_id": OK, "topic": "SPORT_MOD", "command_name": "Hello"}])
+    assert pub_sub.sent == []
+    assert "no recognised kind" in caplog.text
 
 
 # ── The queue and its single worker ──────────────────────────────────────────────────────
@@ -231,10 +299,30 @@ async def test_the_worker_records_a_verdict_per_command(relay, worker, pub_sub, 
 
 
 async def test_a_sequence_reaches_the_worker_as_one_item(relay, worker, pub_sub, fast_timeouts):
-    await main.ws_api(FakeWebSocket([json.dumps({"sequence": cue(OK, OK)})]))
+    await main.ws_api(FakeWebSocket([json.dumps(nested(*cue(OK, OK)))]))
     await asyncio.wait_for(relay.commands.join(), 3)
     assert len(relay.results) == 1
     assert relay.results[0]["outcome"] == main.CONFIRMED
+
+
+async def test_a_nested_cue_still_answers_with_one_verdict(relay, worker, pub_sub, fast_timeouts):
+    """One request id, one verdict, however deeply the cue nests."""
+    pub_sub.behaviour = {FAILS: ("code", 3203)}
+    frame = nested(command(OK), nested(command(FAILS), name="inner"))
+    await main.ws_api(FakeWebSocket([json.dumps(frame)]))
+    await asyncio.wait_for(relay.commands.join(), 3)
+    assert len(relay.results) == 1
+    assert (relay.results[0]["outcome"], relay.results[0]["code"]) == (main.FAILED, 3203)
+
+
+async def test_a_message_carrying_no_kind_never_reaches_the_queue(relay, worker, pub_sub, fast_timeouts, caplog):
+    """`kind` is what marks a cue item, so a frame without one is not something to send."""
+    with caplog.at_level(logging.WARNING):
+        await main.ws_api(FakeWebSocket([json.dumps({"api_id": OK, "topic": "SPORT_MOD"})]))
+        await asyncio.wait_for(relay.commands.join(), 3)
+    assert pub_sub.sent == []
+    assert list(relay.results) == []
+    assert "Unknown message type" in caplog.text
 
 
 async def test_the_worker_survives_a_command_it_cannot_send(relay, worker, pub_sub, fast_timeouts):
