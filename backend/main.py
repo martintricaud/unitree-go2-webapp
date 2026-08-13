@@ -277,9 +277,10 @@ class RobotSession:
         for msg in sequence:
             match msg:
                 case {"kind": "command"}:
-                    # OPEN QUESTION, awaiting a decision: a step that raises aborts the steps
-                    # behind it, which is today's behaviour and is kept deliberately. Running
-                    # the remaining steps and reporting the aggregate is the alternative.
+                    # A refused step does not stop the cue: dispatch returns a verdict rather
+                    # than raising, so the closing step most cues use to restore FreeWalk still
+                    # runs. Only an exception abandons the rest, where every remaining step
+                    # would raise the same way.
                     outcomes.append(await self.dispatch(msg))
                 case {"kind": "wait", "wait": seconds}:
                     await asyncio.sleep(seconds)
