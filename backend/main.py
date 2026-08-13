@@ -16,7 +16,7 @@ from video_broadcaster import FrameBroadcaster
 from collections import deque
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-import asyncio, logging, json, cv2
+import asyncio, logging, json, time, cv2
 from aiortc import MediaStreamTrack
 import av
 av.logging.set_level(av.logging.ERROR)
@@ -27,6 +27,12 @@ broadcaster = FrameBroadcaster()
 COMMANDS_PATH = Path(__file__).resolve().parent.parent / "commands_1.1.7.json"
 ACK_TIMEOUT_FLOOR = 5.0
 ACK_TIMEOUT_MARGIN = 3.0
+
+# The driver beats every two seconds (msgs/heartbeat.py) and records the time of each reply.
+# Three intervals with no reply is the robot being gone.
+HEARTBEAT_PERIOD = 2.0
+HEARTBEAT_MISSES_ALLOWED = 3
+ROBOT_POLL_SECONDS = 1.0
 
 CONFIRMED, FAILED, REJECTED, UNKNOWN = "confirmed", "failed", "rejected", "unknown"
 # A cue's verdict is its worst step. A refusal outranks silence because it is something the
@@ -104,11 +110,15 @@ class RobotSession:
         # the control channel and cues still reach the robot in the order they were sent.
         self.commands: asyncio.Queue = asyncio.Queue()
         self.worker: asyncio.Task | None = None
-        # Checkpoint 4 sends these to the browser; for now they are recorded and logged.
         self.results = deque(maxlen=200)
         self.rejection: asyncio.Future | None = None
+        # What the browser was last told, so robot_state is sent on a transition and not on
+        # every poll. None means it has been told nothing yet.
+        self.reported_reachable: bool | None = None
+        self.channel_open_since: float | None = None
+        self.watcher: asyncio.Task | None = None
 
-    ## Connect to the robot with a timeout, and notify the frontend of the connection status
+    ## Connect to the robot with a timeout. watch_robot is what tells the frontend about it.
     async def connect(self, ip: str, timeout: int = 5):
         # Avoid reconnecting if already connected
         if self.conn and self.conn.isConnected:
@@ -122,16 +132,9 @@ class RobotSession:
             # The driver starts the heartbeat in on_validate; starting it here too leaves
             # a timer chain stop_heartbeat cannot cancel.
             self.conn.datachannel.pub_sub.set_on_err_callback(self.note_rejection)
-            # notify the frontend about connection status
-            if current_webSocket:
-                try:
-                    await current_webSocket.send_json({
-                "type": "robot_state",
-                "connected": self.conn.datachannel.data_channel_opened
-            })
-                except Exception as e:
-                    print(f"An error occurred during connection: {e}")  # Handle other exceptions
-                
+            # The channel is reported by watch_robot rather than here: the driver's validation
+            # callback may not have run yet, so reading data_channel_opened at this moment can
+            # say false about a connection that then works.
             self.conn.video.add_track_callback(recv_camera_stream)
             # switchVideoChannel is a plain def returning None, so it cannot be awaited.
             self.conn.video.switchVideoChannel(True)
@@ -162,6 +165,57 @@ class RobotSession:
         if self.conn:
             await self.conn.disconnect()
             self.conn = None
+        await self.report_robot_state()
+
+    def channel_is_open(self):
+        """Whether the driver currently holds a validated data channel. It sets the flag in its
+        validation callback and clears it when the channel closes."""
+        if self.conn is None:
+            return False
+        return bool(getattr(self.conn.datachannel, "data_channel_opened", False))
+
+    def last_heartbeat_reply(self):
+        """When the robot last answered a heartbeat, or None if it never has."""
+        heartbeat = getattr(self.conn.datachannel, "heartbeat", None) if self.conn else None
+        return getattr(heartbeat, "heartbeat_response", None)
+
+    def robot_is_reachable(self, now=None):
+        """Whether the robot is answering: the data channel open, and a heartbeat replied to
+        within three of the driver's two-second intervals.
+
+        The first reply cannot land before the driver's first beat, two seconds after
+        validation, so until one does the moment the channel was first seen open counts in its
+        place.
+        """
+        now = time.time() if now is None else now
+        if not self.channel_is_open():
+            self.channel_open_since = None
+            return False
+        if self.channel_open_since is None:
+            self.channel_open_since = now
+        answered_at = max(self.channel_open_since, self.last_heartbeat_reply() or 0.0)
+        return now - answered_at <= HEARTBEAT_PERIOD * HEARTBEAT_MISSES_ALLOWED
+
+    async def report_robot_state(self):
+        """Tell the browser whenever the answer changes, so a channel that opens late, a
+        channel that closes, and a robot that stops answering are all visible without the
+        operator sending a command to find out."""
+        reachable = self.robot_is_reachable()
+        if reachable == self.reported_reachable:
+            return
+        self.reported_reachable = reachable
+        await notify_frontend({"type": "robot_state", "connected": reachable})
+
+    async def watch_robot(self, poll=ROBOT_POLL_SECONDS):
+        """Report every transition of the robot's reachability, for as long as the app runs."""
+        while True:
+            await asyncio.sleep(poll)
+            try:
+                await self.report_robot_state()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.exception("Failed to report the robot's state")
 
     async def subscribe_to_robotstate(self, switch):
         def callback(message):
@@ -310,7 +364,11 @@ class RobotSession:
         except Exception as exc:
             logging.exception("A command raised before the robot answered")
             verdict = (FAILED, None, f"{type(exc).__name__}: {exc}")
-        self.record(msg, verdict)
+        result = self.record(msg, verdict)
+        # reqId is the browser's, generated by it and never sent to the robot; the relay only
+        # hands it back so the browser can match the answer to the control that fired. A
+        # command that carried none still reports, and its reqId is null.
+        await notify_frontend({"type": "command_result", "reqId": msg.get("reqId"), **result})
 
     def record(self, msg, verdict):
         outcome, code, detail = verdict
@@ -322,6 +380,7 @@ class RobotSession:
         }
         self.results.append(result)
         logging.info("Command verdict: %r", result)
+        return result
 
     async def run_worker(self):
         """Drain the command queue one item at a time until the shutdown sentinel arrives."""
@@ -340,9 +399,13 @@ current_webSocket: WebSocket | None = None # Current connected WebSocket
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     robot.worker = asyncio.create_task(robot.run_worker())
+    robot.watcher = asyncio.create_task(robot.watch_robot())
     try:
         yield
     finally:
+        robot.watcher.cancel()
+        with suppress(asyncio.CancelledError):
+            await robot.watcher
         robot.commands.put_nowait(None)
         # A command in flight is bounded by its own ack timeout, so the worker settles quickly.
         finished, _ = await asyncio.wait({robot.worker}, timeout=15)
@@ -370,6 +433,9 @@ async def ws_api(ws: WebSocket):
     
     await ws.accept()
     current_webSocket = ws
+    # This browser has been told nothing about the robot, so the next poll must state the
+    # answer rather than treat it as unchanged from what the previous browser was told.
+    robot.reported_reachable = None
     try:
         while True:
             try:
@@ -408,7 +474,6 @@ async def ws_api(ws: WebSocket):
                         robot.commands.put_nowait(msg)
                     case _:
                         logging.warning("Unknown message type received: %r", msg)
-                await ws.send_json(msg)
             except SystemExit as exc:
                 # Handle SystemExit to prevent the server from stopping
                 logging.exception("SystemExit in command handler (treated as failure).")

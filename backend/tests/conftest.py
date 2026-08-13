@@ -82,12 +82,34 @@ class ScriptedPubSub:
         return reply_for(api_id, script[1])
 
 
-class FakeConnection:
-    """Exposes the one path the relay uses: conn.datachannel.pub_sub."""
+class FakeHeartbeat:
+    """The driver's heartbeat as the relay reads it: the time of the last reply, None until
+    the robot answers one."""
 
-    def __init__(self, pub_sub):
-        self.datachannel = type("FakeDataChannel", (), {"pub_sub": pub_sub})()
+    def __init__(self):
+        self.heartbeat_response = None
+
+
+class FakeDataChannel:
+    """The driver's data channel as the relay reads it: the pub_sub it publishes through, the
+    flag the validation callback sets, and the heartbeat."""
+
+    def __init__(self, pub_sub, opened=True):
+        self.pub_sub = pub_sub
+        self.data_channel_opened = opened
+        self.heartbeat = FakeHeartbeat()
+
+
+class FakeConnection:
+    """Exposes the paths the relay uses: conn.datachannel and conn.disconnect()."""
+
+    def __init__(self, pub_sub, opened=True):
+        self.datachannel = FakeDataChannel(pub_sub, opened)
         self.isConnected = True
+        self.disconnected = False
+
+    async def disconnect(self):
+        self.disconnected = True
 
 
 class FakeWebSocket:
@@ -154,6 +176,14 @@ def relay(monkeypatch, session):
     monkeypatch.setattr(main, "robot", session)
     monkeypatch.setattr(main, "current_webSocket", None)
     return session
+
+
+@pytest.fixture
+def gui(monkeypatch):
+    """The browser's control socket, as notify_frontend writes to it."""
+    ws = FakeWebSocket([])
+    monkeypatch.setattr(main, "current_webSocket", ws)
+    return ws
 
 
 @pytest.fixture

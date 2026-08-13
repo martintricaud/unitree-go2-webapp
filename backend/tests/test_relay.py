@@ -11,7 +11,7 @@ import pytest
 import main
 from go2_webrtc_driver.msgs.error_handler import handle_error
 
-from .conftest import FakeWebSocket, reply_for
+from .conftest import FakeConnection, FakeWebSocket, reply_for
 
 TOPIC = "rt/api/sport/request"
 
@@ -335,12 +335,148 @@ async def test_the_worker_survives_a_command_it_cannot_send(relay, worker, pub_s
     assert [result["outcome"] for result in relay.results] == [main.FAILED, main.CONFIRMED]
 
 
-async def test_the_browser_contract_is_unchanged(relay, worker, pub_sub, fast_timeouts):
-    """Checkpoint 4 replaces this echo with a command_result; until then it must stay."""
+# ── What the browser is told ─────────────────────────────────────────────────────────────
+
+
+async def test_the_relay_answers_a_command_with_its_verdict(relay, worker, pub_sub, fast_timeouts):
+    """The browser's own request is never echoed back: an echo is indistinguishable between a
+    command the robot took and one it refused."""
     frame = command(OK, name="Hello")
     ws = FakeWebSocket([json.dumps(frame)])
     await main.ws_api(ws)
-    assert ws.sent == [frame]
+    await asyncio.wait_for(relay.commands.join(), 3)
+    assert ws.sent == [
+        {
+            "type": "command_result",
+            "reqId": None,
+            "command_name": "Hello",
+            "outcome": main.CONFIRMED,
+            "code": 0,
+            "detail": None,
+        }
+    ]
+
+
+async def test_a_command_result_carries_the_request_id_the_browser_sent(relay, worker, pub_sub, fast_timeouts):
+    pub_sub.behaviour = {FAILS: ("code", 3203)}
+    frames = [
+        json.dumps({**command(OK, name="Hello"), "reqId": 41}),
+        json.dumps({**command(FAILS, name="BadCmd"), "reqId": 42}),
+    ]
+    ws = FakeWebSocket(frames)
+    await main.ws_api(ws)
+    await asyncio.wait_for(relay.commands.join(), 3)
+    assert [(result["reqId"], result["outcome"]) for result in ws.sent] == [
+        (41, main.CONFIRMED),
+        (42, main.FAILED),
+    ]
+
+
+async def test_a_cue_answers_with_one_result_for_its_request_id(relay, worker, pub_sub, fast_timeouts):
+    ws = FakeWebSocket([json.dumps({**nested(*cue(OK, OK)), "reqId": 7})])
+    await main.ws_api(ws)
+    await asyncio.wait_for(relay.commands.join(), 3)
+    assert [(result["reqId"], result["outcome"]) for result in ws.sent] == [(7, main.CONFIRMED)]
+
+
+async def test_the_request_id_is_relay_local_and_never_reaches_the_robot(relay, worker, pub_sub, fast_timeouts):
+    await main.ws_api(FakeWebSocket([json.dumps({**command(OK), "reqId": 99})]))
+    await asyncio.wait_for(relay.commands.join(), 3)
+    assert pub_sub.sent[0]["options"] == {"api_id": OK}
+
+
+# ── Whether the robot is reachable ───────────────────────────────────────────────────────
+
+
+def test_no_connection_means_the_robot_is_not_reachable(session):
+    session.conn = None
+    assert session.robot_is_reachable(1000.0) is False
+
+
+def test_a_channel_that_has_not_validated_yet_is_not_reachable(session, pub_sub):
+    """Reading the flag at the moment connect returns is what reports false for a connection
+    that then works, so the answer has to be re-read rather than emitted once."""
+    session.conn = FakeConnection(pub_sub, opened=False)
+    assert session.robot_is_reachable(1000.0) is False
+    session.conn.datachannel.data_channel_opened = True
+    assert session.robot_is_reachable(1001.0) is True
+
+
+def test_the_robot_is_gone_once_three_heartbeat_intervals_go_unanswered(session, pub_sub):
+    session.conn = FakeConnection(pub_sub)
+    opened = 1000.0
+    assert session.robot_is_reachable(opened) is True
+    assert session.robot_is_reachable(opened + 5) is True, "still inside three intervals"
+    assert session.robot_is_reachable(opened + 7) is False, "three intervals unanswered"
+
+
+def test_a_heartbeat_reply_keeps_the_robot_reachable(session, pub_sub):
+    session.conn = FakeConnection(pub_sub)
+    opened = 1000.0
+    session.robot_is_reachable(opened)
+    session.conn.datachannel.heartbeat.heartbeat_response = opened + 6
+    assert session.robot_is_reachable(opened + 7) is True
+    assert session.robot_is_reachable(opened + 13) is False
+
+
+def test_a_closed_channel_re_arms_the_watchdog_for_the_next_connection(session, pub_sub):
+    """The grace period must start again when the channel reopens, not from the first time it
+    was ever seen open."""
+    session.conn = FakeConnection(pub_sub)
+    session.robot_is_reachable(1000.0)
+    session.conn.datachannel.data_channel_opened = False
+    assert session.robot_is_reachable(1001.0) is False
+    session.conn.datachannel.data_channel_opened = True
+    assert session.robot_is_reachable(1100.0) is True
+
+
+async def test_robot_state_is_sent_on_every_transition_and_only_on_a_transition(session, pub_sub, gui):
+    session.conn = FakeConnection(pub_sub, opened=False)
+    await session.report_robot_state()
+    session.conn.datachannel.data_channel_opened = True
+    await session.report_robot_state()
+    await session.report_robot_state()
+    session.conn.datachannel.data_channel_opened = False
+    await session.report_robot_state()
+    assert gui.sent == [
+        {"type": "robot_state", "connected": False},
+        {"type": "robot_state", "connected": True},
+        {"type": "robot_state", "connected": False},
+    ]
+
+
+async def test_disconnecting_tells_the_browser_without_waiting_for_the_next_poll(session, pub_sub, gui):
+    connection = FakeConnection(pub_sub)
+    session.conn = connection
+    await session.report_robot_state()
+    await session.disconnect()
+    assert connection.disconnected and session.conn is None
+    assert [message["connected"] for message in gui.sent] == [True, False]
+
+
+async def test_a_browser_that_connects_is_told_the_state_it_has_not_heard(relay, pub_sub, gui):
+    """A page reload is a listener that knows nothing, so the answer must be stated again
+    rather than suppressed as unchanged from what the previous page was told."""
+    relay.conn = FakeConnection(pub_sub)
+    await relay.report_robot_state()
+    assert [message["connected"] for message in gui.sent] == [True]
+
+    reloaded = FakeWebSocket([])
+    await main.ws_api(reloaded)
+    assert relay.reported_reachable is None
+    await relay.report_robot_state()
+    assert [message["connected"] for message in reloaded.sent] == [True]
+
+
+async def test_the_watcher_reports_a_channel_that_opens_after_connect_returned(session, pub_sub, gui):
+    session.conn = FakeConnection(pub_sub, opened=False)
+    watcher = asyncio.get_running_loop().create_task(session.watch_robot(poll=0.01))
+    await asyncio.sleep(0.05)
+    session.conn.datachannel.data_channel_opened = True
+    await asyncio.sleep(0.05)
+    watcher.cancel()
+
+    assert [message["connected"] for message in gui.sent] == [False, True]
 
 
 # ── Checkpoint 1 regressions, now that a harness exists ──────────────────────────────────
@@ -351,7 +487,7 @@ async def test_a_malformed_frame_leaves_the_receive_loop_reading(relay, worker, 
     await main.ws_api(ws)
     await asyncio.wait_for(relay.commands.join(), 3)
     assert [result["command_name"] for result in relay.results] == ["Hello"]
-    assert ws.sent == [command(OK, name="Hello")], "the bad frame must not be echoed"
+    assert [result["command_name"] for result in ws.sent] == ["Hello"]
 
 
 async def test_a_lidar_frame_reaches_toggle_lidar(relay, monkeypatch):

@@ -7,6 +7,7 @@
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
     import GamepadController from './components/GamepadController.svelte';
+    import StatusStrip from './components/StatusStrip.svelte';
     import { gamepadStore } from './lib/gamepadStore';
     // import Lidar from './components/Lidar.svelte';
     import {
@@ -223,6 +224,7 @@
 />
 <!-- <Lidar /> -->
 <GamepadController monitoring={false} />
+<StatusStrip />
 <svelte:window
     on:keyup={(event) => {
         // switch ($gamepadUser.currentOption) {
