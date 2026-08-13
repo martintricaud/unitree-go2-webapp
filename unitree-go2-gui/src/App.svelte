@@ -101,12 +101,8 @@
         websocket.connect();
     });
 
-    async function connectRobot() {
-        try {
-            await websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
-        } catch (error) {
-            console.error('Connection failed:', error);
-        }
+    function connectRobot() {
+        websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
     }
 
     function disconnectRobot() {
