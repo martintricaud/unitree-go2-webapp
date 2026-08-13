@@ -73,7 +73,6 @@ export class WebSocketClient {
     private previousBitmap: ImageBitmap | null = null;
     private pending = new Map<number, Pending>();
     private lastRequestId = 0;
-    public onTrackCallback: (stream: MediaStream) => void = () => {};
 
     connect() {
         if (this.socket && this.socket.readyState < CLOSED) return;
