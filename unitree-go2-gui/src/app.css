@@ -9,18 +9,18 @@
 }
 
 body {
-  margin: 0!important;
-  height: 100vh!important;
+  margin: 0 !important;
+  height: 100vh !important;
   width: 100vw;
-  overflow:hidden;
+  overflow: hidden;
+   background: solid rgb(230, 230, 230);
 }
 
 
 #app {
   border: .5em solid rgb(230, 230, 230);
-  /* max-width: 1280px;
-  margin: 0 auto; */
-
+  background: solid rgb(230, 230, 230);
+  gap: 1em;
   width: 100vw;
   height: 100vh;
   display: grid;
@@ -32,7 +32,7 @@ body {
 button {
   display: inline-block;
   line-height: 1em;
-  vertical-align: middle!important;
+  vertical-align: middle !important;
   border-width: 4px;
   padding: 0.6em 0.6em;
   font-weight: 500;
@@ -43,7 +43,7 @@ button {
 
 }
 
-button:hover{
+button:hover {
   font-weight: bold;
 }
 
@@ -55,7 +55,7 @@ button:focus-visible {
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: rgb(230, 230, 230);
   }
 
   a:hover {
@@ -64,25 +64,24 @@ button:focus-visible {
 }
 
 #sidebar {
-  padding: 1em;;
   grid-area: sidebar;
   background-color: rgb(230, 230, 230);
 }
 
 .ui-pane {
-  margin: 0!important;
+  margin: 0 !important;
   justify-content: center;
   display: flex;
   flex-wrap: nowrap;
   flex-direction: row;
- 
+
   overflow-y: hidden;
   background-color: rgb(230, 230, 230);
   gap: 1em;
   grid-area: bottomleft;
 }
 
-.ui-pane>*{
+.ui-pane>* {
   width: max-content;
   height: 100%;
   overflow-y: scroll;
@@ -115,9 +114,10 @@ button:focus-visible {
 
   text-align: left !important;
 }
-*{
+
+* {
   font-family: monospace, 'Courier New', Courier, monospace;
   box-sizing: border-box;
-  scrollbar-color: rgba(128,128,128,0)!important;
-  scrollbar-width: none!important;
+  scrollbar-color: rgba(128, 128, 128, 0) !important;
+  scrollbar-width: none !important;
 }
