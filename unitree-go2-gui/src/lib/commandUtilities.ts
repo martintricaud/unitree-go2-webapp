@@ -1,4 +1,4 @@
-import { filter, indexBy, pick, prop } from 'remeda';
+import { clamp, filter, indexBy, pick, prop } from 'remeda';
 import commands from '../../../commands_1.1.7.json';
 import { writable } from 'svelte/store';
 import type { WebSocketClient } from './webSocketClient';
@@ -56,6 +56,18 @@ export type Sequence = {
 /// `kind` tells the reader of a cue item which of the three shapes it is holding, both in the
 /// browser and on the relay, which dispatches on it.
 export type CueItem = Payload | Wait | Sequence;
+
+/// How a cue item is named wherever the operator reads it: the cue sheet, and the outcome log.
+export const cueLabel = (item: CueItem): string => {
+    switch (item.kind) {
+        case 'command':
+            return item.command_name;
+        case 'wait':
+            return `⏱ ${item.wait}s`;
+        case 'sequence':
+            return item.displayName ?? 'unnamed sequence';
+    }
+};
 
 let commandIndex = indexBy(commands as Command[], prop('command_name'));
 
@@ -353,4 +365,19 @@ export let CONDUITE: Sequence = {
 
 export let execute_step = (_websocket: WebSocketClient) => (_actionSequence: any) => (i: number) => {
     _websocket.send(_actionSequence[i]);
+};
+
+/// The last index that holds a cue. The 0 floor covers an empty cue sheet, whose last index
+/// would otherwise be -1.
+const LAST_CUE = Math.max(0, CONDUITE.sequence.length - 1);
+
+const { subscribe: subscribeToCuePointer, update: moveCuePointer } = writable(0);
+
+/// Where the operator stands in the cue sheet. The pointer is bounded to an index that holds a
+/// cue, so reading CONDUITE.sequence at it never yields undefined — which is what the relay
+/// received as the text "undefined".
+export const cuePointer = {
+    subscribe: subscribeToCuePointer,
+    moveBy: (steps: number) =>
+        moveCuePointer((at) => clamp(at + steps, { min: 0, max: LAST_CUE })),
 };

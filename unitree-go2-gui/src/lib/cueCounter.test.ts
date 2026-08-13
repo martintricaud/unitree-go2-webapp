@@ -1,63 +1,68 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { get } from 'svelte/store';
 import * as R from 'ramda';
-import { CONDUITE } from './commandUtilities';
+import { CONDUITE, cuePointer } from './commandUtilities';
 
-// The cue pointer lives in App.svelte's keydownHandler, which no test can drive without a
-// component harness this project does not have. These tests assert the clamp expression the
-// handler applies; they do not observe the handler itself.
-const lastCueOf = (length: number) => Math.max(0, length - 1);
-const step = (length: number) => R.clamp(0, lastCueOf(length));
+const cues = CONDUITE.sequence;
 
-// The four arrow keys move the pointer by +1 or -1, so any key sequence reduces to these.
-const stepsFrom = (start: number, length: number, deltas: number[]): number[] =>
-    R.scan((counter: number, delta: number) => step(length)(counter + delta), start, deltas);
+/// The pointer has no setter, so a test returns it to the first cue the way the operator does:
+/// by pressing left more times than the sheet is long.
+const toFirstCue = () => cuePointer.moveBy(-cues.length);
 
-describe('cue pointer clamp', () => {
-    const cues = CONDUITE.sequence;
+/// Where the pointer lands after each of a run of arrow-key presses, each ±1.
+const visit = (deltas: number[]): number[] =>
+    deltas.map((delta) => {
+        cuePointer.moveBy(delta);
+        return get(cuePointer);
+    });
 
-    it('holds the pointer inside the cue sheet for a long alternating key sequence', () => {
-        const deltas = R.times((i) => (i % 3 === 0 ? -1 : 1), 500);
-        const visited = stepsFrom(0, cues.length, deltas);
-        visited.forEach((counter) => {
-            expect(counter).toBeGreaterThanOrEqual(0);
-            expect(counter).toBeLessThanOrEqual(cues.length - 1);
+describe('the cue pointer', () => {
+    beforeEach(toFirstCue);
+
+    it('starts on the first cue', () => {
+        expect(get(cuePointer)).toBe(0);
+    });
+
+    it('stays inside the cue sheet through a long alternating key sequence', () => {
+        const visited = visit(R.times((i) => (i % 3 === 0 ? -1 : 1), 500));
+        visited.forEach((at) => {
+            expect(at).toBeGreaterThanOrEqual(0);
+            expect(at).toBeLessThanOrEqual(cues.length - 1);
         });
     });
 
-    it('holds the pointer inside the cue sheet for randomised key sequences', () => {
-        const deltas = R.times(() => (Math.random() < 0.5 ? -1 : 1), 2000);
-        const visited = stepsFrom(0, cues.length, deltas);
+    it('stays inside the cue sheet through randomised key sequences', () => {
+        const visited = visit(R.times(() => (Math.random() < 0.5 ? -1 : 1), 2000));
         expect(Math.min(...visited)).toBeGreaterThanOrEqual(0);
         expect(Math.max(...visited)).toBeLessThanOrEqual(cues.length - 1);
     });
 
     it('never lands on an index that reads undefined out of the cue sheet', () => {
-        const deltas = R.times(() => 1, cues.length + 50);
-        const visited = stepsFrom(0, cues.length, deltas);
-        visited.forEach((counter) => {
-            expect(cues[counter]).toBeDefined();
+        visit(R.times(() => 1, cues.length + 50)).forEach((at) => {
+            expect(cues[at]).toBeDefined();
         });
     });
 
-    it('stops at the last cue when the pointer is driven past the end', () => {
-        const pastTheEnd = stepsFrom(0, cues.length, R.times(() => 1, cues.length + 10));
-        expect(R.last(pastTheEnd)).toBe(cues.length - 1);
+    it('stops on the last cue when it is driven past the end', () => {
+        visit(R.times(() => 1, cues.length + 10));
+        expect(get(cuePointer)).toBe(cues.length - 1);
+        expect(cues[get(cuePointer)]).toBeDefined();
     });
 
-    it('stops at the first cue when the pointer is driven before the start', () => {
-        const beforeTheStart = stepsFrom(0, cues.length, R.times(() => -1, 10));
-        expect(R.last(beforeTheStart)).toBe(0);
+    it('stops on the first cue when it is driven before the start', () => {
+        visit(R.times(() => -1, 10));
+        expect(get(cuePointer)).toBe(0);
     });
 
-    it('bounds the pointer one below the length, since a length bound admits the empty slot', () => {
-        expect(step(cues.length)(cues.length)).toBe(cues.length - 1);
-        expect(R.clamp(0, cues.length)(cues.length)).toBe(cues.length);
+    it('holds one below the length, since the length itself is the empty slot past the end', () => {
+        cuePointer.moveBy(cues.length);
+        expect(get(cuePointer)).toBe(cues.length - 1);
         expect(cues[cues.length]).toBeUndefined();
     });
 
-    it('does not throw for an empty cue sheet, which R.clamp rejects without the 0 floor', () => {
-        expect(() => step(0)(1)).not.toThrow();
-        expect(step(0)(1)).toBe(0);
-        expect(() => R.clamp(0, -1)(1)).toThrow();
+    it('does not move when it is asked for no steps', () => {
+        cuePointer.moveBy(3);
+        cuePointer.moveBy(0);
+        expect(get(cuePointer)).toBe(3);
     });
 });

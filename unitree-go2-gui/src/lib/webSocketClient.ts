@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { cueLabel } from './commandUtilities';
 import type { CueItem } from './commandUtilities';
 import { clearOutcomes, readOutcome, recordOutcome } from './outcomes';
 import type { Outcome } from './outcomes';
@@ -54,17 +55,6 @@ const parseJson = (raw: string): unknown => {
         return JSON.parse(raw);
     } catch {
         return null;
-    }
-};
-
-const labelOf = (item: CueItem): string => {
-    switch (item.kind) {
-        case 'command':
-            return item.command_name;
-        case 'wait':
-            return `wait ${item.wait}s`;
-        case 'sequence':
-            return item.displayName ?? 'sequence';
     }
 };
 
@@ -136,7 +126,7 @@ export class WebSocketClient {
     /// Send a command and wait for the relay's verdict on it.
     request(item: CueItem): Promise<Outcome> {
         const reqId = (this.lastRequestId += 1);
-        const label = labelOf(item);
+        const label = cueLabel(item);
         if (!this.send({ ...item, reqId })) {
             recordOutcome({ ...CHANNEL_CLOSED, reqId, label, at: Date.now() });
             return Promise.resolve(CHANNEL_CLOSED);
