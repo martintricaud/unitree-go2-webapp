@@ -1,0 +1,4 @@
+# Test-only dependencies. Install into backend/venv:
+#   backend/venv/bin/pip install -r backend/requirements-dev.txt
+pytest>=9.1,<10
+pytest-asyncio>=1.4,<2
