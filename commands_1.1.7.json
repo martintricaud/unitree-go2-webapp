@@ -22,7 +22,7 @@
         "exec_time": 1,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "StopMove",
@@ -31,7 +31,7 @@
         "exec_time": 1,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "StandUp",
@@ -40,7 +40,7 @@
         "topic": "SPORT_MOD",
         "exec_time": 1.88,
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "StandDown",
@@ -50,7 +50,7 @@
         "topic": "SPORT_MOD",
         "exec_time": 2.26,
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "RecoveryStand",
@@ -60,7 +60,7 @@
         "exec_time": 1,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Euler",
@@ -115,7 +115,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "RiseSit",
@@ -125,7 +125,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "SwitchGait",
@@ -140,7 +140,6 @@
         ],
         "topic": "SPORT_MOD",
         "gamepad_assignment": ""
-        
     },
     {
         "command_name": "SpeedLevel",
@@ -163,7 +162,7 @@
         "exec_time": 4.23,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Stretch",
@@ -172,7 +171,7 @@
         "exec_time": 4.35,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "ContinuousGait",
@@ -197,7 +196,7 @@
         "exec_time": 3.89,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Wallow",
@@ -207,7 +206,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Dance1",
@@ -217,7 +216,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Dance2",
@@ -227,7 +226,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "GetSpeedLevel",
@@ -236,7 +235,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "SwitchJoystick",
@@ -245,7 +244,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Pose",
@@ -269,7 +268,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "FrontFlip",
@@ -279,7 +278,7 @@
         "exec_time": 4.39,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "FrontJump",
@@ -289,7 +288,7 @@
         "exec_time": 3.56,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "FrontPounce",
@@ -297,7 +296,7 @@
         "api_id": 1032,
         "exec_time": 10,
         "topic": "SPORT_MOD",
-        "args":""
+        "args": []
     },
     {
         "command_name": "WiggleHips",
@@ -305,7 +304,7 @@
         "api_id": 1033,
         "exec_time": 10,
         "topic": "SPORT_MOD",
-        "args":""
+        "args": []
     },
     {
         "command_name": "GetState",
@@ -314,7 +313,7 @@
         "exec_time": 10,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "FingerHeart",
@@ -323,7 +322,7 @@
         "api_id": 1036,
         "exec_time": 5.72,
         "topic": "SPORT_MOD",
-        "args":""
+        "args": []
     },
     {
         "command_name": "StaticWalk",
@@ -376,16 +375,16 @@
         "api_id": 2041,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
-     {
+    {
         "command_name": "RightFlip",
         "working": true,
         "exec_time": 1,
         "api_id": 1043,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "BackFlip",
@@ -394,7 +393,7 @@
         "exec_time": 1,
         "topic": "SPORT_MOD",
         "gamepad_assignment": "",
-        "args":""
+        "args": []
     },
     {
         "command_name": "Handstand",
@@ -410,7 +409,7 @@
         ],
         "topic": "SPORT_MOD"
     },
-       {
+    {
         "command_name": "FreeWalk",
         "api_id": 2045,
         "description": "",

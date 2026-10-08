@@ -1,115 +1,7 @@
-import { clamp, filter, indexBy, pick, prop } from 'remeda';
-import commands from '../../../commands_1.1.7.json';
-import { writable } from 'svelte/store';
-export type TypeMap = {
-    number: number;
-    string: string;
-    boolean: boolean;
-    // Add other types as needed
-};
+import { buildPayload, changeTo, dimTo, switchTo } from '../utils/payloads';
+import type { Sequence } from '../utils/payloads';
 
-export type CmdJson = {
-    keyName: string;
-    valueType: keyof TypeMap; // This will be "number", "string", "boolean", etc.
-};
-
-export type GenerateTypeFromArray<T extends CmdJson[]> = {
-    [K in T[number]as K['keyName']]: TypeMap[K['valueType']];
-};
-
-export type CommandArg = {
-    name: string;
-    type: string;
-};
-
-export type Command = {
-    command_name: string;
-    api_id: number;
-    description?: string;
-    working: boolean;
-    exec_time: number;
-    topic: string;
-    gamepad_assignment: string;
-    args: CommandArg[];
-};
-
-export type Payload = {
-    kind: 'command';
-    api_id: number;
-    topic: string;
-    command_name: string;
-    parameter?: Record<string, any>;
-}
-
-export type Wait = {
-    kind: 'wait';
-    wait: number;
-};
-
-export type Sequence = {
-    kind: 'sequence';
-    displayName?: string;
-    sequence: CueItem[];
-}
-
-/// `kind` tells the reader of a cue item which of the three shapes it is holding, both in the
-/// browser and on the relay, which dispatches on it.
-export type CueItem = Payload | Wait | Sequence;
-
-/// How a cue item is named wherever the operator reads it: the cue sheet, and the outcome log.
-export const cueLabel = (item: CueItem): string => {
-    switch (item.kind) {
-        case 'command':
-            return item.command_name;
-        case 'wait':
-            return `⏱ ${item.wait}s`;
-        case 'sequence':
-            return item.displayName ?? 'unnamed sequence';
-    }
-};
-
-/// Every command in the command table, by name.
-export const commandIndex = indexBy(commands as Command[], prop('command_name'));
-
-export const CMD_actions: Command[] = filter(
-    commands as Command[],
-    (x: Command) => x.args.length == 0 && x.working,
-);
-export const CMD_switches: Command[] = filter(
-    commands as Command[],
-    (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
-);
-export const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
-
-///utility for generating a JSON message containing the api_id and topic fields
-export let buildPayload = (cmd: string): Payload => ({
-    kind: 'command',
-    ...pick(commandIndex[cmd], ['api_id', 'topic', 'command_name']),
-});
-///utility for generating "toggle switch on" JSON messages
-export let switchTo = (newState: boolean) => (cmd: string): Payload => {
-    return {
-        parameter: { [commandIndex[cmd].args[0].name]: newState },
-        ...buildPayload(cmd)
-
-    }
-};
-
-export let dimTo = (newValue: number) => (cmd: string): Payload => {
-    return {
-        parameter: { brightness: newValue },
-        ...buildPayload(cmd)
-    }
-}
-
-export let changeTo = (newValue: any) => (cmd: string): Payload => {
-    return {
-        parameter: { color: newValue },
-        ...buildPayload(cmd)
-    }
-}
-
-export let DANSE_DU_SABBAT: Sequence = {
+export const DANSE_DU_SABBAT = {
     kind: 'sequence',
     displayName: 'Sabbat',
     sequence: [
@@ -138,9 +30,10 @@ export let DANSE_DU_SABBAT: Sequence = {
             ],
         },
     ]
-}
+} satisfies Sequence;
 
-export let presets: Record<string, Sequence> = {
+/// Cue items the operator fires from a key or a button rather than from the cue sheet.
+export const presets = {
     stopAndCrouch: {
         kind: 'sequence',
         sequence: [
@@ -239,9 +132,9 @@ export let presets: Record<string, Sequence> = {
             switchTo(true)('FreeWalk'),
         ],
     }
-};
+} satisfies Record<string, Sequence>;
 
-export let STRETCH_HELLO_JUMP: Sequence = {
+export const STRETCH_HELLO_JUMP = {
     kind: 'sequence',
     displayName: 'Stretch 👋 Jump',
     sequence: [
@@ -256,9 +149,9 @@ export let STRETCH_HELLO_JUMP: Sequence = {
         { kind: 'wait', wait: 0.1 },
         switchTo(true)('FreeWalk'),
     ],
-};
+} satisfies Sequence;
 
-const MONOLOGUE: Sequence = {
+const MONOLOGUE = {
     kind: 'sequence',
     displayName: 'Monologue',
     sequence: [
@@ -317,9 +210,10 @@ const MONOLOGUE: Sequence = {
 
 
     ]
-}
+} satisfies Sequence;
 
-export let CONDUITE: Sequence = {
+/// The performance cue sheet, which the operator steps through with the arrow keys.
+export const CONDUITE = {
     kind: 'sequence',
     sequence:
         [
@@ -355,22 +249,4 @@ export let CONDUITE: Sequence = {
             },
             ...MONOLOGUE.sequence,
         ]
-}
-
-
-
-
-/// The last index that holds a cue. The 0 floor covers an empty cue sheet, whose last index
-/// would otherwise be -1.
-const LAST_CUE = Math.max(0, CONDUITE.sequence.length - 1);
-
-const { subscribe: subscribeToCuePointer, update: moveCuePointer } = writable(0);
-
-/// Where the operator stands in the cue sheet. The pointer is bounded to an index that holds a
-/// cue, so reading CONDUITE.sequence at it never yields undefined — which is what the relay
-/// received as the text "undefined".
-export const cuePointer = {
-    subscribe: subscribeToCuePointer,
-    moveBy: (steps: number) =>
-        moveCuePointer((at) => clamp(at + steps, { min: 0, max: LAST_CUE })),
-};
+} satisfies Sequence;

@@ -9,18 +9,20 @@
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
     import {
-        CONDUITE,
         changeTo,
         cueLabel,
-        cuePointer,
         dimTo,
-        presets,
         switchTo,
         buildPayload,
         CMD_actions,
-        CMD_switches_names,
-    } from './lib/commandUtilities';
-    import type { CueItem } from './lib/commandUtilities';
+        CMD_switches,
+    } from './lib/utils/payloads';
+    import type { CueItem } from './lib/utils/payloads';
+    import type { SwitchName } from './lib/data/commands';
+    import { CONDUITE, presets } from './lib/data/cues';
+    import { LIGHT_EMOJIS, SPEED_LEVELS } from './lib/data/options';
+    import type { Colour, Speed } from './lib/data/options';
+    import { cuePointer } from './lib/stores/cuePointer';
     import {
         crouched,
         headlight,
@@ -29,7 +31,6 @@
         sendTracked,
         sitting,
         speed,
-        speedValueMap,
     } from './lib/trackedState';
     import { displayed } from './lib/confirmable';
     import type { Confirmable } from './lib/confirmable';
@@ -54,12 +55,8 @@
     let lidarOn = false;
     let monitoringState = false;
 
-    let lightEmojiMap = R.zipObj(
-        ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
-        ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
-    );
-    const LIGHT_OPTIONS = R.keys(lightEmojiMap);
-    const SPEED_OPTIONS = R.keys(speedValueMap);
+    const LIGHT_OPTIONS = R.keys(LIGHT_EMOJIS);
+    const SPEED_OPTIONS = R.keys(SPEED_LEVELS);
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
@@ -118,17 +115,17 @@
         parameter: { enable },
     });
 
-    const handleSpeedChange = (level: string) =>
+    const handleSpeedChange = (level: Speed) =>
         send({
             ...buildPayload('SpeedLevel'),
-            parameter: { data: speedValueMap[level] },
+            parameter: { data: SPEED_LEVELS[level] },
         });
 
-    const handleModeChange = (name: string) => send(switchTo(true)(name));
+    const handleModeChange = (name: SwitchName) => send(switchTo(true)(name));
 
     /// The white option is sent as a brightness rather than as a colour. Brightness implies no
     /// headlight colour, so white is passed explicitly.
-    const handleColorChange = (colour: string) =>
+    const handleColorChange = (colour: Colour) =>
         colour === 'white'
             ? send(dimTo(1)('Brightness'), { headlight: 'white' })
             : send(changeTo(colour)('Headlight'));
@@ -326,7 +323,7 @@
         {/each}
     </div>
     <div class="button-grid">
-        {#each CMD_switches_names as switchName}
+        {#each CMD_switches as { command_name: switchName }}
             <Radio
                 optionName={switchName}
                 selected={displayed($mode) === switchName}

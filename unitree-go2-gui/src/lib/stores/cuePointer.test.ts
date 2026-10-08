@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import * as R from 'ramda';
-import { CONDUITE, cuePointer } from './commandUtilities';
+import { CONDUITE } from '../data/cues';
+import { cuePointer } from './cuePointer';
 
 const cues = CONDUITE.sequence;
 

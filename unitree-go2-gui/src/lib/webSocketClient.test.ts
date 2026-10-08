@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { WebSocketClient, robotConnected } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import { lastOutcome, outcomeCounts, outcomeLog } from './outcomes';
-import type { CueItem } from './commandUtilities';
+import type { CueItem } from './utils/payloads';
 
 // The relay bounds one command at max(5s, exec_time + 3s), and the longest exec_time in
 // commands_1.1.7.json is 10s, so 13s is the longest wait the relay itself can be in.

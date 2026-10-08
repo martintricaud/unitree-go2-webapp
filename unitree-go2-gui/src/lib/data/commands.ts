@@ -1,0 +1,572 @@
+/// One entry of the Unitree Go2 sport-mode command table. The relay reads `topic`, `api_id` and
+/// `exec_time`; the browser also reads `command_name`, `working` and `args`.
+export type CommandSpec = {
+    readonly command_name: string;
+    readonly api_id: number;
+    readonly description?: string;
+    readonly working: boolean;
+    /// Null where the motion's duration was never measured; the relay then waits its floor timeout.
+    readonly exec_time: number | null;
+    readonly topic: string;
+    readonly gamepad_assignment?: string;
+    readonly args: readonly { readonly name: string; readonly type: 'boolean' | 'number' | 'string' }[];
+};
+
+/// The command table. `scripts/exportCommands.ts` writes it to `commands_1.1.7.json`, which the
+/// relay reads, so this file must import nothing: Node loads it directly, with no bundler.
+export const COMMANDS = [
+    {
+        command_name: 'Damp',
+        api_id: 1001,
+        description: 'Enters damped state',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'enabled',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'BalanceStand',
+        api_id: 1002,
+        description: 'Enters balanced standing state',
+        working: true,
+        exec_time: 1,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'StopMove',
+        api_id: 1003,
+        working: true,
+        exec_time: 1,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'StandUp',
+        api_id: 1004,
+        working: true,
+        topic: 'SPORT_MOD',
+        exec_time: 1.88,
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'StandDown',
+        description: 'Lies down on the ground from standing position',
+        api_id: 1005,
+        working: true,
+        topic: 'SPORT_MOD',
+        exec_time: 2.26,
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'RecoveryStand',
+        description: 'Recovers to standing position from a fall',
+        api_id: 1006,
+        working: true,
+        exec_time: 1,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Euler',
+        api_id: 1007,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'vx',
+                type: 'number',
+            },
+            {
+                name: 'vy',
+                type: 'number',
+            },
+            {
+                name: 'vyaw',
+                type: 'number',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Move',
+        api_id: 1008,
+        description: 'Move robot by the given amount. z is expressed in radians.',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'x',
+                type: 'number',
+            },
+            {
+                name: 'y',
+                type: 'number',
+            },
+            {
+                name: 'z',
+                type: 'number',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Sit',
+        description: 'Sits the robot down',
+        working: true,
+        api_id: 1009,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'RiseSit',
+        description: 'Rises the robot from a sitting position',
+        working: true,
+        api_id: 1010,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'SwitchGait',
+        api_id: 1011,
+        working: false,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'number',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'SpeedLevel',
+        api_id: 1015,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'level',
+                type: 'number',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Hello',
+        working: true,
+        api_id: 1016,
+        exec_time: 4.23,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Stretch',
+        api_id: 1017,
+        working: true,
+        exec_time: 4.35,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'ContinuousGait',
+        description: 'Toggles the mode where the robot is continuously stepping, even when not moving',
+        api_id: 1019,
+        working: true,
+        exec_time: 1,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+    },
+    {
+        command_name: 'Content',
+        description: 'The robot taps the floor with its front paws, as if excited',
+        working: true,
+        api_id: 1020,
+        exec_time: 3.89,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Wallow',
+        description: 'Robot lies down and rolls to the right side',
+        working: false,
+        api_id: 1021,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Dance1',
+        description: 'Executes a scripted dance',
+        working: true,
+        api_id: 1022,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Dance2',
+        description: 'Executes a scripted dance',
+        working: true,
+        api_id: 1023,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'GetSpeedLevel',
+        working: false,
+        api_id: 1026,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'SwitchJoystick',
+        working: false,
+        api_id: 1027,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Pose',
+        api_id: 1028,
+        description: 'Enters a state where the robot holds a pose defined by the Euler angles, but cannot move',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Scrape',
+        working: true,
+        api_id: 1029,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'FrontFlip',
+        description: 'Executes a front flip',
+        api_id: 1030,
+        working: true,
+        exec_time: 4.39,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'FrontJump',
+        description: 'Executes a front jump',
+        working: true,
+        api_id: 1031,
+        exec_time: 3.56,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'FrontPounce',
+        working: true,
+        api_id: 1032,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        args: [],
+    },
+    {
+        command_name: 'WiggleHips',
+        working: false,
+        api_id: 1033,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        args: [],
+    },
+    {
+        command_name: 'GetState',
+        working: false,
+        api_id: 1034,
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'FingerHeart',
+        description: 'The Heart Shape starts at 2"67',
+        working: true,
+        api_id: 1036,
+        exec_time: 5.72,
+        topic: 'SPORT_MOD',
+        args: [],
+    },
+    {
+        command_name: 'StaticWalk',
+        description: 'Déplacement dit Normal, avec des pas parasites en fin de mouvement',
+        working: true,
+        api_id: 1061,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Trotting',
+        working: true,
+        api_id: 1062,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'EconomicGait',
+        description: 'Déplacement assez similaire à Static Walk, mais un peu plus lent',
+        working: true,
+        api_id: 1063,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        exec_time: 10,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'LeftFlip',
+        working: true,
+        exec_time: 1,
+        api_id: 2041,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'RightFlip',
+        working: true,
+        exec_time: 1,
+        api_id: 1043,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'BackFlip',
+        api_id: 2043,
+        working: true,
+        exec_time: 1,
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+        args: [],
+    },
+    {
+        command_name: 'Handstand',
+        description: 'Toggles the mode in which the Go2 stands on its front legs',
+        api_id: 2044,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+    },
+    {
+        command_name: 'FreeWalk',
+        api_id: 2045,
+        description: '',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Leaping',
+        description: 'Toggles a displacement mode where the robot moves by bounding around. Also known as Free Bound',
+        api_id: 2046,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Jumping',
+        api_id: 2047,
+        description: 'Toggles a displacement mode where the robot moves by hopping around. Also known as Free Jump',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+    },
+    {
+        command_name: 'FreeAvoid',
+        api_id: 2048,
+        description: '',
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'ClassicWalk',
+        description: 'Comme le mode par défaut (FreeWalk?) mais en plus lent et plus pataud.Correspond à Normal sur la télécommande',
+        api_id: 2049,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Backstand',
+        description: 'Toggles the mode in which the Go2 stands on its hind legs. Also known as Erect or WalkUpright. ',
+        api_id: 2050,
+        working: true,
+        exec_time: 1,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'CrossStep',
+        description: 'Toggles the mode in which the Go2 balances itself on its front left and rear right legs. ',
+        api_id: 2051,
+        working: true,
+        exec_time: null,
+        args: [
+            {
+                name: 'data',
+                type: 'boolean',
+            },
+        ],
+        topic: 'SPORT_MOD',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Headlight',
+        description: 'Changes the headlight state with the provided parameters',
+        api_id: 1007,
+        working: true,
+        exec_time: null,
+        args: [
+            {
+                name: 'color',
+                type: 'string',
+            },
+        ],
+        topic: 'VUI',
+        gamepad_assignment: '',
+    },
+    {
+        command_name: 'Brightness',
+        description: 'Changes the headlight state with the provided parameters',
+        api_id: 1005,
+        working: true,
+        exec_time: null,
+        args: [
+            {
+                name: 'brightness',
+                type: 'number',
+            },
+        ],
+        topic: 'VUI',
+        gamepad_assignment: '',
+    },
+] as const satisfies readonly CommandSpec[];
+
+/// The name of every command in the table.
+export type CommandName = (typeof COMMANDS)[number]['command_name'];
+
+/// The name of every working command that takes one boolean argument. These are the exclusive
+/// locomotion modes, which one radio group switches between.
+export type SwitchName = Extract<
+    (typeof COMMANDS)[number],
+    { working: true; args: readonly [{ type: 'boolean' }] }
+>['command_name'];

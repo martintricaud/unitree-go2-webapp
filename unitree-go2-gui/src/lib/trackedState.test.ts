@@ -5,10 +5,10 @@ import {
   changeTo,
   dimTo,
   switchTo,
-  presets,
-  DANSE_DU_SABBAT,
-} from './commandUtilities';
-import type { CueItem, Sequence } from './commandUtilities';
+} from './utils/payloads';
+import type { CueItem, Sequence } from './utils/payloads';
+import { presets, DANSE_DU_SABBAT } from './data/cues';
+import { SPEED_LEVELS } from './data/options';
 import {
   crouched,
   headlight,
@@ -18,13 +18,13 @@ import {
   sendTracked,
   sitting,
   speed,
-  speedValueMap,
 } from './trackedState';
 import type { Outcome, OutcomeName } from './outcomes';
 
 /** The sequence in DANSE_DU_SABBAT that carries this display name. */
 const sabbatStep = (displayName: string): Sequence => {
-  const found = DANSE_DU_SABBAT.sequence.find(
+  const steps: readonly CueItem[] = DANSE_DU_SABBAT.sequence;
+  const found = steps.find(
     (item): item is Sequence => item.kind === 'sequence' && item.displayName === displayName,
   );
   if (found === undefined) throw new Error(`no step named ${displayName}`);
@@ -146,7 +146,7 @@ describe('trackedState', () => {
     });
 
     it('maps each SpeedLevel data value onto its speed name', () => {
-      Object.entries(speedValueMap).forEach(([name, data]) => {
+      Object.entries(SPEED_LEVELS).forEach(([name, data]) => {
         expect(impliedStates(speedPayload(data))).toEqual({ speed: name });
       });
     });

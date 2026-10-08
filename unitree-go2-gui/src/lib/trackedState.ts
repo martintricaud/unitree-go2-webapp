@@ -1,7 +1,8 @@
 import { confirmable } from './confirmable';
 import type { ConfirmableStore } from './confirmable';
-import { CMD_switches_names, commandIndex } from './commandUtilities';
-import type { CueItem, Payload } from './commandUtilities';
+import { CMD_switches } from './utils/payloads';
+import type { CueItem, Payload } from './utils/payloads';
+import { SPEED_LEVELS } from './data/options';
 import type { Outcome } from './outcomes';
 import type { WebSocketClient } from './webSocketClient';
 
@@ -40,9 +41,6 @@ const STORES: { [K in keyof TrackedValues]: ConfirmableStore<TrackedValues[K]> }
     obstacleAvoidance,
 };
 
-/// The `data` value `SpeedLevel` sends for each speed the operator can pick.
-export const speedValueMap: Record<string, number> = { slow: -1, normal: 0, fast: 1 };
-
 /// The commands a cue item sends, in the order it sends them, nested sequences opened out.
 const commandsOf = (item: CueItem): Payload[] => {
     switch (item.kind) {
@@ -60,11 +58,14 @@ const commandsOf = (item: CueItem): Payload[] => {
 const statesOf = (command: Payload): ImpliedStates => {
     const name = command.command_name;
     const parameter = command.parameter ?? {};
-    if (CMD_switches_names.includes(name)) {
+    const switchSpec = CMD_switches.find(function (_spec) {
+        return _spec.command_name === name;
+    });
+    if (switchSpec !== undefined) {
         // The boolean sits under the command's own argument name: `data` for most switches,
         // `enabled` for Damp.
-        const on: unknown = parameter[commandIndex[name].args[0].name];
-        return typeof on === 'boolean' ? { mode: on ? name : null } : {};
+        const on = parameter[switchSpec.args[0].name];
+        return typeof on === 'boolean' ? { mode: on ? switchSpec.command_name : null } : {};
     }
     switch (name) {
         case 'Headlight':
@@ -72,10 +73,10 @@ const statesOf = (command: Payload): ImpliedStates => {
         case 'SpeedLevel': {
             // The level is read from `data`, the key the robot receives, although the command
             // table names the argument `level`.
-            const level = Object.keys(speedValueMap).find(
-                (key) => speedValueMap[key] === parameter.data,
-            );
-            return level === undefined ? {} : { speed: level };
+            const level = Object.entries(SPEED_LEVELS).find(function ([, _data]) {
+                return _data === parameter.data;
+            });
+            return level === undefined ? {} : { speed: level[0] };
         }
         case 'Sit':
             return { sitting: true };

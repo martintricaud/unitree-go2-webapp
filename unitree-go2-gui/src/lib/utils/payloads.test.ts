@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildPayload,
-  switchTo,
-  presets,
-  CONDUITE,
-  CMD_actions,
-  CMD_switches,
-  CMD_switches_names,
-} from './commandUtilities';
-import type { CueItem } from './commandUtilities';
+import { buildPayload, switchTo, CMD_actions, CMD_switches } from './payloads';
+import type { CueItem } from './payloads';
+import { presets, CONDUITE } from '../data/cues';
 
 const KINDS = ['command', 'wait', 'sequence'];
 
@@ -16,7 +9,7 @@ const KINDS = ['command', 'wait', 'sequence'];
 const everyItem = (items: CueItem[]): CueItem[] =>
   items.flatMap((item) => (item.kind === 'sequence' ? [item, ...everyItem(item.sequence)] : [item]));
 
-describe('commandUtilities', () => {
+describe('payloads', () => {
   describe('buildPayload', () => {
     it('should return api_id, topic, and command_name', () => {
       const result = buildPayload('BalanceStand');
@@ -145,25 +138,28 @@ describe('commandUtilities', () => {
     });
   });
 
-  describe('CMD_switches_names', () => {
-    it('should be an array of strings', () => {
-      expect(Array.isArray(CMD_switches_names)).toBe(true);
-      CMD_switches_names.forEach((name) => {
-        expect(typeof name).toBe('string');
-      });
+  describe('the switch names', () => {
+    it('should be the 14 locomotion modes, in table order', () => {
+      expect(CMD_switches.map((cmd) => cmd.command_name)).toEqual([
+        'Damp',
+        'ContinuousGait',
+        'Pose',
+        'StaticWalk',
+        'Trotting',
+        'EconomicGait',
+        'Handstand',
+        'FreeWalk',
+        'Leaping',
+        'Jumping',
+        'FreeAvoid',
+        'ClassicWalk',
+        'Backstand',
+        'CrossStep',
+      ]);
     });
 
-    it('should match CMD_switches command_names in same order', () => {
-      const expected = CMD_switches.map((c) => c.command_name);
-      expect(CMD_switches_names).toEqual(expected);
-    });
-
-    it('should include Damp', () => {
-      expect(CMD_switches_names).toContain('Damp');
-    });
-
-    it('should have the same length as CMD_switches', () => {
-      expect(CMD_switches_names.length).toBe(CMD_switches.length);
+    it("should put the boolean under Damp's own argument name", () => {
+      expect(switchTo(false)('Damp').parameter).toEqual({ enabled: false });
     });
   });
 });
