@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { buildPayload, switchTo, CMD_actions, CMD_switches } from './payloads';
-import type { CueItem } from './payloads';
+import { describe, it, expect, expectTypeOf } from 'vitest';
+import { buildPayload, changeTo, dimTo, switchTo, toggleTo, CMD_actions, CMD_switches } from './payloads';
+import type { CueItem, Payload } from './payloads';
+import type { CommandName } from '../data/commands';
 import { presets, CONDUITE } from '../data/cues';
 
 const KINDS = ['command', 'wait', 'sequence'];
@@ -135,6 +136,36 @@ describe('payloads', () => {
     it('should not include zero-arg commands like BalanceStand', () => {
       const names = CMD_switches.map((c) => c.command_name);
       expect(names).not.toContain('BalanceStand');
+    });
+  });
+
+  describe('the types read from the command table', () => {
+    it('should type a payload command_name as a name the table holds', () => {
+      expectTypeOf<Payload['command_name']>().toEqualTypeOf<CommandName>();
+    });
+
+    it('should accept only a colour command in changeTo', () => {
+      expectTypeOf(changeTo('red')).parameter(0).toEqualTypeOf<'Headlight'>();
+      // @ts-expect-error 'Pose' takes no `color` argument.
+      changeTo('red')('Pose');
+    });
+
+    it('should accept only a brightness command in dimTo', () => {
+      expectTypeOf(dimTo(1)).parameter(0).toEqualTypeOf<'Brightness'>();
+      // @ts-expect-error 'Headlight' takes no `brightness` argument.
+      dimTo(1)('Headlight');
+    });
+
+    it('should keep ObstaclesAvoid out of the modes while it remains a toggle', () => {
+      // @ts-expect-error ObstaclesAvoid is not under the sport-mode topic, so it is not a mode.
+      switchTo(true)('ObstaclesAvoid');
+      expect(toggleTo(true)('ObstaclesAvoid')).toEqual({
+        kind: 'command',
+        topic: 'OBSTACLES_AVOID',
+        api_id: 1001,
+        command_name: 'ObstaclesAvoid',
+        parameter: { enable: true },
+      });
     });
   });
 

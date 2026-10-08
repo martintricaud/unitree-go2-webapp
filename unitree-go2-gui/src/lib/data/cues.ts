@@ -134,7 +134,7 @@ export const presets = {
     }
 } satisfies Record<string, Sequence>;
 
-export const STRETCH_HELLO_JUMP = {
+const STRETCH_HELLO_JUMP = {
     kind: 'sequence',
     displayName: 'Stretch 👋 Jump',
     sequence: [

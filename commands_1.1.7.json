@@ -542,5 +542,20 @@
         ],
         "topic": "VUI",
         "gamepad_assignment": ""
+    },
+    {
+        "command_name": "ObstaclesAvoid",
+        "description": "Turns obstacle avoidance on or off",
+        "api_id": 1001,
+        "working": true,
+        "exec_time": null,
+        "args": [
+            {
+                "name": "enable",
+                "type": "boolean"
+            }
+        ],
+        "topic": "OBSTACLES_AVOID",
+        "gamepad_assignment": ""
     }
 ]

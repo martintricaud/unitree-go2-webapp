@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { writable, get } from 'svelte/store';
-	import { gamepadStore } from '../lib/gamepadStore';
+	import { gamepadStore } from '../lib/stores/gamepad';
 	import * as R from 'ramda';
 	// Types for gamepad input
 

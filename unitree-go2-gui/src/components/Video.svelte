@@ -9,7 +9,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { writable, derived } from 'svelte/store';
     import type { Writable } from 'svelte/store';
-    import { videoFrame } from '../lib/webSocketClient';
+    import { videoFrame } from '../lib/stores/connection';
     import type {
         NormalizedLandmark,
         Detection,

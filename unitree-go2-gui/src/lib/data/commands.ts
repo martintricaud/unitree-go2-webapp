@@ -1,6 +1,6 @@
 /// One entry of the Unitree Go2 sport-mode command table. The relay reads `topic`, `api_id` and
 /// `exec_time`; the browser also reads `command_name`, `working` and `args`.
-export type CommandSpec = {
+type CommandSpec = {
     readonly command_name: string;
     readonly api_id: number;
     readonly description?: string;
@@ -559,14 +559,30 @@ export const COMMANDS = [
         topic: 'VUI',
         gamepad_assignment: '',
     },
+    {
+        command_name: 'ObstaclesAvoid',
+        description: 'Turns obstacle avoidance on or off',
+        api_id: 1001,
+        working: true,
+        exec_time: null,
+        args: [
+            {
+                name: 'enable',
+                type: 'boolean',
+            },
+        ],
+        topic: 'OBSTACLES_AVOID',
+        gamepad_assignment: '',
+    },
 ] as const satisfies readonly CommandSpec[];
 
 /// The name of every command in the table.
 export type CommandName = (typeof COMMANDS)[number]['command_name'];
 
-/// The name of every working command that takes one boolean argument. These are the exclusive
-/// locomotion modes, which one radio group switches between.
+/// The name of every working sport-mode command that takes one boolean argument. These are the
+/// exclusive locomotion modes, which one radio group switches between. `ObstaclesAvoid` also
+/// takes one boolean, but under its own topic, so the topic keeps it out of the group.
 export type SwitchName = Extract<
     (typeof COMMANDS)[number],
-    { working: true; args: readonly [{ type: 'boolean' }] }
+    { working: true; topic: 'SPORT_MOD'; args: readonly [{ type: 'boolean' }] }
 >['command_name'];

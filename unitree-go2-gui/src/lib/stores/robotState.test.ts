@@ -1,25 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import {
-  buildPayload,
-  changeTo,
-  dimTo,
-  switchTo,
-} from './utils/payloads';
-import type { CueItem, Sequence } from './utils/payloads';
-import { presets, DANSE_DU_SABBAT } from './data/cues';
-import { SPEED_LEVELS } from './data/options';
-import {
-  crouched,
-  headlight,
-  impliedStates,
-  mode,
-  obstacleAvoidance,
-  sendTracked,
-  sitting,
-  speed,
-} from './trackedState';
-import type { Outcome, OutcomeName } from './outcomes';
+import { buildPayload, dimTo, switchTo, toggleTo } from '../utils/payloads';
+import type { CueItem, Sequence } from '../utils/payloads';
+import { DANSE_DU_SABBAT } from '../data/cues';
+import { crouched, headlight, mode, obstacleAvoidance, send, sitting, speed } from './robotState';
+import type { Outcome, OutcomeName } from '../utils/outcome';
 
 /** The sequence in DANSE_DU_SABBAT that carries this display name. */
 const sabbatStep = (displayName: string): Sequence => {
@@ -30,19 +15,6 @@ const sabbatStep = (displayName: string): Sequence => {
   if (found === undefined) throw new Error(`no step named ${displayName}`);
   return found;
 };
-
-const speedPayload = (data: number): CueItem => ({
-  ...buildPayload('SpeedLevel'),
-  parameter: { data },
-});
-
-const obstaclePayload = (enable: boolean): CueItem => ({
-  kind: 'command',
-  topic: 'OBSTACLES_AVOID',
-  api_id: 1001,
-  command_name: 'ObstaclesAvoid',
-  parameter: { enable },
-});
 
 /** A client whose `request` stays unanswered until the test hands it a verdict, so the stores
  * can be read while the command is in flight. No socket and no relay are involved. */
@@ -63,7 +35,7 @@ const stubClient = () => {
   return { client, sent, reply };
 };
 
-describe('trackedState', () => {
+describe('robotState', () => {
   describe('the stores', () => {
     it('start settled on their declared values, with nothing outstanding', () => {
       const settled = <T>(value: T) => ({ settled: value, pending: null, lastOutcome: null });
@@ -100,96 +72,11 @@ describe('trackedState', () => {
     });
   });
 
-  describe('impliedStates', () => {
-    it('implies the mode a switch turns on', () => {
-      expect(impliedStates(switchTo(true)('Pose'))).toEqual({ mode: 'Pose' });
-    });
-
-    it('implies no mode when a switch turns one off', () => {
-      expect(impliedStates(switchTo(false)('Pose'))).toEqual({ mode: null });
-    });
-
-    it('reads the Damp boolean from parameter.enabled', () => {
-      expect(switchTo(true)('Damp').parameter).toEqual({ enabled: true });
-      expect(impliedStates(switchTo(true)('Damp'))).toEqual({ mode: 'Damp' });
-      expect(impliedStates(switchTo(false)('Damp'))).toEqual({ mode: null });
-    });
-
-    it('implies nothing for a switch whose boolean is missing', () => {
-      expect(impliedStates(buildPayload('Pose'))).toEqual({});
-    });
-
-    it('takes the last mode in a cue: exitPose ends on FreeWalk', () => {
-      expect(impliedStates(presets.exitPose).mode).toBe('FreeWalk');
-    });
-
-    it('collects every state a cue affects: exitSit rises and walks', () => {
-      expect(impliedStates(presets.exitSit)).toEqual({ sitting: false, mode: 'FreeWalk' });
-    });
-
-    it('opens nested sequences: Sabots ends on Backstand with a blue light', () => {
-      const states = impliedStates(sabbatStep('Sabots'));
-      expect(states.mode).toBe('Backstand');
-      expect(states.headlight).toBe('blue');
-    });
-
-    it('lets a nested sequence override an earlier step of its parent', () => {
-      expect(impliedStates(DANSE_DU_SABBAT)).toEqual({ mode: 'ClassicWalk', headlight: 'green' });
-    });
-
-    it('implies the headlight colour', () => {
-      expect(impliedStates(changeTo('red')('Headlight'))).toEqual({ headlight: 'red' });
-    });
-
-    it('implies nothing for Brightness', () => {
-      expect(impliedStates(dimTo(1)('Brightness'))).toEqual({});
-    });
-
-    it('maps each SpeedLevel data value onto its speed name', () => {
-      Object.entries(SPEED_LEVELS).forEach(([name, data]) => {
-        expect(impliedStates(speedPayload(data))).toEqual({ speed: name });
-      });
-    });
-
-    it('implies nothing for a SpeedLevel outside the known values', () => {
-      expect(impliedStates(speedPayload(7))).toEqual({});
-    });
-
-    it('implies sitting and crouching from their commands', () => {
-      expect(impliedStates(buildPayload('Sit'))).toEqual({ sitting: true });
-      expect(impliedStates(buildPayload('RiseSit'))).toEqual({ sitting: false });
-      expect(impliedStates(buildPayload('StandDown'))).toEqual({ crouched: true });
-      expect(impliedStates(buildPayload('StandUp'))).toEqual({ crouched: false });
-    });
-
-    it('implies the obstacle-avoidance boolean', () => {
-      expect(impliedStates(obstaclePayload(false))).toEqual({ obstacleAvoidance: false });
-      expect(impliedStates(obstaclePayload(true))).toEqual({ obstacleAvoidance: true });
-    });
-
-    it('implies nothing for a sequence of waits and non-state commands', () => {
-      const cue: CueItem = {
-        kind: 'sequence',
-        sequence: [
-          buildPayload('StopMove'),
-          { kind: 'wait', wait: 0.1 },
-          buildPayload('Hello'),
-          { kind: 'sequence', sequence: [{ kind: 'wait', wait: 0.2 }, buildPayload('FingerHeart')] },
-        ],
-      };
-      expect(impliedStates(cue)).toEqual({});
-    });
-
-    it('implies nothing for a bare wait', () => {
-      expect(impliedStates({ kind: 'wait', wait: 1 })).toEqual({});
-    });
-  });
-
-  describe('sendTracked', () => {
+  describe('send', () => {
     it('proposes mode and headlight under one id, and a confirmation settles both', async () => {
       const { client, sent, reply } = stubClient();
       const cue = sabbatStep('Sabots');
-      const done = sendTracked(client)(cue);
+      const done = send(client)(cue);
 
       expect(sent).toEqual([cue]);
       const modePending = get(mode).pending;
@@ -208,7 +95,7 @@ describe('trackedState', () => {
       const { client, reply } = stubClient();
       const modeBefore = get(mode).settled;
       const headlightBefore = get(headlight).settled;
-      const done = sendTracked(client)(sabbatStep('Wizard of Oz'));
+      const done = send(client)(sabbatStep('Wizard of Oz'));
       expect(get(mode).pending?.proposed).toBe('ClassicWalk');
       expect(get(headlight).pending?.proposed).toBe('green');
 
@@ -221,7 +108,7 @@ describe('trackedState', () => {
 
     it('proposes white for a Brightness command sent with the white override', async () => {
       const { client, reply } = stubClient();
-      const done = sendTracked(client)(dimTo(1)('Brightness'), { headlight: 'white' });
+      const done = send(client)(dimTo(1)('Brightness'), { headlight: 'white' });
       expect(get(headlight).pending?.proposed).toBe('white');
       reply('confirmed');
       await done;
@@ -239,15 +126,24 @@ describe('trackedState', () => {
         obstacleAvoidance: get(obstacleAvoidance),
       });
       const before = snapshot();
-      const done = sendTracked(client)(buildPayload('Hello'));
+      const done = send(client)(buildPayload('Hello'));
       reply('confirmed');
       await done;
       expect(snapshot()).toEqual(before);
     });
 
+    it('proposes obstacle avoidance from its toggle and settles it on confirmation', async () => {
+      const { client, reply } = stubClient();
+      const done = send(client)(toggleTo(false)('ObstaclesAvoid'));
+      expect(get(obstacleAvoidance).pending?.proposed).toBe(false);
+      reply('confirmed');
+      await done;
+      expect(get(obstacleAvoidance)).toMatchObject({ settled: false, pending: null });
+    });
+
     it('proposes a null mode for a switch turned off', async () => {
       const { client, reply } = stubClient();
-      const done = sendTracked(client)(switchTo(false)('Pose'));
+      const done = send(client)(switchTo(false)('Pose'));
       expect(get(mode).pending?.proposed).toBeNull();
       reply('confirmed');
       await done;

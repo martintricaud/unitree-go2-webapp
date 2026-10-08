@@ -1,7 +1,8 @@
 <script lang="ts">
     import * as R from 'ramda';
     import { onMount } from 'svelte';
-    import { websocket, webSocketConnected, robotConnected } from './lib/webSocketClient';
+    import { websocket } from './lib/utils/webSocketClient';
+    import { webSocketConnected, robotConnected } from './lib/stores/connection';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
@@ -13,11 +14,11 @@
         cueLabel,
         dimTo,
         switchTo,
+        toggleTo,
         buildPayload,
         CMD_actions,
         CMD_switches,
     } from './lib/utils/payloads';
-    import type { CueItem } from './lib/utils/payloads';
     import type { SwitchName } from './lib/data/commands';
     import { CONDUITE, presets } from './lib/data/cues';
     import { LIGHT_EMOJIS, SPEED_LEVELS } from './lib/data/options';
@@ -28,13 +29,13 @@
         headlight,
         mode,
         obstacleAvoidance,
-        sendTracked,
+        send,
         sitting,
         speed,
-    } from './lib/trackedState';
-    import { displayed } from './lib/confirmable';
-    import type { Confirmable } from './lib/confirmable';
-    import type { OutcomeName } from './lib/outcomes';
+    } from './lib/stores/robotState';
+    import { displayed } from './lib/utils/confirmable';
+    import type { Confirmable } from './lib/utils/confirmable';
+    import type { OutcomeName } from './lib/utils/outcome';
 
     const CONDUITE_SEQ = CONDUITE.sequence;
 
@@ -60,10 +61,10 @@
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
-    const send = sendTracked(websocket);
+    const sendToRobot = send(websocket);
 
     /// Send the cue at this index of the cue sheet.
-    const sendCue = (index: number) => void send(CONDUITE_SEQ[index]);
+    const sendCue = (index: number) => void sendToRobot(CONDUITE_SEQ[index]);
 
     /// What a control says about its own value: waiting for the robot, or the verdict on the
     /// last thing it asked for. A confirmed value says nothing.
@@ -105,47 +106,37 @@
         if (websocket.send({ command_name: 'subscribe', switch: next })) monitoringState = next;
     };
 
-    /// Obstacle avoidance has no entry in the command table, so its payload is written out
-    /// here; `command_name` names it in the outcome log.
-    const obstaclePayload = (enable: boolean): CueItem => ({
-        kind: 'command',
-        topic: 'OBSTACLES_AVOID',
-        api_id: 1001,
-        command_name: 'ObstaclesAvoid',
-        parameter: { enable },
-    });
-
     const handleSpeedChange = (level: Speed) =>
-        send({
+        sendToRobot({
             ...buildPayload('SpeedLevel'),
             parameter: { data: SPEED_LEVELS[level] },
         });
 
-    const handleModeChange = (name: SwitchName) => send(switchTo(true)(name));
+    const handleModeChange = (name: SwitchName) => sendToRobot(switchTo(true)(name));
 
     /// The white option is sent as a brightness rather than as a colour. Brightness implies no
     /// headlight colour, so white is passed explicitly.
     const handleColorChange = (colour: Colour) =>
         colour === 'white'
-            ? send(dimTo(1)('Brightness'), { headlight: 'white' })
-            : send(changeTo(colour)('Headlight'));
+            ? sendToRobot(dimTo(1)('Brightness'), { headlight: 'white' })
+            : sendToRobot(changeTo(colour)('Headlight'));
 
     /// The keys both operators share. Each asks for the opposite of what its control shows, so
     /// a refused command leaves the next press asking for the same thing again.
     const togglePose = () => {
-        void send(displayed($mode) !== 'Pose' ? presets.enterPose : presets.exitPose);
+        void sendToRobot(displayed($mode) !== 'Pose' ? presets.enterPose : presets.exitPose);
     };
 
     const toggleLeaping = () => {
-        void send(switchTo(displayed($mode) !== 'Leaping')('Leaping'));
+        void sendToRobot(switchTo(displayed($mode) !== 'Leaping')('Leaping'));
     };
 
     const toggleSit = () => {
-        void send(displayed($sitting) ? presets.exitSit : buildPayload('Sit'));
+        void sendToRobot(displayed($sitting) ? presets.exitSit : buildPayload('Sit'));
     };
 
-    const dance = () => void send(presets.dance);
-    const standContent = () => void send(presets.standContent);
+    const dance = () => void sendToRobot(presets.dance);
+    const standContent = () => void sendToRobot(presets.standContent);
 
     let keydownHandler = (event: KeyboardEvent) => {
         switch (operator) {
@@ -186,16 +177,16 @@
                 switch (event.key) {
                     // case 'ArrowRight':
                     //     if (displayed($mode) !== 'Pose') {
-                    //         void send(presets.enterPose);
+                    //         void sendToRobot(presets.enterPose);
                     //     }
                     //     intervalId = setInterval(() => {
-                    //         void send(presets.holdAim);
+                    //         void sendToRobot(presets.holdAim);
                     //         // Replace with your actual logic
                     //     }, 100);
 
                     //     break;
                     case 'ArrowLeft':
-                        void send(
+                        void sendToRobot(
                             displayed($crouched) ? presets.stopAndStand : presets.stopAndCrouch,
                         );
                         break;
@@ -203,7 +194,7 @@
                         standContent();
                         break;
                     case 'ArrowDown':
-                        void send(
+                        void sendToRobot(
                             switchTo(true)(displayed($mode) !== 'Trotting' ? 'Trotting' : 'FreeWalk'),
                         );
                         break;
@@ -238,8 +229,8 @@
         //     case 'Christine':
         //         if (event.key === 'ArrowRight') {
         //             clearInterval(intervalId);
-        //             void send(switchTo(false)('Pose'));
-        //             void send(switchTo(true)('FreeWalk'));
+        //             void sendToRobot(switchTo(false)('Pose'));
+        //             void sendToRobot(switchTo(true)('FreeWalk'));
         //         }
         //         break;
         // }
@@ -270,7 +261,7 @@
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <!-- <button
             on:click={() => {
-                send(presets.contentRed);
+                sendToRobot(presets.contentRed);
             }}
         >
             Content + Red
@@ -297,7 +288,7 @@
             value={displayed($obstacleAvoidance)}
             marker={markerOf($obstacleAvoidance)}
             disabled={!$robotConnected}
-            callback={(next: boolean) => send(obstaclePayload(next))}
+            callback={(next: boolean) => sendToRobot(toggleTo(next)('ObstaclesAvoid'))}
         />
         <Switch
             label={'Face Landmarks'}
@@ -315,7 +306,7 @@
             {#if working}
                 <button
                     disabled={!$robotConnected}
-                    on:click={() => send(buildPayload(command_name))}
+                    on:click={() => sendToRobot(buildPayload(command_name))}
                 >
                     {command_name}
                 </button>

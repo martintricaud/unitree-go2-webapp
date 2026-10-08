@@ -1,8 +1,9 @@
-import { writable } from 'svelte/store';
-import { cueLabel } from './utils/payloads';
-import type { CueItem } from './utils/payloads';
-import { clearOutcomes, readOutcome, recordOutcome } from './outcomes';
-import type { Outcome } from './outcomes';
+import { cueLabel } from './payloads';
+import type { CueItem } from './payloads';
+import { readOutcome } from './outcome';
+import type { Outcome } from './outcome';
+import { clearOutcomes, recordOutcome } from '../stores/outcomes';
+import { robotConnected, videoFrame, webSocketConnected } from '../stores/connection';
 
 const RELAY_URL = 'ws://localhost:8000/ws';
 
@@ -31,11 +32,6 @@ const RELAY_SILENT: Outcome = {
     code: null,
     detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
 };
-
-// Using stores lets us easily bind to these values in Svelte components
-export const webSocketConnected = writable(false);
-export const robotConnected = writable(false);
-export const videoFrame = writable<ImageBitmap | null>(null);
 
 /// The part of a WebSocket this client writes to. The browser's WebSocket satisfies it, and a
 /// test supplies a recorder, so transport behaviour is exercised with no relay running.
@@ -185,4 +181,4 @@ export class WebSocketClient {
     }
 }
 
-export let websocket = new WebSocketClient();
+export const websocket = new WebSocketClient();

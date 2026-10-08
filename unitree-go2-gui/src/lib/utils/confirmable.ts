@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Readable } from 'svelte/store';
-import type { Outcome, OutcomeName } from './outcomes';
+import type { Outcome, OutcomeName } from './outcome';
 
 /// What one control knows about the value it shows: the value the robot is believed to hold,
 /// the value the operator asked for and the robot has not answered on yet, and the verdict on
@@ -57,6 +57,10 @@ export type ConfirmableStore<T> = Readable<Confirmable<T>> & {
     propose: (proposed: T, reqId: number) => void;
     resolve: (reqId: number, outcome: Outcome) => void;
 };
+
+/// The type of value a confirmable store holds, read off the store itself, so a record of
+/// stores yields the record of their values without restating either.
+export type ConfirmedValue<S> = S extends ConfirmableStore<infer T> ? T : never;
 
 /// A control that starts on `settled` with nothing outstanding and no verdict yet.
 export const confirmable = <T>(settled: T): ConfirmableStore<T> => {
