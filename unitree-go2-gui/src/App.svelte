@@ -19,7 +19,6 @@
         buildPayload,
         CMD_actions,
         CMD_switches_names,
-        execute_step as executeStepFn,
     } from './lib/commandUtilities';
     import type { CueItem } from './lib/commandUtilities';
     import {
@@ -27,12 +26,13 @@
         headlight,
         mode,
         obstacleAvoidance,
+        sendTracked,
         sitting,
         speed,
         speedValueMap,
     } from './lib/trackedState';
     import { displayed } from './lib/confirmable';
-    import type { Confirmable, ConfirmableStore } from './lib/confirmable';
+    import type { Confirmable } from './lib/confirmable';
     import type { OutcomeName } from './lib/outcomes';
 
     const CONDUITE_SEQ = CONDUITE.sequence;
@@ -61,19 +61,12 @@
     const LIGHT_OPTIONS = R.keys(lightEmojiMap);
     const SPEED_OPTIONS = R.keys(speedValueMap);
 
-    let execute_step = executeStepFn(websocket);
+    /// Every robot command leaves the browser through here, so every control the command
+    /// affects shows the change and the robot's verdict on it.
+    const send = sendTracked(websocket);
 
-    /// Tells one proposal from the next, so a verdict answers only the proposal that produced
-    /// it. It never leaves the browser: WebSocketClient mints the ids the relay sees.
-    let lastProposal = 0;
-
-    /// Show the operator's choice at once, send it, and let the robot's verdict settle it or
-    /// take it back. Every control that represents robot state goes through here.
-    async function attempt<T>(control: ConfirmableStore<T>, proposed: T, item: CueItem) {
-        const reqId = (lastProposal += 1);
-        control.propose(proposed, reqId);
-        control.resolve(reqId, await websocket.request(item));
-    }
+    /// Send the cue at this index of the cue sheet.
+    const sendCue = (index: number) => void send(CONDUITE_SEQ[index]);
 
     /// What a control says about its own value: waiting for the robot, or the verdict on the
     /// last thing it asked for. A confirmed value says nothing.
@@ -125,56 +118,48 @@
         parameter: { enable },
     });
 
-    /// The white option is sent as a brightness rather than as a colour.
-    const headlightPayload = (colour: string): CueItem =>
-        colour === 'white' ? dimTo(1)('Brightness') : changeTo(colour)('Headlight');
-
     const handleSpeedChange = (level: string) =>
-        attempt(speed, level, {
+        send({
             ...buildPayload('SpeedLevel'),
             parameter: { data: speedValueMap[level] },
         });
 
-    const handleModeChange = (name: string) => attempt(mode, name, switchTo(true)(name));
+    const handleModeChange = (name: string) => send(switchTo(true)(name));
 
+    /// The white option is sent as a brightness rather than as a colour. Brightness implies no
+    /// headlight colour, so white is passed explicitly.
     const handleColorChange = (colour: string) =>
-        attempt(headlight, colour, headlightPayload(colour));
+        colour === 'white'
+            ? send(dimTo(1)('Brightness'), { headlight: 'white' })
+            : send(changeTo(colour)('Headlight'));
 
     /// The keys both operators share. Each asks for the opposite of what its control shows, so
     /// a refused command leaves the next press asking for the same thing again.
     const togglePose = () => {
-        const entering = displayed($mode) !== 'Pose';
-        void attempt(
-            mode,
-            entering ? 'Pose' : 'FreeWalk',
-            entering ? presets.enterPose : presets.exitPose,
-        );
+        void send(displayed($mode) !== 'Pose' ? presets.enterPose : presets.exitPose);
     };
 
     const toggleLeaping = () => {
-        const entering = displayed($mode) !== 'Leaping';
-        void attempt(mode, entering ? 'Leaping' : 'FreeWalk', switchTo(entering)('Leaping'));
+        void send(switchTo(displayed($mode) !== 'Leaping')('Leaping'));
     };
 
     const toggleSit = () => {
-        const sittingDown = !displayed($sitting);
-        void attempt(sitting, sittingDown, sittingDown ? buildPayload('Sit') : presets.exitSit);
+        void send(displayed($sitting) ? presets.exitSit : buildPayload('Sit'));
     };
 
-    /// Both cues end on FreeWalk, which is what they propose to the mode radio.
-    const dance = () => void attempt(mode, 'FreeWalk', presets.dance);
-    const standContent = () => void attempt(mode, 'FreeWalk', presets.standContent);
+    const dance = () => void send(presets.dance);
+    const standContent = () => void send(presets.standContent);
 
     let keydownHandler = (event: KeyboardEvent) => {
         switch (operator) {
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
-                        execute_step(CONDUITE_SEQ)($cuePointer);
+                        sendCue($cuePointer);
                         cuePointer.moveBy(1);
                         break;
                     case 'ArrowLeft':
-                        execute_step(CONDUITE_SEQ)($cuePointer);
+                        sendCue($cuePointer);
                         cuePointer.moveBy(-1);
                         break;
                     case 'ArrowDown':
@@ -184,7 +169,7 @@
                         cuePointer.moveBy(-1);
                         break;
                     case 'Enter':
-                        execute_step(CONDUITE_SEQ)($cuePointer);
+                        sendCue($cuePointer);
                         break;
                     case 'a':
                         togglePose();
@@ -204,35 +189,27 @@
                 switch (event.key) {
                     // case 'ArrowRight':
                     //     if (displayed($mode) !== 'Pose') {
-                    //         websocket.send(presets.enterPose);
+                    //         void send(presets.enterPose);
                     //     }
                     //     intervalId = setInterval(() => {
-                    //         websocket.send(presets.holdAim);
+                    //         void send(presets.holdAim);
                     //         // Replace with your actual logic
                     //     }, 100);
 
                     //     break;
-                    case 'ArrowLeft': {
-                        const crouching = !displayed($crouched);
-                        void attempt(
-                            crouched,
-                            crouching,
-                            crouching ? presets.stopAndCrouch : presets.stopAndStand,
+                    case 'ArrowLeft':
+                        void send(
+                            displayed($crouched) ? presets.stopAndStand : presets.stopAndCrouch,
                         );
                         break;
-                    }
                     case 'ArrowUp':
                         standContent();
                         break;
-                    case 'ArrowDown': {
-                        const running = displayed($mode) !== 'Trotting';
-                        void attempt(
-                            mode,
-                            running ? 'Trotting' : 'FreeWalk',
-                            switchTo(true)(running ? 'Trotting' : 'FreeWalk'),
+                    case 'ArrowDown':
+                        void send(
+                            switchTo(true)(displayed($mode) !== 'Trotting' ? 'Trotting' : 'FreeWalk'),
                         );
                         break;
-                    }
                     case 'b':
                         toggleLeaping();
                         break;
@@ -264,8 +241,8 @@
         //     case 'Christine':
         //         if (event.key === 'ArrowRight') {
         //             clearInterval(intervalId);
-        //             websocket.send(switchTo(false)('Pose'));
-        //             websocket.send(switchTo(true)('FreeWalk'));
+        //             void send(switchTo(false)('Pose'));
+        //             void send(switchTo(true)('FreeWalk'));
         //         }
         //         break;
         // }
@@ -296,7 +273,7 @@
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <!-- <button
             on:click={() => {
-                websocket.send(presets.contentRed);
+                send(presets.contentRed);
             }}
         >
             Content + Red
@@ -323,7 +300,7 @@
             value={displayed($obstacleAvoidance)}
             marker={markerOf($obstacleAvoidance)}
             disabled={!$robotConnected}
-            callback={(next: boolean) => attempt(obstacleAvoidance, next, obstaclePayload(next))}
+            callback={(next: boolean) => send(obstaclePayload(next))}
         />
         <Switch
             label={'Face Landmarks'}
@@ -337,17 +314,11 @@
         />
     </div>
     <div class="button-grid">
-        {#each CMD_actions as { api_id, working, command_name, topic }}
+        {#each CMD_actions as { working, command_name }}
             {#if working}
                 <button
                     disabled={!$robotConnected}
-                    on:click={() =>
-                        websocket.send({
-                            kind: 'command',
-                            api_id: api_id,
-                            command_name: command_name,
-                            topic: topic,
-                        })}
+                    on:click={() => send(buildPayload(command_name))}
                 >
                     {command_name}
                 </button>
@@ -396,7 +367,7 @@
  {#each CONDUITE_SEQ as action, i}
             <button
                 class={`${i == $cuePointer ? 'active-step' : ''}`}
-                on:click={() => execute_step(CONDUITE_SEQ)(i)}
+                on:click={() => sendCue(i)}
             >
                 {cueLabel(action)}
             </button>
