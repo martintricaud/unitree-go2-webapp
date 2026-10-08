@@ -1,7 +1,6 @@
 import { clamp, filter, indexBy, pick, prop } from 'remeda';
 import commands from '../../../commands_1.1.7.json';
 import { writable } from 'svelte/store';
-import { confirmable } from './confirmable';
 import type { WebSocketClient } from './webSocketClient';
 export type TypeMap = {
     number: number;
@@ -70,7 +69,8 @@ export const cueLabel = (item: CueItem): string => {
     }
 };
 
-let commandIndex = indexBy(commands as Command[], prop('command_name'));
+/// Every command in the command table, by name.
+export const commandIndex = indexBy(commands as Command[], prop('command_name'));
 
 export const CMD_actions: Command[] = filter(
     commands as Command[],
@@ -81,11 +81,6 @@ export const CMD_switches: Command[] = filter(
     (cmd: Command) => cmd.working && cmd.args!.length === 1 && cmd.args![0].type === 'boolean',
 );
 export const CMD_switches_names: string[] = CMD_switches.map((command) => command.command_name);
-
-/// The locomotion mode the robot is believed to be in, and whether it confirmed it. Every mode
-/// command proposes a value here and the robot's verdict settles or reverts it, so what the
-/// mode radio shows is what the robot answered rather than what the browser asked for.
-export const mode = confirmable('FreeWalk');
 
 ///utility for generating a JSON message containing the api_id and topic fields
 export let buildPayload = (cmd: string): Payload => ({
@@ -145,24 +140,6 @@ export let DANSE_DU_SABBAT: Sequence = {
         },
     ]
 }
-
-
-export let STRETCH_HELLO_JUMP: Sequence = {
-    kind: 'sequence',
-    displayName: 'Stretch 👋 Jump',
-    sequence: [
-        buildPayload('StopMove'),
-        { kind: 'wait', wait: 0.1 },
-        buildPayload('Stretch'),
-        buildPayload('Hello'),
-        { kind: 'wait', wait: 0.3 },
-        buildPayload('FrontJump'),
-        { kind: 'wait', wait: 0.6 },
-        buildPayload('FrontJump'),
-        { kind: 'wait', wait: 0.1 },
-        switchTo(true)('FreeWalk'),
-    ],
-};
 
 export let presets: Record<string, Sequence> = {
     stopAndCrouch: {
@@ -263,6 +240,23 @@ export let presets: Record<string, Sequence> = {
             switchTo(true)('FreeWalk'),
         ],
     }
+};
+
+export let STRETCH_HELLO_JUMP: Sequence = {
+    kind: 'sequence',
+    displayName: 'Stretch 👋 Jump',
+    sequence: [
+        buildPayload('StopMove'),
+        { kind: 'wait', wait: 0.1 },
+        buildPayload('Stretch'),
+        buildPayload('Hello'),
+        { kind: 'wait', wait: 0.3 },
+        buildPayload('FrontJump'),
+        { kind: 'wait', wait: 0.6 },
+        buildPayload('FrontJump'),
+        { kind: 'wait', wait: 0.1 },
+        switchTo(true)('FreeWalk'),
+    ],
 };
 
 const MONOLOGUE: Sequence = {

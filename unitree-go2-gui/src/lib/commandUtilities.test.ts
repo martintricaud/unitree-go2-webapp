@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { get } from 'svelte/store';
 import {
   buildPayload,
   switchTo,
-  mode,
   presets,
   CONDUITE,
   CMD_actions,
@@ -88,30 +86,6 @@ describe('commandUtilities', () => {
       expect(named).toContain('Sabots');
       expect(named).toContain('FingerHeart');
       expect(named).toContain('wait 0.05');
-    });
-  });
-
-  describe('the mode store', () => {
-    it('holds its declared initial value, whatever order the presets were built in', () => {
-      // Every preset in this module is built as it loads, and each one calls switchTo several
-      // times. None of that reaches the store, so what the mode radio shows on the first paint
-      // no longer depends on which preset happened to be built last.
-      expect(get(mode)).toEqual({ settled: 'FreeWalk', pending: null, lastOutcome: null });
-    });
-
-    it('is not written by switchTo, whichever mode is asked for', () => {
-      const before = get(mode);
-      switchTo(true)('Pose');
-      switchTo(false)('Leaping');
-      switchTo(true)('Trotting');
-      expect(get(mode)).toBe(before);
-    });
-
-    it('is not written by building a cue out of mode commands', () => {
-      const before = get(mode);
-      const cue = [switchTo(true)('Handstand'), switchTo(true)('FreeWalk')];
-      expect(cue.map((step) => step.command_name)).toEqual(['Handstand', 'FreeWalk']);
-      expect(get(mode)).toBe(before);
     });
   });
 

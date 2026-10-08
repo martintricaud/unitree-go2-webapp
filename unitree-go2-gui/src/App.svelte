@@ -14,7 +14,6 @@
         cueLabel,
         cuePointer,
         dimTo,
-        mode,
         presets,
         switchTo,
         buildPayload,
@@ -23,7 +22,16 @@
         execute_step as executeStepFn,
     } from './lib/commandUtilities';
     import type { CueItem } from './lib/commandUtilities';
-    import { confirmable, displayed } from './lib/confirmable';
+    import {
+        crouched,
+        headlight,
+        mode,
+        obstacleAvoidance,
+        sitting,
+        speed,
+        speedValueMap,
+    } from './lib/trackedState';
+    import { displayed } from './lib/confirmable';
     import type { Confirmable, ConfirmableStore } from './lib/confirmable';
     import type { OutcomeName } from './lib/outcomes';
 
@@ -46,20 +54,10 @@
     let lidarOn = false;
     let monitoringState = false;
 
-    /// Robot commands. Each control holds the value the robot confirmed and, while the robot
-    /// has not answered, the value the operator asked for. A refusal takes the asked-for value
-    /// back; silence leaves it in place and marks it unconfirmed.
-    const obstacleAvoidance = confirmable(true);
-    const headlight = confirmable('white');
-    const speed = confirmable('normal');
-    const sitting = confirmable(false);
-    const crouched = confirmable(false);
-
     let lightEmojiMap = R.zipObj(
         ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'],
         ['🤍', '❤️', '💛', '💙', '💚', '🩵', '💜'],
     );
-    let speedValueMap: Record<string, number> = R.zipObj(['slow', 'normal', 'fast'], [-1, 0, 1]);
     const LIGHT_OPTIONS = R.keys(lightEmojiMap);
     const SPEED_OPTIONS = R.keys(speedValueMap);
 
@@ -94,7 +92,7 @@
 
     /// In a radio group the marker belongs to the option the group is showing; the others
     /// carry none.
-    const markerFor = (state: Confirmable<string>, option: string): string =>
+    const markerFor = (state: Confirmable<string | null>, option: string): string =>
         displayed(state) === option ? markerOf(state) : '';
 
     onMount(() => {
