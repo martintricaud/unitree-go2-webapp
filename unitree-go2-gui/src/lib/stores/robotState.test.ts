@@ -4,7 +4,7 @@ import { buildPayload, dimTo, switchTo, toggleTo } from '../utils/payloads';
 import type { CueItem, Sequence } from '../utils/payloads';
 import { DANSE_DU_SABBAT } from '../data/cues';
 import { crouched, headlight, mode, obstacleAvoidance, send, sitting, speed } from './robotState';
-import type { Outcome, OutcomeName } from '../utils/outcome';
+import type { Outcome, OutcomeName } from './outcomes';
 
 /** The sequence in DANSE_DU_SABBAT that carries this display name. */
 const sabbatStep = (displayName: string): Sequence => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import * as R from 'ramda';
+import { times } from 'remeda';
 import { CONDUITE } from '../data/cues';
 import { cuePointer } from './cuePointer';
 
@@ -25,7 +25,7 @@ describe('the cue pointer', () => {
     });
 
     it('stays inside the cue sheet through a long alternating key sequence', () => {
-        const visited = visit(R.times((i) => (i % 3 === 0 ? -1 : 1), 500));
+        const visited = visit(times(500, (i) => (i % 3 === 0 ? -1 : 1)));
         visited.forEach((at) => {
             expect(at).toBeGreaterThanOrEqual(0);
             expect(at).toBeLessThanOrEqual(cues.length - 1);
@@ -33,25 +33,25 @@ describe('the cue pointer', () => {
     });
 
     it('stays inside the cue sheet through randomised key sequences', () => {
-        const visited = visit(R.times(() => (Math.random() < 0.5 ? -1 : 1), 2000));
+        const visited = visit(times(2000, () => (Math.random() < 0.5 ? -1 : 1)));
         expect(Math.min(...visited)).toBeGreaterThanOrEqual(0);
         expect(Math.max(...visited)).toBeLessThanOrEqual(cues.length - 1);
     });
 
     it('never lands on an index that reads undefined out of the cue sheet', () => {
-        visit(R.times(() => 1, cues.length + 50)).forEach((at) => {
+        visit(times(cues.length + 50, () => 1)).forEach((at) => {
             expect(cues[at]).toBeDefined();
         });
     });
 
     it('stops on the last cue when it is driven past the end', () => {
-        visit(R.times(() => 1, cues.length + 10));
+        visit(times(cues.length + 10, () => 1));
         expect(get(cuePointer)).toBe(cues.length - 1);
         expect(cues[get(cuePointer)]).toBeDefined();
     });
 
     it('stops on the first cue when it is driven before the start', () => {
-        visit(R.times(() => -1, 10));
+        visit(times(10, () => -1));
         expect(get(cuePointer)).toBe(0);
     });
 

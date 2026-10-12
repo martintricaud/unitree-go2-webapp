@@ -1,7 +1,7 @@
 <script lang="ts">
     import { webSocketConnected, robotConnected } from '../lib/stores/connection';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
-    import type { OutcomeEntry, OutcomeName } from '../lib/utils/outcome';
+    import type { OutcomeEntry, OutcomeName } from '../lib/stores/outcomes';
 
     let showLog = false;
 

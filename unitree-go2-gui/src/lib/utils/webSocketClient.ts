@@ -1,26 +1,27 @@
+import { isIncludedIn, pick } from 'remeda';
 import { cueLabel } from './payloads';
 import type { CueItem } from './payloads';
-import { readOutcome } from './outcome';
-import type { Outcome } from './outcome';
-import { clearOutcomes, recordOutcome } from '../stores/outcomes';
+import { OUTCOME_NAMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes';
 import { robotConnected, videoFrame, webSocketConnected } from '../stores/connection';
+
+/// Every JSON message the relay sends. Video frames arrive separately, as binary.
+type RelayMessage =
+    | { type: 'robot_state'; connected: boolean }
+    | (Outcome & { type: 'command_result'; reqId: number | null; command_name: string | null })
+    | { type: 'state_stream'; data: unknown };
 
 const RELAY_URL = 'ws://localhost:8000/ws';
 
-// The two WebSocket.readyState values this client tests against, named here so the module and
-// its tests do not depend on the browser global being present.
+// WebSocket.readyState values, named so the tests need no browser global.
 const OPEN = 1;
 const CLOSED = 3;
 
-/// How long the browser waits for a verdict before answering the caller itself. The relay
-/// bounds each command at max(5s, exec_time + 3s) and the longest exec_time in
-/// commands_1.1.7.json is 10s, so the relay can still be legitimately waiting 13s after a
-/// command was sent. This backstop sits above that bound: it fires only when the relay has
-/// stopped answering, never on a command the relay is still bounded on.
+/// The relay bounds a command at max(5s, exec_time + 3s), at most 13s with the longest
+/// exec_time (10s), so this fires only once the relay has stopped answering.
 const REPLY_BACKSTOP_MS = 20_000;
 
-/// A command that never left the browser did not run, which is a failure and not a silence:
-/// nothing about it is uncertain.
+/// A command that never left the browser did not run: a failure, not a silence.
 const CHANNEL_CLOSED: Outcome = {
     outcome: 'failed',
     code: null,
@@ -33,31 +34,28 @@ const RELAY_SILENT: Outcome = {
     detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
 };
 
-/// The part of a WebSocket this client writes to. The browser's WebSocket satisfies it, and a
-/// test supplies a recorder, so transport behaviour is exercised with no relay running.
+/// The part of a WebSocket this client writes to, so a test can supply a recorder.
 export type Sink = { readyState: number; send(data: string): void };
 
-type Pending = {
-    resolve: (outcome: Outcome) => void;
-    timer: ReturnType<typeof setTimeout>;
-    label: string;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null;
-
-const parseJson = (raw: string): unknown => {
+/// Null for a frame that is not JSON. An outcome this browser does not know reads as
+/// `unknown`, never as a confirmation.
+function parseRelayMessage(_raw: string) {
     try {
-        return JSON.parse(raw);
+        const msg = JSON.parse(_raw);
+        const outcome = isIncludedIn(msg.outcome, OUTCOME_NAMES) ? msg.outcome : 'unknown';
+        return (msg.type === 'command_result' ? { ...msg, outcome } : msg) as RelayMessage;
     } catch {
         return null;
     }
-};
+}
 
 export class WebSocketClient {
     private socket: Sink | null = null;
     private previousBitmap: ImageBitmap | null = null;
-    private pending = new Map<number, Pending>();
+    private pending = new Map<
+        number,
+        { resolve: (outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }
+    >();
     private lastRequestId = 0;
 
     connect() {
@@ -71,8 +69,6 @@ export class WebSocketClient {
         this.attach(ws);
     }
 
-    /// Wire this client to a transport. `connect` passes a browser WebSocket; a test passes a
-    /// recorder and drives `opened`, `received` and `closed` itself.
     attach(socket: Sink) {
         this.socket = socket;
     }
@@ -87,35 +83,41 @@ export class WebSocketClient {
         robotConnected.set(false);
         this.previousBitmap?.close();
         this.previousBitmap = null;
-        // Nothing can answer these now, so settle them rather than leave each caller waiting
-        // out the backstop.
         for (const reqId of [...this.pending.keys()]) {
             this.settle(reqId, CHANNEL_CLOSED);
         }
     }
 
-    async received(data: unknown) {
+    async received(data: Blob | string) {
         if (data instanceof Blob) {
             await this.showFrame(data);
             return;
         }
-        const msg = typeof data === 'string' ? parseJson(data) : data;
-        if (!isRecord(msg)) {
-            console.warn('Dropping a relay frame that is not an object:', data);
+        const msg = parseRelayMessage(data);
+        if (msg === null) {
+            console.warn('Dropping a relay frame that is not JSON:', data);
             return;
         }
         switch (msg.type) {
             case 'robot_state':
-                robotConnected.set(msg.connected === true);
+                robotConnected.set(msg.connected);
                 return;
-            case 'command_result':
-                this.report(msg);
+            case 'command_result': {
+                const outcome = pick(msg, ['outcome', 'code', 'detail']);
+                if (msg.reqId !== null && this.pending.has(msg.reqId)) {
+                    this.settle(msg.reqId, outcome);
+                    return;
+                }
+                // A command sent without a reqId, or a verdict that arrived after the backstop.
+                const label = msg.command_name ?? 'command';
+                recordOutcome({ ...outcome, reqId: msg.reqId, label, at: Date.now() });
                 return;
+            }
             case 'state_stream':
                 // The robot's telemetry. Nothing displays it yet.
                 return;
             default:
-                console.warn('Unrecognised relay message:', msg);
+                console.warn('Unrecognised relay message:', msg satisfies never);
         }
     }
 
@@ -133,9 +135,7 @@ export class WebSocketClient {
         });
     }
 
-    /// Write one message to the relay, answering whether it went. A closed channel is a fact
-    /// the caller has to handle, so this never throws: an exception here is what leaves a
-    /// control showing a state the robot never entered.
+    /// Never throws: a closed channel is an answer the caller must handle.
     send(msg: unknown): boolean {
         if (!this.socket || this.socket.readyState !== OPEN) return false;
         try {
@@ -145,19 +145,6 @@ export class WebSocketClient {
             console.error('Failed to write to the control channel:', error);
             return false;
         }
-    }
-
-    private report(msg: Record<string, unknown>) {
-        const outcome = readOutcome(msg);
-        const reqId = typeof msg.reqId === 'number' ? msg.reqId : null;
-        if (reqId !== null && this.pending.has(reqId)) {
-            this.settle(reqId, outcome);
-            return;
-        }
-        // A command sent through `send` carries no reqId, and a verdict can arrive after the
-        // backstop has already answered its caller. The log shows both.
-        const label = typeof msg.command_name === 'string' ? msg.command_name : 'command';
-        recordOutcome({ ...outcome, reqId, label, at: Date.now() });
     }
 
     private settle(reqId: number, outcome: Outcome) {

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import * as R from 'ramda';
+    import { keys } from 'remeda';
     import { onMount } from 'svelte';
     import { websocket } from './lib/utils/webSocketClient';
     import { webSocketConnected, robotConnected } from './lib/stores/connection';
@@ -35,7 +35,7 @@
     } from './lib/stores/robotState';
     import { displayed } from './lib/utils/confirmable';
     import type { Confirmable } from './lib/utils/confirmable';
-    import type { OutcomeName } from './lib/utils/outcome';
+    import type { OutcomeName } from './lib/stores/outcomes';
 
     const CONDUITE_SEQ = CONDUITE.sequence;
 
@@ -56,8 +56,8 @@
     let lidarOn = false;
     let monitoringState = false;
 
-    const LIGHT_OPTIONS = R.keys(LIGHT_EMOJIS);
-    const SPEED_OPTIONS = R.keys(SPEED_LEVELS);
+    const LIGHT_OPTIONS = keys(LIGHT_EMOJIS);
+    const SPEED_OPTIONS = keys(SPEED_LEVELS);
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.

@@ -1,15 +1,29 @@
+import { constant, countBy, fromKeys, prop } from 'remeda';
 import { derived, writable } from 'svelte/store';
-import type { OutcomeEntry, OutcomeName } from '../utils/outcome';
 
-/// Matches the relay's own result buffer, so neither side keeps a longer history than the other.
-const LOG_LIMIT = 200;
+export const OUTCOME_NAMES = ['confirmed', 'failed', 'rejected', 'unknown'] as const;
 
-const ZERO_COUNTS: Record<OutcomeName, number> = {
-    confirmed: 0,
-    failed: 0,
-    rejected: 0,
-    unknown: 0,
+/// `confirmed`: the robot's service accepted the request, which does not prove it moved.
+/// `failed`: the robot refused. `rejected`: the WebRTC bridge refused before the robot saw it.
+/// `unknown`: no answer in time, so the command may still have run.
+export type OutcomeName = (typeof OUTCOME_NAMES)[number];
+
+/// The relay's verdict on one command. `code` is the robot's `status.code`, when it sent one.
+export type Outcome = {
+    outcome: OutcomeName;
+    code: number | null;
+    detail: string | null;
 };
+
+/// `reqId` is null for a command the browser sent without one.
+export type OutcomeEntry = Outcome & {
+    reqId: number | null;
+    label: string;
+    at: number;
+};
+
+/// Matches the relay's own result buffer.
+const LOG_LIMIT = 200;
 
 /// Every outcome since the control channel opened, newest first.
 export const outcomeLog = writable<OutcomeEntry[]>([]);
@@ -20,19 +34,13 @@ export function recordOutcome(_entry: OutcomeEntry) {
     });
 }
 
-/// Empty the log. The counts are per connection, so they start again with the channel.
 export function clearOutcomes() {
     outcomeLog.set([]);
 }
 
-/// The newest outcome, or null while the log is empty.
 export const lastOutcome = derived(outcomeLog, (_log) => _log.at(0) ?? null);
 
-/// How many commands landed on each outcome since the control channel opened. Every name is
-/// present, so a reader never has to distinguish a zero from an absent key.
-export const outcomeCounts = derived(outcomeLog, function (_log) {
-    return _log.reduce(
-        (_counts, _entry) => ({ ..._counts, [_entry.outcome]: _counts[_entry.outcome] + 1 }),
-        ZERO_COUNTS,
-    );
-});
+export const outcomeCounts = derived(outcomeLog, (_log) => ({
+    ...fromKeys(OUTCOME_NAMES, constant(0)),
+    ...countBy(_log, prop('outcome')),
+}));

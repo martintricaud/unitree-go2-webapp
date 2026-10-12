@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { confirmable, displayed } from './confirmable';
-import type { Outcome } from './outcome';
+import type { Outcome } from '../stores/outcomes';
 
 const CONFIRMED: Outcome = { outcome: 'confirmed', code: 0, detail: null };
 const FAILED: Outcome = { outcome: 'failed', code: 3203, detail: 'status.code=3203' };

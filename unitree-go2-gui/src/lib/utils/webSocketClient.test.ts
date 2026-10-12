@@ -281,4 +281,16 @@ describe('robot state', () => {
         await client.received('{ this is not json');
         expect(get(robotConnected)).toBe(true);
     });
+
+    it('ignores JSON that is not a relay message', async () => {
+        const { client } = openClient();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
+        await client.received('null');
+        await client.received(JSON.stringify({ type: 'pirouette', connected: false }));
+        expect(get(robotConnected)).toBe(true);
+        expect(get(outcomeLog)).toEqual([]);
+        expect(warn).toHaveBeenCalledTimes(2);
+        warn.mockRestore();
+    });
 });
