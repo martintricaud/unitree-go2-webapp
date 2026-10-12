@@ -4,7 +4,8 @@ import { WebSocketClient } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import { robotConnected } from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
-import type { CueItem } from './payloads';
+import { perform, sequence } from './commands';
+import { encode } from './encode';
 
 // The relay bounds one command at max(5s, exec_time + 3s), and the longest exec_time in
 // commands_1.1.7.json is 10s, so 13s is the longest wait the relay itself can be in.
@@ -31,18 +32,9 @@ class FakeSocket implements Sink {
     }
 }
 
-const HELLO: CueItem = {
-    kind: 'command',
-    api_id: 1016,
-    topic: 'SPORT_MOD',
-    command_name: 'Hello',
-};
+const HELLO = perform('Hello');
 
-const DANCE: CueItem = {
-    kind: 'sequence',
-    displayName: 'Dance',
-    sequence: [HELLO],
-};
+const DANCE = sequence('Dance', HELLO);
 
 const resultFor = (reqId: number, outcome: string, code: number | null, detail = 'because') =>
     JSON.stringify({ type: 'command_result', reqId, outcome, code, detail });
@@ -94,10 +86,10 @@ describe('request', () => {
         vi.useRealTimers();
     });
 
-    it('sends the item the caller gave it, tagged with a numeric request id', async () => {
+    it('sends the encoded cue, tagged with a numeric request id', async () => {
         const { client, socket } = openClient();
         const answer = client.request(HELLO);
-        expect(socket.written[0]).toEqual({ ...HELLO, reqId: reqIdOf(socket) });
+        expect(socket.written[0]).toEqual({ ...encode(HELLO), reqId: reqIdOf(socket) });
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await answer;
     });

@@ -1,0 +1,970 @@
+{
+  "conduite": [
+    {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2045,
+      "topic": "SPORT_MOD",
+      "command_name": "FreeWalk"
+    },
+    {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1028,
+      "topic": "SPORT_MOD",
+      "command_name": "Pose"
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Sabots",
+      "sequence": [
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2050,
+          "topic": "SPORT_MOD",
+          "command_name": "Backstand"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "color": "blue"
+          },
+          "kind": "command",
+          "api_id": 1007,
+          "topic": "VUI",
+          "command_name": "Headlight"
+        }
+      ]
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Wizard of Oz",
+      "sequence": [
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2049,
+          "topic": "SPORT_MOD",
+          "command_name": "ClassicWalk"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "color": "green"
+          },
+          "kind": "command",
+          "api_id": 1007,
+          "topic": "VUI",
+          "command_name": "Headlight"
+        }
+      ]
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Stretch 👋 Jump",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "kind": "command",
+          "api_id": 1017,
+          "topic": "SPORT_MOD",
+          "command_name": "Stretch"
+        },
+        {
+          "kind": "command",
+          "api_id": 1016,
+          "topic": "SPORT_MOD",
+          "command_name": "Hello"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.3
+        },
+        {
+          "kind": "command",
+          "api_id": 1031,
+          "topic": "SPORT_MOD",
+          "command_name": "FrontJump"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.6
+        },
+        {
+          "kind": "command",
+          "api_id": 1031,
+          "topic": "SPORT_MOD",
+          "command_name": "FrontJump"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Content",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1020,
+          "topic": "SPORT_MOD",
+          "command_name": "Content"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.05
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Picture me...",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 1028,
+          "topic": "SPORT_MOD",
+          "command_name": "Pose"
+        }
+      ]
+    },
+    {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2044,
+      "topic": "SPORT_MOD",
+      "command_name": "Handstand"
+    },
+    {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2049,
+      "topic": "SPORT_MOD",
+      "command_name": "ClassicWalk"
+    },
+    {
+      "kind": "command",
+      "api_id": 1036,
+      "topic": "SPORT_MOD",
+      "command_name": "FingerHeart"
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Salto",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 2041,
+          "topic": "SPORT_MOD",
+          "command_name": "LeftFlip"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    {
+      "kind": "command",
+      "api_id": 1009,
+      "topic": "SPORT_MOD",
+      "command_name": "Sit"
+    },
+    {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1010,
+          "topic": "SPORT_MOD",
+          "command_name": "RiseSit"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ],
+      "displayName": "FreeWalk"
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Chien",
+      "sequence": [
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2046,
+          "topic": "SPORT_MOD",
+          "command_name": "Leaping"
+        }
+      ]
+    },
+    {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2045,
+      "topic": "SPORT_MOD",
+      "command_name": "FreeWalk"
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Dance",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1023,
+          "topic": "SPORT_MOD",
+          "command_name": "Dance2"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "parameter": {
+            "color": "red"
+          },
+          "kind": "command",
+          "api_id": 1007,
+          "topic": "VUI",
+          "command_name": "Headlight"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "kind": "command",
+          "api_id": 1020,
+          "topic": "SPORT_MOD",
+          "command_name": "Content"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.5
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ],
+      "displayName": "Ahahah Redlight"
+    },
+    {
+      "kind": "sequence",
+      "displayName": "Assis Whitelight",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1004,
+          "topic": "SPORT_MOD",
+          "command_name": "StandUp"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "kind": "command",
+          "api_id": 1009,
+          "topic": "SPORT_MOD",
+          "command_name": "Sit"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "color": "white"
+          },
+          "kind": "command",
+          "api_id": 1007,
+          "topic": "VUI",
+          "command_name": "Headlight"
+        },
+        {
+          "parameter": {
+            "brightness": 4
+          },
+          "kind": "command",
+          "api_id": 1005,
+          "topic": "VUI",
+          "command_name": "Brightness"
+        }
+      ]
+    },
+    {
+      "kind": "command",
+      "api_id": 1005,
+      "topic": "SPORT_MOD",
+      "command_name": "StandDown"
+    }
+  ],
+  "presets": {
+    "enterPose": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 1028,
+          "topic": "SPORT_MOD",
+          "command_name": "Pose"
+        }
+      ]
+    },
+    "exitPose": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "parameter": {
+            "data": false
+          },
+          "kind": "command",
+          "api_id": 1028,
+          "topic": "SPORT_MOD",
+          "command_name": "Pose"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    "exitSit": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1010,
+          "topic": "SPORT_MOD",
+          "command_name": "RiseSit"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    "dance": {
+      "kind": "sequence",
+      "displayName": "Dance",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1023,
+          "topic": "SPORT_MOD",
+          "command_name": "Dance2"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        }
+      ]
+    },
+    "standContent": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "kind": "command",
+          "api_id": 1002,
+          "topic": "SPORT_MOD",
+          "command_name": "BalanceStand"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "kind": "command",
+          "api_id": 1020,
+          "topic": "SPORT_MOD",
+          "command_name": "Content"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 2045,
+          "topic": "SPORT_MOD",
+          "command_name": "FreeWalk"
+        },
+        {
+          "kind": "wait",
+          "wait": 0.1
+        }
+      ]
+    },
+    "stopAndStand": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "kind": "command",
+          "api_id": 1004,
+          "topic": "SPORT_MOD",
+          "command_name": "StandUp"
+        }
+      ]
+    },
+    "stopAndCrouch": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "kind": "command",
+          "api_id": 1005,
+          "topic": "SPORT_MOD",
+          "command_name": "StandDown"
+        }
+      ]
+    },
+    "holdAim": {
+      "kind": "sequence",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1007,
+          "topic": "SPORT_MOD",
+          "command_name": "Euler",
+          "parameter": {
+            "x": 0,
+            "y": -1,
+            "z": 0
+          }
+        }
+      ]
+    }
+  },
+  "modesOn": {
+    "Damp": {
+      "parameter": {
+        "enabled": true
+      },
+      "kind": "command",
+      "api_id": 1001,
+      "topic": "SPORT_MOD",
+      "command_name": "Damp"
+    },
+    "ContinuousGait": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1019,
+      "topic": "SPORT_MOD",
+      "command_name": "ContinuousGait"
+    },
+    "Pose": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1028,
+      "topic": "SPORT_MOD",
+      "command_name": "Pose"
+    },
+    "StaticWalk": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1061,
+      "topic": "SPORT_MOD",
+      "command_name": "StaticWalk"
+    },
+    "Trotting": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1062,
+      "topic": "SPORT_MOD",
+      "command_name": "Trotting"
+    },
+    "EconomicGait": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 1063,
+      "topic": "SPORT_MOD",
+      "command_name": "EconomicGait"
+    },
+    "Handstand": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2044,
+      "topic": "SPORT_MOD",
+      "command_name": "Handstand"
+    },
+    "FreeWalk": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2045,
+      "topic": "SPORT_MOD",
+      "command_name": "FreeWalk"
+    },
+    "Leaping": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2046,
+      "topic": "SPORT_MOD",
+      "command_name": "Leaping"
+    },
+    "Jumping": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2047,
+      "topic": "SPORT_MOD",
+      "command_name": "Jumping"
+    },
+    "FreeAvoid": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2048,
+      "topic": "SPORT_MOD",
+      "command_name": "FreeAvoid"
+    },
+    "ClassicWalk": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2049,
+      "topic": "SPORT_MOD",
+      "command_name": "ClassicWalk"
+    },
+    "Backstand": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2050,
+      "topic": "SPORT_MOD",
+      "command_name": "Backstand"
+    },
+    "CrossStep": {
+      "parameter": {
+        "data": true
+      },
+      "kind": "command",
+      "api_id": 2051,
+      "topic": "SPORT_MOD",
+      "command_name": "CrossStep"
+    }
+  },
+  "leapingOff": {
+    "parameter": {
+      "data": false
+    },
+    "kind": "command",
+    "api_id": 2046,
+    "topic": "SPORT_MOD",
+    "command_name": "Leaping"
+  },
+  "actions": {
+    "BalanceStand": {
+      "kind": "command",
+      "api_id": 1002,
+      "topic": "SPORT_MOD",
+      "command_name": "BalanceStand"
+    },
+    "StopMove": {
+      "kind": "command",
+      "api_id": 1003,
+      "topic": "SPORT_MOD",
+      "command_name": "StopMove"
+    },
+    "StandUp": {
+      "kind": "command",
+      "api_id": 1004,
+      "topic": "SPORT_MOD",
+      "command_name": "StandUp"
+    },
+    "StandDown": {
+      "kind": "command",
+      "api_id": 1005,
+      "topic": "SPORT_MOD",
+      "command_name": "StandDown"
+    },
+    "RecoveryStand": {
+      "kind": "command",
+      "api_id": 1006,
+      "topic": "SPORT_MOD",
+      "command_name": "RecoveryStand"
+    },
+    "Sit": {
+      "kind": "command",
+      "api_id": 1009,
+      "topic": "SPORT_MOD",
+      "command_name": "Sit"
+    },
+    "RiseSit": {
+      "kind": "command",
+      "api_id": 1010,
+      "topic": "SPORT_MOD",
+      "command_name": "RiseSit"
+    },
+    "Hello": {
+      "kind": "command",
+      "api_id": 1016,
+      "topic": "SPORT_MOD",
+      "command_name": "Hello"
+    },
+    "Stretch": {
+      "kind": "command",
+      "api_id": 1017,
+      "topic": "SPORT_MOD",
+      "command_name": "Stretch"
+    },
+    "Content": {
+      "kind": "command",
+      "api_id": 1020,
+      "topic": "SPORT_MOD",
+      "command_name": "Content"
+    },
+    "Dance1": {
+      "kind": "command",
+      "api_id": 1022,
+      "topic": "SPORT_MOD",
+      "command_name": "Dance1"
+    },
+    "Dance2": {
+      "kind": "command",
+      "api_id": 1023,
+      "topic": "SPORT_MOD",
+      "command_name": "Dance2"
+    },
+    "Scrape": {
+      "kind": "command",
+      "api_id": 1029,
+      "topic": "SPORT_MOD",
+      "command_name": "Scrape"
+    },
+    "FrontFlip": {
+      "kind": "command",
+      "api_id": 1030,
+      "topic": "SPORT_MOD",
+      "command_name": "FrontFlip"
+    },
+    "FrontJump": {
+      "kind": "command",
+      "api_id": 1031,
+      "topic": "SPORT_MOD",
+      "command_name": "FrontJump"
+    },
+    "FrontPounce": {
+      "kind": "command",
+      "api_id": 1032,
+      "topic": "SPORT_MOD",
+      "command_name": "FrontPounce"
+    },
+    "FingerHeart": {
+      "kind": "command",
+      "api_id": 1036,
+      "topic": "SPORT_MOD",
+      "command_name": "FingerHeart"
+    },
+    "LeftFlip": {
+      "kind": "command",
+      "api_id": 2041,
+      "topic": "SPORT_MOD",
+      "command_name": "LeftFlip"
+    },
+    "RightFlip": {
+      "kind": "command",
+      "api_id": 1043,
+      "topic": "SPORT_MOD",
+      "command_name": "RightFlip"
+    },
+    "BackFlip": {
+      "kind": "command",
+      "api_id": 2043,
+      "topic": "SPORT_MOD",
+      "command_name": "BackFlip"
+    }
+  },
+  "headlight": {
+    "red": {
+      "parameter": {
+        "color": "red"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    },
+    "yellow": {
+      "parameter": {
+        "color": "yellow"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    },
+    "blue": {
+      "parameter": {
+        "color": "blue"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    },
+    "green": {
+      "parameter": {
+        "color": "green"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    },
+    "cyan": {
+      "parameter": {
+        "color": "cyan"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    },
+    "purple": {
+      "parameter": {
+        "color": "purple"
+      },
+      "kind": "command",
+      "api_id": 1007,
+      "topic": "VUI",
+      "command_name": "Headlight"
+    }
+  },
+  "speed": {
+    "slow": {
+      "kind": "command",
+      "api_id": 1015,
+      "topic": "SPORT_MOD",
+      "command_name": "SpeedLevel",
+      "parameter": {
+        "data": -1
+      }
+    },
+    "normal": {
+      "kind": "command",
+      "api_id": 1015,
+      "topic": "SPORT_MOD",
+      "command_name": "SpeedLevel",
+      "parameter": {
+        "data": 0
+      }
+    },
+    "fast": {
+      "kind": "command",
+      "api_id": 1015,
+      "topic": "SPORT_MOD",
+      "command_name": "SpeedLevel",
+      "parameter": {
+        "data": 1
+      }
+    }
+  },
+  "obstacleAvoidance": {
+    "on": {
+      "parameter": {
+        "enable": true
+      },
+      "kind": "command",
+      "api_id": 1001,
+      "topic": "OBSTACLES_AVOID",
+      "command_name": "ObstaclesAvoid"
+    },
+    "off": {
+      "parameter": {
+        "enable": false
+      },
+      "kind": "command",
+      "api_id": 1001,
+      "topic": "OBSTACLES_AVOID",
+      "command_name": "ObstaclesAvoid"
+    }
+  }
+}

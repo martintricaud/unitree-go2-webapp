@@ -1,153 +1,110 @@
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { buildPayload, dimTo, switchTo, toggleTo } from '../utils/payloads';
-import type { CueItem, Sequence } from '../utils/payloads';
-import { DANSE_DU_SABBAT } from '../data/cues';
-import { crouched, headlight, mode, obstacleAvoidance, send, sitting, speed } from './robotState';
+import { INITIAL_ROBOT_STATE } from '../data/robotState';
+import { enter, leave, perform, sequence, set, wait } from '../utils/commands';
+import type { Cue } from '../utils/commands';
+import { displayed } from '../utils/confirmable';
+import { robotState, send } from './robotState';
 import type { Outcome, OutcomeName } from './outcomes';
 
-/** The sequence in DANSE_DU_SABBAT that carries this display name. */
-const sabbatStep = (displayName: string): Sequence => {
-  const steps: readonly CueItem[] = DANSE_DU_SABBAT.sequence;
-  const found = steps.find(
-    (item): item is Sequence => item.kind === 'sequence' && item.displayName === displayName,
-  );
-  if (found === undefined) throw new Error(`no step named ${displayName}`);
-  return found;
-};
-
-/** A client whose `request` stays unanswered until the test hands it a verdict, so the stores
- * can be read while the command is in flight. No socket and no relay are involved. */
+/** A client whose requests stay unanswered until the test hands each a verdict, so the store
+ * can be read while a cue is in flight. No socket and no relay are involved. */
 const stubClient = () => {
-  const sent: CueItem[] = [];
-  let answer: (outcome: Outcome) => void = () => {
-    throw new Error('no request is waiting for a verdict');
-  };
+  const sent: Cue[] = [];
+  const answers: ((outcome: Outcome) => void)[] = [];
   const client = {
-    request: (item: CueItem) => {
-      sent.push(item);
+    request: (cue: Cue) => {
+      sent.push(cue);
       return new Promise<Outcome>((resolve) => {
-        answer = resolve;
+        answers.push(resolve);
       });
     },
   };
-  const reply = (outcome: OutcomeName) => answer({ outcome, code: null, detail: null });
+  const reply = (outcome: OutcomeName, index = answers.length - 1) =>
+    answers[index]({ outcome, code: null, detail: null });
   return { client, sent, reply };
 };
 
+const SABOTS = sequence(
+  'Sabots',
+  enter('FreeWalk'),
+  wait(0.1),
+  enter('Backstand'),
+  wait(0.1),
+  set({ name: 'headlight', value: 'blue' }),
+);
+
 describe('robotState', () => {
-  describe('the stores', () => {
-    it('start settled on their declared values, with nothing outstanding', () => {
-      const settled = <T>(value: T) => ({ settled: value, pending: null, lastOutcome: null });
-      expect(get(mode)).toEqual(settled('FreeWalk'));
-      expect(get(headlight)).toEqual(settled('white'));
-      expect(get(speed)).toEqual(settled('normal'));
-      expect(get(sitting)).toEqual(settled(false));
-      expect(get(crouched)).toEqual(settled(false));
-      expect(get(obstacleAvoidance)).toEqual(settled(true));
-    });
+  it('starts settled on the initial state, with nothing attempted', () => {
+    expect(get(robotState)).toEqual({ settled: INITIAL_ROBOT_STATE, pending: null, lastAttempt: null });
+  });
 
-    it('accept null as a mode, which the radio shows as no mode', () => {
-      mode.propose(null, 1);
-      expect(get(mode).pending).toEqual({ proposed: null, reqId: 1 });
-      mode.resolve(1, { outcome: 'failed', code: null, detail: null });
-      expect(get(mode).settled).toBe('FreeWalk');
+  it('proposes the state a cue leads to, and a confirmation settles it', async () => {
+    const { client, sent, reply } = stubClient();
+    const done = send(client)(SABOTS);
+
+    expect(sent).toEqual([SABOTS]);
+    expect(get(robotState).pending?.proposed).toMatchObject({ mode: 'Backstand', headlight: 'blue' });
+
+    reply('confirmed');
+    expect((await done).outcome).toBe('confirmed');
+    expect(get(robotState)).toMatchObject({
+      settled: { mode: 'Backstand', headlight: 'blue' },
+      pending: null,
     });
   });
 
-  describe('the mode store', () => {
-    it('is not written by switchTo, whichever mode is asked for', () => {
-      const before = get(mode);
-      switchTo(true)('Pose');
-      switchTo(false)('Leaping');
-      switchTo(true)('Trotting');
-      expect(get(mode)).toBe(before);
-    });
+  it('reverts to the settled state on a failure', async () => {
+    const { client, reply } = stubClient();
+    const before = get(robotState).settled;
+    const done = send(client)(sequence('', enter('ClassicWalk'), set({ name: 'headlight', value: 'green' })));
+    expect(displayed(get(robotState))).toMatchObject({ mode: 'ClassicWalk', headlight: 'green' });
 
-    it('is not written by building a cue out of mode commands', () => {
-      const before = get(mode);
-      const cue = [switchTo(true)('Handstand'), switchTo(true)('FreeWalk')];
-      expect(cue.map((step) => step.command_name)).toEqual(['Handstand', 'FreeWalk']);
-      expect(get(mode)).toBe(before);
-    });
+    reply('failed');
+    await done;
+    expect(get(robotState).settled).toEqual(before);
+    expect(get(robotState).lastAttempt?.outcome.outcome).toBe('failed');
   });
 
-  describe('send', () => {
-    it('proposes mode and headlight under one id, and a confirmation settles both', async () => {
-      const { client, sent, reply } = stubClient();
-      const cue = sabbatStep('Sabots');
-      const done = send(client)(cue);
+  it('proposes nothing for a cue that changes no tracked field', async () => {
+    const { client, reply } = stubClient();
+    const before = get(robotState);
+    const done = send(client)(perform('Hello'));
+    expect(get(robotState)).toBe(before);
+    reply('failed');
+    await done;
+    expect(get(robotState)).toBe(before);
+  });
 
-      expect(sent).toEqual([cue]);
-      const modePending = get(mode).pending;
-      const headlightPending = get(headlight).pending;
-      expect(modePending?.proposed).toBe('Backstand');
-      expect(headlightPending?.proposed).toBe('blue');
-      expect(modePending?.reqId).toBe(headlightPending?.reqId);
+  it('sets obstacle avoidance and settles it on confirmation', async () => {
+    const { client, reply } = stubClient();
+    const done = send(client)(set({ name: 'obstacleAvoidance', value: false }));
+    expect(get(robotState).pending?.proposed.obstacleAvoidance).toBe(false);
+    reply('confirmed');
+    await done;
+    expect(get(robotState).settled.obstacleAvoidance).toBe(false);
+  });
 
-      reply('confirmed');
-      expect((await done).outcome).toBe('confirmed');
-      expect(get(mode)).toMatchObject({ settled: 'Backstand', pending: null });
-      expect(get(headlight)).toMatchObject({ settled: 'blue', pending: null });
-    });
+  it('settles no mode once a mode was left', async () => {
+    const { client, reply } = stubClient();
+    const done = send(client)(leave('Pose'));
+    reply('confirmed');
+    await done;
+    expect(get(robotState).settled.mode).toBeNull();
+  });
 
-    it('reverts both stores to their previous settled values on a failure', async () => {
-      const { client, reply } = stubClient();
-      const modeBefore = get(mode).settled;
-      const headlightBefore = get(headlight).settled;
-      const done = send(client)(sabbatStep('Wizard of Oz'));
-      expect(get(mode).pending?.proposed).toBe('ClassicWalk');
-      expect(get(headlight).pending?.proposed).toBe('green');
+  it('lets a second cue replace the first, whose verdict is then ignored', async () => {
+    const { client, reply } = stubClient();
+    const first = send(client)(perform('Sit'));
+    const second = send(client)(enter('Trotting'));
+    expect(get(robotState).pending?.proposed).toMatchObject({ posture: 'sitting', mode: 'Trotting' });
 
-      reply('failed');
-      await done;
-      expect(get(mode)).toMatchObject({ settled: modeBefore, pending: null });
-      expect(get(headlight)).toMatchObject({ settled: headlightBefore, pending: null });
-      expect(get(mode).lastOutcome?.outcome).toBe('failed');
-    });
+    reply('failed', 0);
+    await first;
+    expect(get(robotState).pending?.proposed.mode).toBe('Trotting');
 
-    it('proposes white for a Brightness command sent with the white override', async () => {
-      const { client, reply } = stubClient();
-      const done = send(client)(dimTo(1)('Brightness'), { headlight: 'white' });
-      expect(get(headlight).pending?.proposed).toBe('white');
-      reply('confirmed');
-      await done;
-      expect(get(headlight)).toMatchObject({ settled: 'white', pending: null });
-    });
-
-    it('leaves the stores an item does not affect untouched', async () => {
-      const { client, reply } = stubClient();
-      const snapshot = () => ({
-        mode: get(mode),
-        headlight: get(headlight),
-        speed: get(speed),
-        sitting: get(sitting),
-        crouched: get(crouched),
-        obstacleAvoidance: get(obstacleAvoidance),
-      });
-      const before = snapshot();
-      const done = send(client)(buildPayload('Hello'));
-      reply('confirmed');
-      await done;
-      expect(snapshot()).toEqual(before);
-    });
-
-    it('proposes obstacle avoidance from its toggle and settles it on confirmation', async () => {
-      const { client, reply } = stubClient();
-      const done = send(client)(toggleTo(false)('ObstaclesAvoid'));
-      expect(get(obstacleAvoidance).pending?.proposed).toBe(false);
-      reply('confirmed');
-      await done;
-      expect(get(obstacleAvoidance)).toMatchObject({ settled: false, pending: null });
-    });
-
-    it('proposes a null mode for a switch turned off', async () => {
-      const { client, reply } = stubClient();
-      const done = send(client)(switchTo(false)('Pose'));
-      expect(get(mode).pending?.proposed).toBeNull();
-      reply('confirmed');
-      await done;
-      expect(get(mode).settled).toBeNull();
-    });
+    reply('confirmed', 1);
+    await second;
+    expect(get(robotState).settled).toMatchObject({ posture: 'sitting', mode: 'Trotting' });
   });
 });

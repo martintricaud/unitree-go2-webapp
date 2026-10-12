@@ -1,6 +1,7 @@
 import { isIncludedIn, pick } from 'remeda';
-import { cueLabel } from './payloads';
-import type { CueItem } from './payloads';
+import { cueLabel } from './commands';
+import type { Cue } from './commands';
+import { encode } from './encode';
 import { OUTCOME_NAMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
 import { robotConnected, videoFrame, webSocketConnected } from '../stores/connection';
@@ -121,11 +122,11 @@ export class WebSocketClient {
         }
     }
 
-    /// Send a command and wait for the relay's verdict on it.
-    request(item: CueItem): Promise<Outcome> {
+    /// Send a cue and wait for the relay's verdict on it.
+    request(cue: Cue): Promise<Outcome> {
         const reqId = (this.lastRequestId += 1);
-        const label = cueLabel(item);
-        if (!this.send({ ...item, reqId })) {
+        const label = cueLabel(cue);
+        if (!this.send({ ...encode(cue), reqId })) {
             recordOutcome({ ...CHANNEL_CLOSED, reqId, label, at: Date.now() });
             return Promise.resolve(CHANNEL_CLOSED);
         }

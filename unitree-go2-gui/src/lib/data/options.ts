@@ -14,4 +14,4 @@ export type Colour = keyof typeof LIGHT_EMOJIS;
 /// The `data` value `SpeedLevel` sends for each speed the operator can pick.
 export const SPEED_LEVELS = { slow: -1, normal: 0, fast: 1 } as const;
 
-export type Speed = keyof typeof SPEED_LEVELS;
+export type SpeedLevel = (typeof SPEED_LEVELS)[keyof typeof SPEED_LEVELS];

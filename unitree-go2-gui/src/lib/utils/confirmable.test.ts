@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
-import { confirmable, displayed } from './confirmable';
+import { confirmable, displayed, fieldStatus } from './confirmable';
 import type { Outcome } from '../stores/outcomes';
 
 const CONFIRMED: Outcome = { outcome: 'confirmed', code: 0, detail: null };
@@ -12,7 +12,7 @@ describe('what the control shows', () => {
     it('shows the value it was created with while nothing has been asked for', () => {
         const mode = confirmable('FreeWalk');
         expect(displayed(get(mode))).toBe('FreeWalk');
-        expect(get(mode)).toEqual({ settled: 'FreeWalk', pending: null, lastOutcome: null });
+        expect(get(mode)).toEqual({ settled: 'FreeWalk', pending: null, lastAttempt: null });
     });
 
     it("shows the operator's choice from the moment it is proposed, before any verdict", () => {
@@ -20,7 +20,7 @@ describe('what the control shows', () => {
         mode.propose('Pose', 1);
         expect(displayed(get(mode))).toBe('Pose');
         expect(get(mode).settled).toBe('FreeWalk');
-        expect(get(mode).lastOutcome).toBeNull();
+        expect(get(mode).lastAttempt).toBeNull();
     });
 
     it('shows the newer of two proposals made before either was answered', () => {
@@ -44,7 +44,11 @@ describe('a verdict on the value the control proposed', () => {
         const mode = confirmable('FreeWalk');
         mode.propose('Pose', 1);
         mode.resolve(1, CONFIRMED);
-        expect(get(mode)).toEqual({ settled: 'Pose', pending: null, lastOutcome: CONFIRMED });
+        expect(get(mode)).toEqual({
+            settled: 'Pose',
+            pending: null,
+            lastAttempt: { from: 'FreeWalk', proposed: 'Pose', outcome: CONFIRMED },
+        });
         expect(displayed(get(mode))).toBe('Pose');
     });
 
@@ -55,7 +59,11 @@ describe('a verdict on the value the control proposed', () => {
 
         mode.resolve(1, FAILED);
         expect(displayed(get(mode))).toBe('FreeWalk');
-        expect(get(mode)).toEqual({ settled: 'FreeWalk', pending: null, lastOutcome: FAILED });
+        expect(get(mode)).toEqual({
+            settled: 'FreeWalk',
+            pending: null,
+            lastAttempt: { from: 'FreeWalk', proposed: 'Pose', outcome: FAILED },
+        });
     });
 
     it('reverts on a rejection from the bridge on the same terms as a refusal', () => {
@@ -63,7 +71,11 @@ describe('a verdict on the value the control proposed', () => {
         mode.propose('Pose', 1);
         mode.resolve(1, REJECTED);
         expect(displayed(get(mode))).toBe('FreeWalk');
-        expect(get(mode)).toEqual({ settled: 'FreeWalk', pending: null, lastOutcome: REJECTED });
+        expect(get(mode)).toEqual({
+            settled: 'FreeWalk',
+            pending: null,
+            lastAttempt: { from: 'FreeWalk', proposed: 'Pose', outcome: REJECTED },
+        });
     });
 
     it('keeps the attempted value and marks it unconfirmed when nothing came back', () => {
@@ -73,7 +85,7 @@ describe('a verdict on the value the control proposed', () => {
         expect(displayed(get(mode))).toBe('Pose');
         expect(get(mode).settled).toBe('Pose');
         expect(get(mode).pending).toBeNull();
-        expect(get(mode).lastOutcome).toEqual(UNKNOWN);
+        expect(get(mode).lastAttempt).toEqual({ from: 'FreeWalk', proposed: 'Pose', outcome: UNKNOWN });
     });
 
     it('reverts to the last confirmed value, not to the last proposed one', () => {
@@ -136,7 +148,11 @@ describe('a verdict on a request the control is no longer waiting on', () => {
         mode.resolve(1, FAILED);
 
         expect(displayed(get(mode))).toBe('Trotting');
-        expect(get(mode)).toEqual({ settled: 'Trotting', pending: null, lastOutcome: CONFIRMED });
+        expect(get(mode)).toEqual({
+            settled: 'Trotting',
+            pending: null,
+            lastAttempt: { from: 'FreeWalk', proposed: 'Trotting', outcome: CONFIRMED },
+        });
     });
 
     it("settles on the later request's result when the earlier verdict lands first", () => {
@@ -148,7 +164,7 @@ describe('a verdict on a request the control is no longer waiting on', () => {
         mode.resolve(2, FAILED);
 
         expect(displayed(get(mode))).toBe('FreeWalk');
-        expect(get(mode).lastOutcome).toEqual(FAILED);
+        expect(get(mode).lastAttempt?.outcome).toEqual(FAILED);
     });
 });
 
@@ -163,5 +179,30 @@ describe('subscribers', () => {
         stop();
 
         expect(shown).toEqual([false, true, false]);
+    });
+});
+
+describe('the status a control shows for one field', () => {
+    const START = { mode: 'FreeWalk', headlight: 'white' };
+
+    it('is pending only on the fields the pending proposal changes', () => {
+        const state = confirmable(START);
+        state.propose({ ...START, mode: 'Pose' }, 1);
+        expect(fieldStatus(get(state), 'mode')).toBe('pending');
+        expect(fieldStatus(get(state), 'headlight')).toBeNull();
+    });
+
+    it("carries the last attempt's verdict on the fields that attempt changed", () => {
+        const state = confirmable(START);
+        state.propose({ ...START, headlight: 'red' }, 1);
+        state.resolve(1, FAILED);
+        expect(fieldStatus(get(state), 'headlight')).toBe('failed');
+        expect(fieldStatus(get(state), 'mode')).toBeNull();
+    });
+
+    it('is null for every field while nothing has been attempted', () => {
+        const state = confirmable(START);
+        expect(fieldStatus(get(state), 'mode')).toBeNull();
+        expect(fieldStatus(get(state), 'headlight')).toBeNull();
     });
 });

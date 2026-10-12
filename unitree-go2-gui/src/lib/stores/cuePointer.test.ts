@@ -4,7 +4,7 @@ import { times } from 'remeda';
 import { CONDUITE } from '../data/cues';
 import { cuePointer } from './cuePointer';
 
-const cues = CONDUITE.sequence;
+const cues = CONDUITE;
 
 /// The pointer has no setter, so a test returns it to the first cue the way the operator does:
 /// by pressing left more times than the sheet is long.

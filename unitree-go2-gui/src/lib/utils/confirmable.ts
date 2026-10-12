@@ -6,7 +6,7 @@ import type { Outcome, OutcomeName } from '../stores/outcomes';
 export type Confirmable<T> = {
     settled: T;
     pending: { proposed: T; reqId: number } | null;
-    lastOutcome: Outcome | null;
+    lastAttempt: { from: T; proposed: T; outcome: Outcome } | null;
 };
 
 export const displayed = <T>(state: Confirmable<T>) =>
@@ -20,19 +20,29 @@ const KEEPS_PROPOSED: Record<OutcomeName, boolean> = {
     rejected: false,
 };
 
+/// What a control showing one field reports about it.
+export function fieldStatus<T>(_state: Confirmable<T>, _field: keyof T) {
+    if (_state.pending !== null && _state.pending.proposed[_field] !== _state.settled[_field])
+        return 'pending';
+    if (
+        _state.lastAttempt !== null &&
+        _state.lastAttempt.proposed[_field] !== _state.lastAttempt.from[_field]
+    )
+        return _state.lastAttempt.outcome.outcome;
+    return null;
+}
+
 /// There is no `set`, so no caller can show a value the robot was never asked for.
-export type ConfirmableStore<T> = Readable<Confirmable<T>> & {
+export const confirmable = <T>(
+    settled: T,
+): Readable<Confirmable<T>> & {
     propose: (proposed: T, reqId: number) => void;
     resolve: (reqId: number, outcome: Outcome) => void;
-};
-
-export type ConfirmedValue<S> = S extends ConfirmableStore<infer T> ? T : never;
-
-export const confirmable = <T>(settled: T): ConfirmableStore<T> => {
+} => {
     const { subscribe, update } = writable<Confirmable<T>>({
         settled,
         pending: null,
-        lastOutcome: null,
+        lastAttempt: null,
     });
     return {
         subscribe,
@@ -47,7 +57,7 @@ export const confirmable = <T>(settled: T): ConfirmableStore<T> => {
                               ? state.pending.proposed
                               : state.settled,
                           pending: null,
-                          lastOutcome: outcome,
+                          lastAttempt: { from: state.settled, proposed: state.pending.proposed, outcome },
                       },
             ),
     };

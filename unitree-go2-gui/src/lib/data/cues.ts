@@ -1,252 +1,100 @@
-import { buildPayload, changeTo, dimTo, switchTo } from '../utils/payloads';
-import type { Sequence } from '../utils/payloads';
+import { dim, enter, leave, orient, perform, sequence, set, wait } from '../utils/commands';
 
-export const DANSE_DU_SABBAT = {
-    kind: 'sequence',
-    displayName: 'Sabbat',
-    sequence: [
-        switchTo(true)('FreeWalk'),
-        switchTo(true)('Pose'),
-        {
-            kind: 'sequence',
-            displayName: 'Sabots',
-            sequence: [
-                switchTo(true)('FreeWalk'),
-                { kind: 'wait', wait: 0.1 },
-                switchTo(true)('Backstand'),
-                { kind: 'wait', wait: 0.1 },
-                changeTo('blue')('Headlight')
+const DANSE_DU_SABBAT = sequence(
+    'Sabbat',
+    enter('FreeWalk'),
+    enter('Pose'),
+    sequence(
+        'Sabots',
+        enter('FreeWalk'),
+        wait(0.1),
+        enter('Backstand'),
+        wait(0.1),
+        set({ name: 'headlight', value: 'blue' }),
+    ),
+    sequence('Wizard of Oz', enter('ClassicWalk'), wait(0.1), set({ name: 'headlight', value: 'green' })),
+);
 
-            ],
-        },
-        {
-            kind: 'sequence',
-            displayName: 'Wizard of Oz',
-            sequence: [
-                switchTo(true)('ClassicWalk'),
-                { kind: 'wait', wait: 0.1 },
-                changeTo('green')('Headlight')
-
-            ],
-        },
-    ]
-} satisfies Sequence;
-
-/// Cue items the operator fires from a key or a button rather than from the cue sheet.
+/// Cues the operator fires from a key or a button rather than from the cue sheet.
 export const presets = {
-    stopAndCrouch: {
-        kind: 'sequence',
-        sequence: [
-            buildPayload('StopMove'),
-            buildPayload('StandDown'),
-        ]
-    },
-    stopAndStand: {
-        kind: 'sequence',
-        sequence: [
-            buildPayload('StopMove'),
-            buildPayload('StandUp'),
-        ]
-    },
-    holdAim: {
-        kind: 'sequence',
-        sequence: [
-            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-        ]
+    stopAndCrouch: sequence('', perform('StopMove'), perform('StandDown')),
+    stopAndStand: sequence('', perform('StopMove'), perform('StandUp')),
+    holdAim: sequence('', orient(0, -1, 0)),
+    contentRed: sequence(
+        '',
+        set({ name: 'headlight', value: 'red' }),
+        wait(0.1),
+        perform('Content'),
+        wait(0.5),
+        enter('FreeWalk'),
+    ),
+    standContent: sequence(
+        '',
+        wait(0.1),
+        perform('BalanceStand'),
+        wait(0.1),
+        enter('FreeWalk'),
+        wait(0.1),
+        perform('Content'),
+        wait(0.1),
+        enter('FreeWalk'),
+        wait(0.1),
+    ),
+    exitSit: sequence('', perform('RiseSit'), enter('FreeWalk')),
+    exitPose: sequence('', leave('Pose'), wait(0.1), enter('FreeWalk')),
+    enterPose: sequence('', perform('StopMove'), enter('Pose')),
+    dance: sequence('Dance', perform('Dance2'), wait(0.1), enter('FreeWalk')),
+};
 
-    },
-    aimAtPublic: {
-        kind: 'sequence',
-        sequence: [
-            buildPayload('StopMove'),
-            switchTo(true)('Pose'),
-            { kind: 'wait', wait: 0.1 },
-            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-            { kind: 'wait', wait: 0.1 },
-            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-            { kind: 'wait', wait: 0.1 },
-            { ...buildPayload('Euler'), parameter: { x: 0, y: -1, z: 0 } },
-        ],
-    },
-    stopAimAtPublic: {
-        kind: 'sequence',
-        sequence: [
-            { ...buildPayload('Euler'), parameter: { vx: 0, vy: 0, vyaw: 0 } },
-            { kind: 'wait', wait: 0.1 },
-            switchTo(true)('FreeWalk'),
-        ]
-    },
-    contentRed: {
-        kind: 'sequence',
-        sequence: [
-            changeTo('red')('Headlight'),
-            { kind: 'wait', wait: 0.1 },
-            buildPayload('Content'),
-            { kind: 'wait', wait: 0.5 },
-            switchTo(true)('FreeWalk'),
-        ],
-    },
+const STRETCH_HELLO_JUMP = sequence(
+    'Stretch 👋 Jump',
+    perform('StopMove'),
+    wait(0.1),
+    perform('Stretch'),
+    perform('Hello'),
+    wait(0.3),
+    perform('FrontJump'),
+    wait(0.6),
+    perform('FrontJump'),
+    wait(0.1),
+    enter('FreeWalk'),
+);
 
-    standContent: {
-        kind: 'sequence',
-        sequence: [
-            { kind: 'wait', wait: 0.1 },
-            buildPayload('BalanceStand'),
-            { kind: 'wait', wait: 0.1 },
-            switchTo(true)('FreeWalk'),
-            { kind: 'wait', wait: 0.1 },
-            buildPayload('Content'),
-            { kind: 'wait', wait: 0.1 },
-            switchTo(true)('FreeWalk'),
-            { kind: 'wait', wait: 0.1 },
-        ],
-    },
-    exitSit: {
-        kind: 'sequence',
-        sequence: [
-            buildPayload('RiseSit'),
-            switchTo(true)('FreeWalk'),
-        ],
-    },
-    exitPose: {
-        kind: 'sequence',
-        sequence: [
-            switchTo(false)('Pose'),
-            { kind: 'wait', wait: 0.1 },
-            switchTo(true)('FreeWalk'),
-        ],
-    },
-    enterPose: {
-        kind: 'sequence',
-        sequence: [
-            buildPayload('StopMove'),
-            switchTo(true)('Pose'),
-        ],
-    },
-    dance: {
-        kind: 'sequence',
-        displayName: 'Dance',
-        sequence: [
-            buildPayload('Dance2'),
-            { kind: 'wait', wait: 0.1 },
-            switchTo(true)('FreeWalk'),
-        ],
-    }
-} satisfies Record<string, Sequence>;
-
-const STRETCH_HELLO_JUMP = {
-    kind: 'sequence',
-    displayName: 'Stretch 👋 Jump',
-    sequence: [
-        buildPayload('StopMove'),
-        { kind: 'wait', wait: 0.1 },
-        buildPayload('Stretch'),
-        buildPayload('Hello'),
-        { kind: 'wait', wait: 0.3 },
-        buildPayload('FrontJump'),
-        { kind: 'wait', wait: 0.6 },
-        buildPayload('FrontJump'),
-        { kind: 'wait', wait: 0.1 },
-        switchTo(true)('FreeWalk'),
-    ],
-} satisfies Sequence;
-
-const MONOLOGUE = {
-    kind: 'sequence',
-    displayName: 'Monologue',
-    sequence: [
-        buildPayload('Sit'),
-        { ...presets.exitSit, displayName: 'FreeWalk' },
-        {
-            kind: 'sequence',
-            displayName: 'Chien',
-            sequence: [
-                switchTo(true)('Leaping')
-            ],
-        },
-        switchTo(true)('FreeWalk'),
-        {...presets.dance},
-        // buildPayload('Content'),
-        // {
-        //     displayName: 'Visée Public 1',
-        //     sequence: [
-        //         buildPayload('StopMove'),
-        //         switchTo(true)('Pose'),
-        //     ],
-        // },
-
-        // switchTo(true)('FreeWalk'),
-        // {
-        //     displayName: 'Visée Public 2',
-        //     sequence: [
-        //         buildPayload('StopMove'),
-        //         switchTo(true)('Pose'),
-        //     ],
-        // },
-        // switchTo(true)('FreeWalk'),
-        // {
-        //     displayName: 'Visée Public 3',
-        //     sequence: [
-        //         buildPayload('StopMove'),
-        //         switchTo(true)('Pose'),
-        //     ],
-        // },
-        // switchTo(true)('FreeWalk'),
-        { ...presets.contentRed, displayName: 'Ahahah Redlight' },
-        {
-            kind: 'sequence',
-            displayName: 'Assis Whitelight',
-            sequence: [
-                buildPayload('StandUp'),
-                { kind: 'wait', wait: 0.1 },
-                buildPayload('Sit'),
-                { kind: 'wait', wait: 0.1 },
-                changeTo('white')('Headlight'),
-                dimTo(4)('Brightness'),
-
-            ],
-        },
-        buildPayload('StandDown'),
-
-
-    ]
-} satisfies Sequence;
+const MONOLOGUE = [
+    perform('Sit'),
+    sequence('FreeWalk', ...presets.exitSit.items),
+    sequence('Chien', enter('Leaping')),
+    enter('FreeWalk'),
+    presets.dance,
+    // perform('Content'),
+    // sequence('Visée Public 1', perform('StopMove'), enter('Pose')),
+    // enter('FreeWalk'),
+    // sequence('Visée Public 2', perform('StopMove'), enter('Pose')),
+    // enter('FreeWalk'),
+    // sequence('Visée Public 3', perform('StopMove'), enter('Pose')),
+    // enter('FreeWalk'),
+    sequence('Ahahah Redlight', ...presets.contentRed.items),
+    sequence(
+        'Assis Whitelight',
+        perform('StandUp'),
+        wait(0.1),
+        perform('Sit'),
+        wait(0.1),
+        set({ name: 'headlight', value: 'white' }),
+        dim(4),
+    ),
+    perform('StandDown'),
+];
 
 /// The performance cue sheet, which the operator steps through with the arrow keys.
-export const CONDUITE = {
-    kind: 'sequence',
-    sequence:
-        [
-            ...DANSE_DU_SABBAT.sequence,
-            STRETCH_HELLO_JUMP,
-            {
-                kind: 'sequence',
-                displayName: 'Content',
-                sequence: [
-                    buildPayload('Content'),
-                    { kind: 'wait', wait: 0.05 },
-                    switchTo(true)('FreeWalk'),
-                ],
-            },
-            {
-                kind: 'sequence',
-                displayName: 'Picture me...',
-                sequence: [
-                    buildPayload('StopMove'),
-                    switchTo(true)('Pose'),
-                ],
-            },
-            switchTo(true)('Handstand'),
-            switchTo(true)('ClassicWalk'),
-            buildPayload('FingerHeart'),
-            {
-                kind: 'sequence',
-                displayName: 'Salto',
-                sequence: [
-                    buildPayload('LeftFlip'),
-                    switchTo(true)('FreeWalk'),
-                ],
-            },
-            ...MONOLOGUE.sequence,
-        ]
-} satisfies Sequence;
+export const CONDUITE = [
+    ...DANSE_DU_SABBAT.items,
+    STRETCH_HELLO_JUMP,
+    sequence('Content', perform('Content'), wait(0.05), enter('FreeWalk')),
+    sequence('Picture me...', perform('StopMove'), enter('Pose')),
+    enter('Handstand'),
+    enter('ClassicWalk'),
+    perform('FingerHeart'),
+    sequence('Salto', perform('LeftFlip'), enter('FreeWalk')),
+    ...MONOLOGUE,
+];

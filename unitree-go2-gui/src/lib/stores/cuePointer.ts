@@ -4,7 +4,7 @@ import { CONDUITE } from '../data/cues';
 
 /// The last index that holds a cue. The 0 floor covers an empty cue sheet, whose last index
 /// would otherwise be -1.
-const LAST_CUE = Math.max(0, CONDUITE.sequence.length - 1);
+const LAST_CUE = Math.max(0, CONDUITE.length - 1);
 
 const { subscribe, update } = writable(0);
 
@@ -16,6 +16,5 @@ function moveBy(_steps: number) {
 }
 
 /// Where the operator stands in the cue sheet. The pointer is bounded to an index that holds a
-/// cue, so reading CONDUITE.sequence at it never yields undefined, which the relay would receive
-/// as the text "undefined".
+/// cue, so reading CONDUITE at it never yields undefined.
 export const cuePointer = { subscribe, moveBy };

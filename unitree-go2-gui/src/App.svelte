@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { keys } from 'remeda';
+    import { entries, keys } from 'remeda';
     import { onMount } from 'svelte';
     import { websocket } from './lib/utils/webSocketClient';
     import { webSocketConnected, robotConnected } from './lib/stores/connection';
@@ -9,35 +9,16 @@
     import GamepadController from './components/GamepadController.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import {
-        changeTo,
-        cueLabel,
-        dimTo,
-        switchTo,
-        toggleTo,
-        buildPayload,
-        CMD_actions,
-        CMD_switches,
-    } from './lib/utils/payloads';
-    import type { SwitchName } from './lib/data/commands';
+    import { cueLabel, enter, leave, perform, set } from './lib/utils/commands';
+    import { ACTIONS } from './lib/data/actions';
     import { CONDUITE, presets } from './lib/data/cues';
+    import { MODES } from './lib/data/modes';
     import { LIGHT_EMOJIS, SPEED_LEVELS } from './lib/data/options';
-    import type { Colour, Speed } from './lib/data/options';
+    import type { RobotState } from './lib/data/robotState';
     import { cuePointer } from './lib/stores/cuePointer';
-    import {
-        crouched,
-        headlight,
-        mode,
-        obstacleAvoidance,
-        send,
-        sitting,
-        speed,
-    } from './lib/stores/robotState';
-    import { displayed } from './lib/utils/confirmable';
+    import { robotState, send } from './lib/stores/robotState';
+    import { displayed, fieldStatus } from './lib/utils/confirmable';
     import type { Confirmable } from './lib/utils/confirmable';
-    import type { OutcomeName } from './lib/stores/outcomes';
-
-    const CONDUITE_SEQ = CONDUITE.sequence;
 
     // let intervalId: any;
     /* STATE VARIABLES */
@@ -57,34 +38,39 @@
     let monitoringState = false;
 
     const LIGHT_OPTIONS = keys(LIGHT_EMOJIS);
-    const SPEED_OPTIONS = keys(SPEED_LEVELS);
+    const SPEED_OPTIONS = entries(SPEED_LEVELS);
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
     const sendToRobot = send(websocket);
 
     /// Send the cue at this index of the cue sheet.
-    const sendCue = (index: number) => void sendToRobot(CONDUITE_SEQ[index]);
+    const sendCue = (index: number) => void sendToRobot(CONDUITE[index]);
 
-    /// What a control says about its own value: waiting for the robot, or the verdict on the
-    /// last thing it asked for. A confirmed value says nothing.
-    const MARK: Record<OutcomeName, string> = {
+    $: shown = displayed($robotState);
+
+    /// A confirmed value says nothing.
+    const MARK = {
+        pending: '…',
         confirmed: '',
         failed: '✗',
         rejected: '⊘',
         unknown: '?',
     };
 
-    function markerOf(state: Confirmable<unknown>): string {
-        if (state.pending !== null) return '…';
-        if (state.lastOutcome === null) return '';
-        return MARK[state.lastOutcome.outcome];
+    function markerOf(_state: Confirmable<RobotState>, _field: keyof RobotState) {
+        const status = fieldStatus(_state, _field);
+        return status === null ? '' : MARK[status];
     }
 
-    /// In a radio group the marker belongs to the option the group is showing; the others
-    /// carry none.
-    const markerFor = (state: Confirmable<string | null>, option: string): string =>
-        displayed(state) === option ? markerOf(state) : '';
+    /// In a radio group the marker belongs to the option the group is showing.
+    function markerFor<K extends keyof RobotState>(
+        _state: Confirmable<RobotState>,
+        _field: K,
+        _option: RobotState[K],
+    ) {
+        return displayed(_state)[_field] === _option ? markerOf(_state, _field) : '';
+    }
 
     onMount(() => {
         websocket.connect();
@@ -106,33 +92,18 @@
         if (websocket.send({ command_name: 'subscribe', switch: next })) monitoringState = next;
     };
 
-    const handleSpeedChange = (level: Speed) =>
-        sendToRobot({
-            ...buildPayload('SpeedLevel'),
-            parameter: { data: SPEED_LEVELS[level] },
-        });
-
-    const handleModeChange = (name: SwitchName) => sendToRobot(switchTo(true)(name));
-
-    /// The white option is sent as a brightness rather than as a colour. Brightness implies no
-    /// headlight colour, so white is passed explicitly.
-    const handleColorChange = (colour: Colour) =>
-        colour === 'white'
-            ? sendToRobot(dimTo(1)('Brightness'), { headlight: 'white' })
-            : sendToRobot(changeTo(colour)('Headlight'));
-
     /// The keys both operators share. Each asks for the opposite of what its control shows, so
     /// a refused command leaves the next press asking for the same thing again.
     const togglePose = () => {
-        void sendToRobot(displayed($mode) !== 'Pose' ? presets.enterPose : presets.exitPose);
+        void sendToRobot(shown.mode !== 'Pose' ? presets.enterPose : presets.exitPose);
     };
 
     const toggleLeaping = () => {
-        void sendToRobot(switchTo(displayed($mode) !== 'Leaping')('Leaping'));
+        void sendToRobot(shown.mode !== 'Leaping' ? enter('Leaping') : leave('Leaping'));
     };
 
     const toggleSit = () => {
-        void sendToRobot(displayed($sitting) ? presets.exitSit : buildPayload('Sit'));
+        void sendToRobot(shown.posture === 'sitting' ? presets.exitSit : perform('Sit'));
     };
 
     const dance = () => void sendToRobot(presets.dance);
@@ -176,7 +147,7 @@
             case 'Christine':
                 switch (event.key) {
                     // case 'ArrowRight':
-                    //     if (displayed($mode) !== 'Pose') {
+                    //     if (shown.mode !== 'Pose') {
                     //         void sendToRobot(presets.enterPose);
                     //     }
                     //     intervalId = setInterval(() => {
@@ -187,16 +158,14 @@
                     //     break;
                     case 'ArrowLeft':
                         void sendToRobot(
-                            displayed($crouched) ? presets.stopAndStand : presets.stopAndCrouch,
+                            shown.posture === 'lying' ? presets.stopAndStand : presets.stopAndCrouch,
                         );
                         break;
                     case 'ArrowUp':
                         standContent();
                         break;
                     case 'ArrowDown':
-                        void sendToRobot(
-                            switchTo(true)(displayed($mode) !== 'Trotting' ? 'Trotting' : 'FreeWalk'),
-                        );
+                        void sendToRobot(enter(shown.mode !== 'Trotting' ? 'Trotting' : 'FreeWalk'));
                         break;
                     case 'b':
                         toggleLeaping();
@@ -229,8 +198,8 @@
         //     case 'Christine':
         //         if (event.key === 'ArrowRight') {
         //             clearInterval(intervalId);
-        //             void sendToRobot(switchTo(false)('Pose'));
-        //             void sendToRobot(switchTo(true)('FreeWalk'));
+        //             void sendToRobot(leave('Pose'));
+        //             void sendToRobot(enter('FreeWalk'));
         //         }
         //         break;
         // }
@@ -285,10 +254,10 @@
         />
         <Switch
             label={'Obstacle Avoidance'}
-            value={displayed($obstacleAvoidance)}
-            marker={markerOf($obstacleAvoidance)}
+            value={shown.obstacleAvoidance}
+            marker={markerOf($robotState, 'obstacleAvoidance')}
             disabled={!$robotConnected}
-            callback={(next: boolean) => sendToRobot(toggleTo(next)('ObstaclesAvoid'))}
+            callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />
         <Switch
             label={'Face Landmarks'}
@@ -302,25 +271,20 @@
         />
     </div>
     <div class="button-grid">
-        {#each CMD_actions as { working, command_name }}
-            {#if working}
-                <button
-                    disabled={!$robotConnected}
-                    on:click={() => sendToRobot(buildPayload(command_name))}
-                >
-                    {command_name}
-                </button>
-            {/if}
+        {#each keys(ACTIONS) as action}
+            <button disabled={!$robotConnected} on:click={() => sendToRobot(perform(action))}>
+                {action}
+            </button>
         {/each}
     </div>
     <div class="button-grid">
-        {#each CMD_switches as { command_name: switchName }}
+        {#each keys(MODES) as modeName}
             <Radio
-                optionName={switchName}
-                selected={displayed($mode) === switchName}
-                marker={markerFor($mode, switchName)}
+                optionName={modeName}
+                selected={shown.mode === modeName}
+                marker={markerFor($robotState, 'mode', modeName)}
                 disabled={!$robotConnected}
-                callback={() => handleModeChange(switchName)}
+                callback={() => sendToRobot(enter(modeName))}
             />
         {/each}
     </div>
@@ -329,10 +293,10 @@
         {#each LIGHT_OPTIONS as colour}
             <Radio
                 optionName={colour}
-                selected={displayed($headlight) === colour}
-                marker={markerFor($headlight, colour)}
+                selected={shown.headlight === colour}
+                marker={markerFor($robotState, 'headlight', colour)}
                 disabled={!$robotConnected}
-                callback={() => handleColorChange(colour)}
+                callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
             />
         {/each}
     </div>
@@ -340,19 +304,19 @@
 
     </div>
     <div class="button-grid">
-        {#each SPEED_OPTIONS as speedLevel}
+        {#each SPEED_OPTIONS as [speedName, level]}
             <Radio
-                optionName={speedLevel}
-                selected={displayed($speed) === speedLevel}
-                marker={markerFor($speed, speedLevel)}
+                optionName={speedName}
+                selected={shown.speed === level}
+                marker={markerFor($robotState, 'speed', level)}
                 disabled={!$robotConnected}
-                callback={() => handleSpeedChange(speedLevel)}
+                callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />
         {/each}
     </div>
 </div>
 <div id="sidebar" class="actionsequence">
- {#each CONDUITE_SEQ as action, i}
+ {#each CONDUITE as action, i}
             <button
                 class={`${i == $cuePointer ? 'active-step' : ''}`}
                 on:click={() => sendCue(i)}
