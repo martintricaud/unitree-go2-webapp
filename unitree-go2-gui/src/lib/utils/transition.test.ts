@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { INITIAL_ROBOT_STATE } from '../data/robotState';
-import type { RobotState } from '../data/robotState';
-import { dim, enter, leave, orient, perform, sequence, set, wait } from './commands';
+import { dim, enter, leave, orient, perform, sequence, set, transition, wait } from './commands';
+import type { RobotState } from './commands';
 import { presets } from '../data/cues';
-import { transition } from './transition';
+
+const INITIAL_ROBOT_STATE: RobotState = {
+  mode: 'FreeWalk',
+  posture: 'standing',
+  headlight: 'white',
+  speed: 0,
+  obstacleAvoidance: true,
+};
 
 const STATES: RobotState[] = [
   INITIAL_ROBOT_STATE,

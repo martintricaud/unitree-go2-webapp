@@ -1,18 +1,19 @@
 <script lang="ts">
+    import type { ComponentProps } from 'svelte';
+    import OutcomeMark from './OutcomeMark.svelte';
+
     /// What the switch shows. Its owner holds it: this component never writes it, so the
     /// switch cannot sit on a value its owner never agreed to.
     export let value: boolean = false;
     export let label: string = '';
     export let disabled: boolean = false;
-    /// A short note beside the label. Its owner uses it to say the robot has not confirmed the
-    /// value, and leaves it empty where there is nothing to confirm.
-    export let marker: string = '';
+    export let status: ComponentProps<typeof OutcomeMark>['status'] = null;
     export let callback: (next: boolean) => void;
 </script>
 
 
 <div class="main">
-    <div>{label} {marker}</div>
+    <div>{label} <OutcomeMark {status} quiet /></div>
 <button
     aria-label="Basculer l'interrupteur"
     aria-checked={value}

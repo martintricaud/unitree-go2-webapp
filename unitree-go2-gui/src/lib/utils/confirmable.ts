@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import type { Readable } from 'svelte/store';
-import type { Outcome, OutcomeName } from '../stores/outcomes';
+import { OUTCOMES } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes';
 
 /// Reverting drops `pending`, so `settled` doubles as the value to restore.
 export type Confirmable<T> = {
@@ -11,14 +12,6 @@ export type Confirmable<T> = {
 
 export const displayed = <T>(state: Confirmable<T>) =>
     state.pending === null ? state.settled : state.pending.proposed;
-
-/// Silence keeps the proposal: the command may have run.
-const KEEPS_PROPOSED: Record<OutcomeName, boolean> = {
-    confirmed: true,
-    unknown: true,
-    failed: false,
-    rejected: false,
-};
 
 /// What a control showing one field reports about it.
 export function fieldStatus<T>(_state: Confirmable<T>, _field: keyof T) {
@@ -53,7 +46,7 @@ export const confirmable = <T>(
                 state.pending === null || state.pending.reqId !== reqId
                     ? state
                     : {
-                          settled: KEEPS_PROPOSED[outcome.outcome]
+                          settled: OUTCOMES[outcome.outcome].mayHaveRun
                               ? state.pending.proposed
                               : state.settled,
                           pending: null,

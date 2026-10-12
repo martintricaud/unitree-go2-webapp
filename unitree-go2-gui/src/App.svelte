@@ -1,24 +1,21 @@
 <script lang="ts">
-    import { entries, keys } from 'remeda';
+    import { clamp, entries, keys } from 'remeda';
     import { onMount } from 'svelte';
+    import { writable } from 'svelte/store';
     import { websocket } from './lib/utils/webSocketClient';
     import { webSocketConnected, robotConnected } from './lib/stores/connection';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
-    import GamepadController from './components/GamepadController.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
     import { cueLabel, enter, leave, perform, set } from './lib/utils/commands';
     import { ACTIONS } from './lib/data/actions';
     import { CONDUITE, presets } from './lib/data/cues';
     import { MODES } from './lib/data/modes';
-    import { LIGHT_EMOJIS, SPEED_LEVELS } from './lib/data/options';
-    import type { RobotState } from './lib/data/robotState';
-    import { cuePointer } from './lib/stores/cuePointer';
+    import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { robotState, send } from './lib/stores/robotState';
     import { displayed, fieldStatus } from './lib/utils/confirmable';
-    import type { Confirmable } from './lib/utils/confirmable';
 
     // let intervalId: any;
     /* STATE VARIABLES */
@@ -37,9 +34,6 @@
     let lidarOn = false;
     let monitoringState = false;
 
-    const LIGHT_OPTIONS = keys(LIGHT_EMOJIS);
-    const SPEED_OPTIONS = entries(SPEED_LEVELS);
-
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
     const sendToRobot = send(websocket);
@@ -49,27 +43,13 @@
 
     $: shown = displayed($robotState);
 
-    /// A confirmed value says nothing.
-    const MARK = {
-        pending: '…',
-        confirmed: '',
-        failed: '✗',
-        rejected: '⊘',
-        unknown: '?',
-    };
+    /// Where the operator stands in the cue sheet.
+    const cuePointer = writable(0);
 
-    function markerOf(_state: Confirmable<RobotState>, _field: keyof RobotState) {
-        const status = fieldStatus(_state, _field);
-        return status === null ? '' : MARK[status];
-    }
-
-    /// In a radio group the marker belongs to the option the group is showing.
-    function markerFor<K extends keyof RobotState>(
-        _state: Confirmable<RobotState>,
-        _field: K,
-        _option: RobotState[K],
-    ) {
-        return displayed(_state)[_field] === _option ? markerOf(_state, _field) : '';
+    function moveCuePointer(_steps: number) {
+        cuePointer.update(function (_at) {
+            return clamp(_at + _steps, { min: 0, max: CONDUITE.length - 1 });
+        });
     }
 
     onMount(() => {
@@ -115,17 +95,17 @@
                 switch (event.key) {
                     case 'ArrowRight':
                         sendCue($cuePointer);
-                        cuePointer.moveBy(1);
+                        moveCuePointer(1);
                         break;
                     case 'ArrowLeft':
                         sendCue($cuePointer);
-                        cuePointer.moveBy(-1);
+                        moveCuePointer(-1);
                         break;
                     case 'ArrowDown':
-                        cuePointer.moveBy(1);
+                        moveCuePointer(1);
                         break;
                     case 'ArrowUp':
-                        cuePointer.moveBy(-1);
+                        moveCuePointer(-1);
                         break;
                     case 'Enter':
                         sendCue($cuePointer);
@@ -190,7 +170,6 @@
     faceLandmarksEnabled={FACE_LANDMARKS}
 />
 <!-- <Lidar /> -->
-<GamepadController monitoring={false} />
 <StatusStrip />
 <svelte:window
     on:keyup={(event) => {
@@ -255,7 +234,7 @@
         <Switch
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
-            marker={markerOf($robotState, 'obstacleAvoidance')}
+            status={fieldStatus($robotState, 'obstacleAvoidance')}
             disabled={!$robotConnected}
             callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />
@@ -282,7 +261,7 @@
             <Radio
                 optionName={modeName}
                 selected={shown.mode === modeName}
-                marker={markerFor($robotState, 'mode', modeName)}
+                status={fieldStatus($robotState, 'mode')}
                 disabled={!$robotConnected}
                 callback={() => sendToRobot(enter(modeName))}
             />
@@ -290,11 +269,11 @@
     </div>
 
     <div class="button-grid">
-        {#each LIGHT_OPTIONS as colour}
+        {#each COLOURS as colour}
             <Radio
                 optionName={colour}
                 selected={shown.headlight === colour}
-                marker={markerFor($robotState, 'headlight', colour)}
+                status={fieldStatus($robotState, 'headlight')}
                 disabled={!$robotConnected}
                 callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
             />
@@ -304,11 +283,11 @@
 
     </div>
     <div class="button-grid">
-        {#each SPEED_OPTIONS as [speedName, level]}
+        {#each entries(SPEED_LEVELS) as [speedName, level]}
             <Radio
                 optionName={speedName}
                 selected={shown.speed === level}
-                marker={markerFor($robotState, 'speed', level)}
+                status={fieldStatus($robotState, 'speed')}
                 disabled={!$robotConnected}
                 callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />

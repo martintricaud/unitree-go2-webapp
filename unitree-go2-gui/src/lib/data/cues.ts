@@ -1,4 +1,5 @@
 import { dim, enter, leave, orient, perform, sequence, set, wait } from '../utils/commands';
+import type { Cue } from '../utils/commands';
 
 const DANSE_DU_SABBAT = sequence(
     'Sabbat',
@@ -87,7 +88,7 @@ const MONOLOGUE = [
 ];
 
 /// The performance cue sheet, which the operator steps through with the arrow keys.
-export const CONDUITE = [
+export const CONDUITE: [Cue, ...Cue[]] = [
     ...DANSE_DU_SABBAT.items,
     STRETCH_HELLO_JUMP,
     sequence('Content', perform('Content'), wait(0.05), enter('FreeWalk')),

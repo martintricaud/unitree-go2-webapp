@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { WebSocketClient } from './webSocketClient';
+import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import { robotConnected } from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
 import { perform, sequence } from './commands';
-import { encode } from './encode';
 
 // The relay bounds one command at max(5s, exec_time + 3s), and the longest exec_time in
 // commands_1.1.7.json is 10s, so 13s is the longest wait the relay itself can be in.
@@ -110,14 +109,29 @@ describe('request', () => {
         const { client, socket } = openClient();
         const answer = client.request(HELLO);
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
-        expect(await answer).toEqual({ outcome: 'confirmed', code: 0, detail: 'because' });
+        expect(await answer).toMatchObject({
+            outcome: 'confirmed',
+            code: 0,
+            detail: 'because',
+            reqId: reqIdOf(socket),
+            label: 'Hello',
+        });
     });
 
     it('resolves failed for a result carrying a non-zero code', async () => {
         const { client, socket } = openClient();
         const answer = client.request(HELLO);
         await client.received(resultFor(reqIdOf(socket), 'failed', 3203));
-        expect(await answer).toEqual({ outcome: 'failed', code: 3203, detail: 'because' });
+        expect(await answer).toMatchObject({ outcome: 'failed', code: 3203, detail: 'because' });
+    });
+
+    it('reads a result that carries no detail as an empty detail', async () => {
+        const { client, socket } = openClient();
+        const answer = client.request(HELLO);
+        await client.received(
+            JSON.stringify({ type: 'command_result', reqId: reqIdOf(socket), outcome: 'confirmed', code: 0, detail: null }),
+        );
+        expect((await answer).detail).toBe('');
     });
 
     it('resolves rejected when the bridge turned the request away', async () => {
@@ -150,7 +164,7 @@ describe('request', () => {
         const { client, socket } = openClient();
         socket.readyState = CLOSED;
         const answer = await client.request(HELLO);
-        expect(answer.outcome).toBe('failed');
+        expect(answer).toMatchObject({ outcome: 'failed', label: 'Hello' });
         expect(socket.frames).toEqual([]);
     });
 
@@ -159,7 +173,7 @@ describe('request', () => {
         const { client } = openClient();
         const answer = client.request(HELLO);
         await vi.advanceTimersByTimeAsync(BACKSTOP_MS + 1);
-        expect((await answer).outcome).toBe('unknown');
+        expect(await answer).toMatchObject({ outcome: 'unknown', label: 'Hello' });
     });
 
     it('holds past the longest wait the relay itself can be in, so a slow command is not called unknown', async () => {
@@ -179,10 +193,11 @@ describe('request', () => {
     });
 
     it('settles every waiting request when the control channel closes', async () => {
-        const { client } = openClient();
+        const { client, socket } = openClient();
         const answer = client.request(HELLO);
+        const reqId = reqIdOf(socket);
         client.closed();
-        expect((await answer).outcome).toBe('failed');
+        expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
         expect(get(robotConnected)).toBe(false);
     });
 
@@ -209,8 +224,9 @@ describe('the outcome log', () => {
         expect(get(lastOutcome)).toMatchObject({ label: 'Dance', outcome: 'confirmed', code: 0 });
     });
 
-    it("labels a result the browser did not ask for with the relay's command name", async () => {
+    it('drops a result that carries no request id, since this browser always sends one', async () => {
         const { client } = openClient();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(
             JSON.stringify({
                 type: 'command_result',
@@ -221,7 +237,9 @@ describe('the outcome log', () => {
                 detail: 'status.code=3203',
             }),
         );
-        expect(get(lastOutcome)).toMatchObject({ label: 'StandUp', reqId: null });
+        expect(get(outcomeLog)).toEqual([]);
+        expect(warn).toHaveBeenCalledOnce();
+        warn.mockRestore();
     });
 
     it('counts every outcome, and reports zero for the names nothing landed on', async () => {

@@ -1,12 +1,17 @@
 import { isDeepEqual } from 'remeda';
 import { get } from 'svelte/store';
-import { INITIAL_ROBOT_STATE } from '../data/robotState';
-import type { Cue } from '../utils/commands';
+import { transition } from '../utils/commands';
+import type { Cue, RobotState } from '../utils/commands';
 import { confirmable, displayed } from '../utils/confirmable';
-import { transition } from '../utils/transition';
 import type { WebSocketClient } from '../utils/webSocketClient';
 
-export const robotState = confirmable(INITIAL_ROBOT_STATE);
+export const robotState = confirmable<RobotState>({
+    mode: 'FreeWalk',
+    posture: 'standing',
+    headlight: 'white',
+    speed: 0,
+    obstacleAvoidance: true,
+});
 
 /// Browser-side only: WebSocketClient mints the ids the relay sees.
 let lastProposal = 0;

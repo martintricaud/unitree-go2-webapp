@@ -1,30 +1,22 @@
 <script lang="ts">
     import { webSocketConnected, robotConnected } from '../lib/stores/connection';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
-    import type { OutcomeEntry, OutcomeName } from '../lib/stores/outcomes';
+    import type { Outcome } from '../lib/stores/outcomes';
+    import OutcomeMark from './OutcomeMark.svelte';
 
     let showLog = false;
-
-    const MARK: Record<OutcomeName, string> = {
-        confirmed: '✓',
-        failed: '✗',
-        rejected: '⊘',
-        unknown: '?',
-    };
-
-    const clockOf = (at: number) => new Date(at).toLocaleTimeString();
-
-    const summarise = (entry: OutcomeEntry): string =>
-        `${entry.label} ${MARK[entry.outcome]} ${entry.outcome}` +
-        (entry.code === null ? '' : ` (${entry.code})`);
 </script>
+
+{#snippet summary(entry: Outcome)}
+    {entry.label} <OutcomeMark status={entry.outcome} /> {entry.outcome}{entry.code === null ? '' : ` (${entry.code})`}
+{/snippet}
 
 <div class="strip">
     <div class="line">
         <span>Websocket {$webSocketConnected ? '✅' : '❌'}</span>
         <span>Robot {$robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={$lastOutcome?.detail ?? ''}>
-            {$lastOutcome === null ? 'no command sent yet' : summarise($lastOutcome)}
+            {#if $lastOutcome === null}no command sent yet{:else}{@render summary($lastOutcome)}{/if}
         </span>
         <span>
             {$outcomeCounts.failed + $outcomeCounts.rejected} failed, {$outcomeCounts.unknown} unknown,
@@ -40,9 +32,9 @@
                  duplicate key would take the whole strip down mid-performance. -->
             {#each $outcomeLog as entry}
                 <li>
-                    <span class="clock">{clockOf(entry.at)}</span>
-                    <span>{summarise(entry)}</span>
-                    <span class="detail">{entry.detail ?? ''}</span>
+                    <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
+                    <span>{@render summary(entry)}</span>
+                    <span class="detail">{entry.detail}</span>
                 </li>
             {/each}
         </ol>

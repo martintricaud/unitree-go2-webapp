@@ -1,3 +1,8 @@
+export const COLOURS = ['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple'] as const;
+
+/// The `data` value `SpeedLevel` sends for each speed the operator can pick.
+export const SPEED_LEVELS = { slow: -1, normal: 0, fast: 1 } as const;
+
 /// The commands that set one field of the robot state. `argument` names the parameter that
 /// carries the value; the robot reads the speed under `data`.
 export const SETTINGS = {

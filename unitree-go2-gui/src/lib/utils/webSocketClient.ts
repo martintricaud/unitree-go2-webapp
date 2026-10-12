@@ -1,16 +1,86 @@
-import { isIncludedIn, pick } from 'remeda';
+import { isIncludedIn, keys } from 'remeda';
+import { ACTIONS } from '../data/actions';
+import { MODES } from '../data/modes';
+import { BRIGHTNESS, EULER, SETTINGS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue } from './commands';
-import { encode } from './encode';
-import { OUTCOME_NAMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
+import { OUTCOMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
 import { robotConnected, videoFrame, webSocketConnected } from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
     | { type: 'robot_state'; connected: boolean }
-    | (Outcome & { type: 'command_result'; reqId: number | null; command_name: string | null })
+    | (Pick<Outcome, 'outcome' | 'code'> & {
+          type: 'command_result';
+          detail: string | null;
+          reqId: number | null;
+          command_name: string | null;
+      })
     | { type: 'state_stream'; data: unknown };
+
+/// A cue as the relay reads it.
+type Wire =
+    | {
+          kind: 'command';
+          topic: string;
+          api_id: number;
+          command_name: string;
+          parameter?: Record<string, unknown>;
+      }
+    | { kind: 'wait'; wait: number }
+    | { kind: 'sequence'; displayName?: string; sequence: Wire[] };
+
+export function encode(_cue: Cue): Wire {
+    switch (_cue.kind) {
+        case 'enter':
+        case 'leave':
+            return {
+                kind: 'command',
+                topic: 'SPORT_MOD',
+                api_id: MODES[_cue.mode].api_id,
+                command_name: _cue.mode,
+                parameter: { [MODES[_cue.mode].argument]: _cue.kind === 'enter' },
+            };
+        case 'perform':
+            return {
+                kind: 'command',
+                topic: 'SPORT_MOD',
+                api_id: ACTIONS[_cue.action].api_id,
+                command_name: _cue.action,
+            };
+        case 'set': {
+            const { topic, api_id, command_name, argument } = SETTINGS[_cue.setting.name];
+            return {
+                kind: 'command',
+                topic,
+                api_id,
+                command_name,
+                parameter: { [argument]: _cue.setting.value },
+            };
+        }
+        case 'orient':
+            return {
+                kind: 'command',
+                topic: EULER.topic,
+                api_id: EULER.api_id,
+                command_name: EULER.command_name,
+                parameter: { x: _cue.x, y: _cue.y, z: _cue.z },
+            };
+        case 'dim':
+            return {
+                kind: 'command',
+                topic: BRIGHTNESS.topic,
+                api_id: BRIGHTNESS.api_id,
+                command_name: BRIGHTNESS.command_name,
+                parameter: { [BRIGHTNESS.argument]: _cue.brightness },
+            };
+        case 'wait':
+            return { kind: 'wait', wait: _cue.seconds };
+        case 'sequence':
+            return { kind: 'sequence', displayName: _cue.label, sequence: _cue.items.map(encode) };
+    }
+}
 
 const RELAY_URL = 'ws://localhost:8000/ws';
 
@@ -23,17 +93,27 @@ const CLOSED = 3;
 const REPLY_BACKSTOP_MS = 20_000;
 
 /// A command that never left the browser did not run: a failure, not a silence.
-const CHANNEL_CLOSED: Outcome = {
-    outcome: 'failed',
-    code: null,
-    detail: 'the control channel is closed, so the command never left the browser',
-};
+function CHANNEL_CLOSED(_reqId: number, _label: string): Outcome {
+    return {
+        outcome: 'failed',
+        code: null,
+        detail: 'the control channel is closed, so the command never left the browser',
+        reqId: _reqId,
+        label: _label,
+        at: Date.now(),
+    };
+}
 
-const RELAY_SILENT: Outcome = {
-    outcome: 'unknown',
-    code: null,
-    detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
-};
+function RELAY_SILENT(_reqId: number, _label: string): Outcome {
+    return {
+        outcome: 'unknown',
+        code: null,
+        detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
+        reqId: _reqId,
+        label: _label,
+        at: Date.now(),
+    };
+}
 
 /// The part of a WebSocket this client writes to, so a test can supply a recorder.
 export type Sink = { readyState: number; send(data: string): void };
@@ -43,7 +123,7 @@ export type Sink = { readyState: number; send(data: string): void };
 function parseRelayMessage(_raw: string) {
     try {
         const msg = JSON.parse(_raw);
-        const outcome = isIncludedIn(msg.outcome, OUTCOME_NAMES) ? msg.outcome : 'unknown';
+        const outcome = isIncludedIn(msg.outcome, keys(OUTCOMES)) ? msg.outcome : 'unknown';
         return (msg.type === 'command_result' ? { ...msg, outcome } : msg) as RelayMessage;
     } catch {
         return null;
@@ -84,8 +164,8 @@ export class WebSocketClient {
         robotConnected.set(false);
         this.previousBitmap?.close();
         this.previousBitmap = null;
-        for (const reqId of [...this.pending.keys()]) {
-            this.settle(reqId, CHANNEL_CLOSED);
+        for (const [reqId, { label }] of [...this.pending]) {
+            this.settle(CHANNEL_CLOSED(reqId, label));
         }
     }
 
@@ -104,14 +184,22 @@ export class WebSocketClient {
                 robotConnected.set(msg.connected);
                 return;
             case 'command_result': {
-                const outcome = pick(msg, ['outcome', 'code', 'detail']);
-                if (msg.reqId !== null && this.pending.has(msg.reqId)) {
-                    this.settle(msg.reqId, outcome);
+                if (msg.reqId === null) {
+                    console.warn('Dropping a verdict on a command this browser did not send:', msg);
                     return;
                 }
-                // A command sent without a reqId, or a verdict that arrived after the backstop.
-                const label = msg.command_name ?? 'command';
-                recordOutcome({ ...outcome, reqId: msg.reqId, label, at: Date.now() });
+                // No pending request: the verdict arrived after the backstop.
+                const pending = this.pending.get(msg.reqId);
+                const outcome = {
+                    outcome: msg.outcome,
+                    code: msg.code,
+                    detail: msg.detail ?? '',
+                    reqId: msg.reqId,
+                    label: pending?.label ?? msg.command_name ?? 'command',
+                    at: Date.now(),
+                };
+                if (pending) this.settle(outcome);
+                else recordOutcome(outcome);
                 return;
             }
             case 'state_stream':
@@ -127,11 +215,12 @@ export class WebSocketClient {
         const reqId = (this.lastRequestId += 1);
         const label = cueLabel(cue);
         if (!this.send({ ...encode(cue), reqId })) {
-            recordOutcome({ ...CHANNEL_CLOSED, reqId, label, at: Date.now() });
-            return Promise.resolve(CHANNEL_CLOSED);
+            const outcome = CHANNEL_CLOSED(reqId, label);
+            recordOutcome(outcome);
+            return Promise.resolve(outcome);
         }
         return new Promise((resolve) => {
-            const timer = setTimeout(() => this.settle(reqId, RELAY_SILENT), REPLY_BACKSTOP_MS);
+            const timer = setTimeout(() => this.settle(RELAY_SILENT(reqId, label)), REPLY_BACKSTOP_MS);
             this.pending.set(reqId, { resolve, timer, label });
         });
     }
@@ -148,12 +237,12 @@ export class WebSocketClient {
         }
     }
 
-    private settle(reqId: number, outcome: Outcome) {
-        const pending = this.pending.get(reqId);
+    private settle(outcome: Outcome) {
+        const pending = this.pending.get(outcome.reqId);
         if (!pending) return;
         clearTimeout(pending.timer);
-        this.pending.delete(reqId);
-        recordOutcome({ ...outcome, reqId, label: pending.label, at: Date.now() });
+        this.pending.delete(outcome.reqId);
+        recordOutcome(outcome);
         pending.resolve(outcome);
     }
 

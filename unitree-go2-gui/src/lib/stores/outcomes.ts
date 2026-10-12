@@ -1,23 +1,22 @@
-import { constant, countBy, fromKeys, prop } from 'remeda';
+import { constant, countBy, mapValues, prop } from 'remeda';
 import { derived, writable } from 'svelte/store';
 
-export const OUTCOME_NAMES = ['confirmed', 'failed', 'rejected', 'unknown'] as const;
-
 /// `confirmed`: the robot's service accepted the request, which does not prove it moved.
-/// `failed`: the robot refused. `rejected`: the WebRTC bridge refused before the robot saw it.
-/// `unknown`: no answer in time, so the command may still have run.
-export type OutcomeName = (typeof OUTCOME_NAMES)[number];
+/// `unknown`: no answer in time. `failed`: the robot refused.
+/// `rejected`: the WebRTC bridge refused before the robot saw it.
+export const OUTCOMES = {
+    confirmed: { mayHaveRun: true },
+    unknown: { mayHaveRun: true },
+    failed: { mayHaveRun: false },
+    rejected: { mayHaveRun: false },
+} as const;
 
-/// The relay's verdict on one command. `code` is the robot's `status.code`, when it sent one.
+/// The verdict on one request. `code` is null when the robot sent no `status.code`.
 export type Outcome = {
-    outcome: OutcomeName;
+    outcome: keyof typeof OUTCOMES;
     code: number | null;
-    detail: string | null;
-};
-
-/// `reqId` is null for a command the browser sent without one.
-export type OutcomeEntry = Outcome & {
-    reqId: number | null;
+    detail: string;
+    reqId: number;
     label: string;
     at: number;
 };
@@ -26,11 +25,11 @@ export type OutcomeEntry = Outcome & {
 const LOG_LIMIT = 200;
 
 /// Every outcome since the control channel opened, newest first.
-export const outcomeLog = writable<OutcomeEntry[]>([]);
+export const outcomeLog = writable<Outcome[]>([]);
 
-export function recordOutcome(_entry: OutcomeEntry) {
+export function recordOutcome(_outcome: Outcome) {
     outcomeLog.update(function (_log) {
-        return [_entry, ..._log].slice(0, LOG_LIMIT);
+        return [_outcome, ..._log].slice(0, LOG_LIMIT);
     });
 }
 
@@ -41,6 +40,6 @@ export function clearOutcomes() {
 export const lastOutcome = derived(outcomeLog, (_log) => _log.at(0) ?? null);
 
 export const outcomeCounts = derived(outcomeLog, (_log) => ({
-    ...fromKeys(OUTCOME_NAMES, constant(0)),
+    ...mapValues(OUTCOMES, constant(0)),
     ...countBy(_log, prop('outcome')),
 }));

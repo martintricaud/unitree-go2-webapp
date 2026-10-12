@@ -1,7 +1,8 @@
+import { reduce } from 'remeda';
+import { ACTIONS } from '../data/actions';
 import type { Action } from '../data/actions';
 import type { Mode } from '../data/modes';
-import type { RobotState } from '../data/robotState';
-import { BRIGHTNESS, EULER, SETTINGS } from '../data/settings';
+import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 
 type Setting = {
     [K in keyof typeof SETTINGS]: { name: K; value: RobotState[K] };
@@ -16,7 +17,7 @@ export type Command =
     | { kind: 'orient'; x: number; y: number; z: number }
     | { kind: 'dim'; brightness: number };
 
-type Sequence = { kind: 'sequence'; label?: string; items: Cue[] };
+type Sequence = { kind: 'sequence'; label?: string; items: [Cue, ...Cue[]] };
 
 export type Cue = Command | { kind: 'wait'; seconds: number } | Sequence;
 
@@ -34,7 +35,7 @@ export const dim = (_brightness: number): Command => ({ kind: 'dim', brightness:
 export const wait = (_seconds: number): Cue => ({ kind: 'wait', seconds: _seconds });
 
 /// An empty label leaves the sequence unnamed.
-export const sequence = (_label: string, ..._items: Cue[]): Sequence => ({
+export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Sequence => ({
     kind: 'sequence',
     label: _label === '' ? undefined : _label,
     items: _items,
@@ -59,4 +60,39 @@ export function cueLabel(_cue: Cue) {
         case 'sequence':
             return _cue.label ?? 'unnamed sequence';
     }
+}
+
+export type Posture = 'standing' | 'sitting' | 'lying';
+
+export type RobotState = {
+    /// Null once a mode was left: the API does not say which mode follows.
+    mode: Mode | null;
+    posture: Posture;
+    headlight: (typeof COLOURS)[number];
+    speed: (typeof SPEED_LEVELS)[keyof typeof SPEED_LEVELS];
+    obstacleAvoidance: boolean;
+};
+
+/// The state the robot is in once the cue has run from `_state`.
+export function transition(_cue: Cue): (_state: RobotState) => RobotState {
+    return function (_state) {
+        switch (_cue.kind) {
+            case 'enter':
+                return { ..._state, mode: _cue.mode };
+            case 'leave':
+                return { ..._state, mode: null };
+            case 'perform': {
+                const action = ACTIONS[_cue.action];
+                return 'posture' in action ? { ..._state, posture: action.posture } : _state;
+            }
+            case 'set':
+                return { ..._state, [_cue.setting.name]: _cue.setting.value };
+            case 'orient':
+            case 'dim':
+            case 'wait':
+                return _state;
+            case 'sequence':
+                return reduce(_cue.items, (_reached, _item) => transition(_item)(_reached), _state);
+        }
+    };
 }

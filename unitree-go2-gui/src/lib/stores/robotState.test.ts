@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { INITIAL_ROBOT_STATE } from '../data/robotState';
 import { enter, leave, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { displayed } from '../utils/confirmable';
 import { robotState, send } from './robotState';
-import type { Outcome, OutcomeName } from './outcomes';
+import type { Outcome } from './outcomes';
 
 /** A client whose requests stay unanswered until the test hands each a verdict, so the store
  * can be read while a cue is in flight. No socket and no relay are involved. */
@@ -20,8 +19,8 @@ const stubClient = () => {
       });
     },
   };
-  const reply = (outcome: OutcomeName, index = answers.length - 1) =>
-    answers[index]({ outcome, code: null, detail: null });
+  const reply = (outcome: Outcome['outcome'], index = answers.length - 1) =>
+    answers[index]({ outcome, code: null, detail: '', reqId: index, label: '', at: 0 });
   return { client, sent, reply };
 };
 
@@ -36,7 +35,11 @@ const SABOTS = sequence(
 
 describe('robotState', () => {
   it('starts settled on the initial state, with nothing attempted', () => {
-    expect(get(robotState)).toEqual({ settled: INITIAL_ROBOT_STATE, pending: null, lastAttempt: null });
+    expect(get(robotState)).toEqual({
+      settled: { mode: 'FreeWalk', posture: 'standing', headlight: 'white', speed: 0, obstacleAvoidance: true },
+      pending: null,
+      lastAttempt: null,
+    });
   });
 
   it('proposes the state a cue leads to, and a confirmation settles it', async () => {

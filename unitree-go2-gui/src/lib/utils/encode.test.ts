@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { entries, keys, mapValues } from 'remeda';
+import { entries, mapValues } from 'remeda';
 import { ACTIONS } from '../data/actions';
 import { CONDUITE, presets } from '../data/cues';
 import { MODES } from '../data/modes';
-import { LIGHT_EMOJIS, SPEED_LEVELS } from '../data/options';
+import { COLOURS, SPEED_LEVELS } from '../data/settings';
 import { enter, leave, perform, set } from './commands';
-import { encode } from './encode';
+import { encode } from './webSocketClient';
 import WIRE from './encode.fixture.json';
 
 // The fixture holds what the browser sent before cues were typed by their effect.
@@ -33,7 +33,7 @@ describe('encode', () => {
   });
 
   it('sends the white headlight as a Headlight colour, no longer as a Brightness', () => {
-    expect(keys(LIGHT_EMOJIS)).toContain('white');
+    expect(COLOURS).toContain('white');
     expect(encode(set({ name: 'headlight', value: 'white' }))).toEqual({
       ...WIRE.headlight.red,
       parameter: { color: 'white' },

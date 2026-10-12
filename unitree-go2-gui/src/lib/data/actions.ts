@@ -1,5 +1,3 @@
-import type { Posture } from './robotState';
-
 /// The working zero-argument commands, under the SPORT_MOD topic. `exec_time` is how long the
 /// motion lasts, in seconds; the 1s and 10s values were never measured. `posture` is the posture
 /// the action ends in, inferred from its name.
@@ -44,7 +42,7 @@ export const ACTIONS = {
     BackFlip: { api_id: 2043, exec_time: 1, description: '' },
 } as const satisfies Record<
     string,
-    { api_id: number; exec_time: number; description: string; posture?: Posture }
+    { api_id: number; exec_time: number; description: string; posture?: string }
 >;
 
 export type Action = keyof typeof ACTIONS;

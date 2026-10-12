@@ -3,10 +3,11 @@ import { get } from 'svelte/store';
 import { confirmable, displayed, fieldStatus } from './confirmable';
 import type { Outcome } from '../stores/outcomes';
 
-const CONFIRMED: Outcome = { outcome: 'confirmed', code: 0, detail: null };
-const FAILED: Outcome = { outcome: 'failed', code: 3203, detail: 'status.code=3203' };
-const REJECTED: Outcome = { outcome: 'rejected', code: null, detail: 'the bridge refused it' };
-const UNKNOWN: Outcome = { outcome: 'unknown', code: null, detail: 'no reply within 5s' };
+const REQUEST = { reqId: 1, label: 'Pose', at: 0 };
+const CONFIRMED: Outcome = { ...REQUEST, outcome: 'confirmed', code: 0, detail: '' };
+const FAILED: Outcome = { ...REQUEST, outcome: 'failed', code: 3203, detail: 'status.code=3203' };
+const REJECTED: Outcome = { ...REQUEST, outcome: 'rejected', code: null, detail: 'the bridge refused it' };
+const UNKNOWN: Outcome = { ...REQUEST, outcome: 'unknown', code: null, detail: 'no reply within 5s' };
 
 describe('what the control shows', () => {
     it('shows the value it was created with while nothing has been asked for', () => {
