@@ -9,7 +9,8 @@
     import Radio from './components/Radio.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import { activeMode, cueLabel, enter, leave, perform, set } from './lib/utils/commands';
+    import { activeMode, cueLabel, enter, isEnterable, leavePosture, perform, set, switchTo } from './lib/utils/commands';
+    import type { RobotState } from './lib/utils/commands';
     import { ACTIONS, MODES } from './lib/data/sportCommands';
     import { CONDUITE, presets } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
@@ -80,26 +81,51 @@
         if (websocket.send({ command_name: 'subscribe', switch: next })) monitoringState = next;
     };
 
-    /// The keys both operators share. Each asks for the opposite of what its control shows, so
-    /// a refused command leaves the next press asking for the same thing again.
+    /// Whether any of these fields is waiting for the robot's verdict.
+    const isWaiting = (..._fields: (keyof RobotState)[]) =>
+        _fields.some((_field) => $robotState.pending[_field] !== undefined);
+
+    /// The toggle keys. Each asks for the opposite of what its control shows, so a refused command
+    /// leaves the next press asking for the same thing again. A press while the toggled fields wait
+    /// for a verdict is ignored: it would read the pending value and queue the opposite command.
     const togglePose = () => {
-        void sendToRobot(shown.posture !== 'Pose' ? presets.enterPose : presets.exitPose);
+        if (isWaiting('posture')) return;
+        void sendToRobot(shown.posture === 'Pose' ? leavePosture('Pose') : switchTo('Pose')(shown));
     };
 
+    /// Leaping toggles back to the gait the robot had before it. A gait the robot only reports has
+    /// no command, so leaving Leaping then lets the robot pick its gait.
     const toggleLeaping = () => {
-        void sendToRobot(
-            shown.gait === 'Leaping' && shown.posture === null ? leave('Leaping') : enter('Leaping'),
-        );
+        if (isWaiting('gait', 'posture')) return;
+        const { previousGait } = shown;
+        if (shown.gait !== 'Leaping' || shown.posture !== null) {
+            void sendToRobot(switchTo('Leaping')(shown));
+            return;
+        }
+        void sendToRobot(switchTo(isEnterable(previousGait) ? previousGait : 'FreeWalk')(shown));
     };
 
     const toggleSit = () => {
-        void sendToRobot(shown.posture === 'Sitting' ? presets.exitSit : perform('Sit'));
+        if (isWaiting('posture')) return;
+        void sendToRobot(shown.posture === 'Sitting' ? leavePosture('Sitting') : switchTo('Sitting')(shown));
+    };
+
+    const toggleCrouch = () => {
+        if (isWaiting('posture')) return;
+        void sendToRobot(shown.posture === 'Lying' ? presets.stopAndStand : presets.stopAndCrouch);
+    };
+
+    const toggleTrotting = () => {
+        if (isWaiting('gait', 'posture')) return;
+        void sendToRobot(enter(shown.gait !== 'Trotting' ? 'Trotting' : 'FreeWalk'));
     };
 
     const dance = () => void sendToRobot(presets.dance);
     const standContent = () => void sendToRobot(presets.standContent);
 
     let keydownHandler = (event: KeyboardEvent) => {
+        // A held key repeats its keydown; every binding acts once per press.
+        if (event.repeat) return;
         switch (operator) {
             case 'Martin':
                 switch (event.key) {
@@ -145,15 +171,13 @@
 
                     //     break;
                     case 'ArrowLeft':
-                        void sendToRobot(
-                            shown.posture === 'Lying' ? presets.stopAndStand : presets.stopAndCrouch,
-                        );
+                        toggleCrouch();
                         break;
                     case 'ArrowUp':
                         standContent();
                         break;
                     case 'ArrowDown':
-                        void sendToRobot(enter(shown.gait !== 'Trotting' ? 'Trotting' : 'FreeWalk'));
+                        toggleTrotting();
                         break;
                     case 'b':
                         toggleLeaping();

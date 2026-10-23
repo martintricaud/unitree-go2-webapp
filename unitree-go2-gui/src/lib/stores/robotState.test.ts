@@ -45,7 +45,14 @@ const SABOTS = sequence(
 describe('robotState', () => {
   it('starts settled on the initial state, with nothing attempted', () => {
     expect(get(robotState)).toEqual({
-      settled: { gait: 'FreeWalk', posture: null, headlight: 'green', speed: 0, obstacleAvoidance: true },
+      settled: {
+        gait: 'FreeWalk',
+        posture: null,
+        previousGait: 'FreeWalk',
+        headlight: 'green',
+        speed: 0,
+        obstacleAvoidance: true,
+      },
       pending: {},
     });
   });
@@ -65,6 +72,7 @@ describe('robotState', () => {
     const done = send(client)(SABOTS);
 
     expect(sent).toEqual([SABOTS]);
+    // previousGait goes from FreeWalk to FreeWalk, so it is not proposed.
     expect(get(robotState).pending).toEqual({
       gait: { value: 'Backstand', reqId: expect.any(Number) },
       headlight: { value: 'blue', reqId: expect.any(Number) },
@@ -201,6 +209,33 @@ describe('robotState', () => {
     await rose;
     expect(get(robotState).settled).toMatchObject({ gait: 'EconomicGait', posture: null });
   });
+
+  it('proposes the old gait as previousGait when a cue changes the gait', async () => {
+    const { client, reply } = stubClient();
+    const entered = send(client)(enter('StaticWalk'));
+    reply('confirmed');
+    await entered;
+    const leaping = send(client)(enter('Leaping'));
+    expect(get(robotState).pending).toEqual({
+      gait: { value: 'Leaping', reqId: expect.any(Number) },
+      previousGait: { value: 'StaticWalk', reqId: expect.any(Number) },
+    });
+    reply('confirmed');
+    await leaping;
+    expect(get(robotState).settled).toMatchObject({ gait: 'Leaping', previousGait: 'StaticWalk' });
+  });
+
+  it('keeps previousGait on entering and leaving a posture', async () => {
+    const { previousGait } = get(robotState).settled;
+    for (const cue of [enter('Pose'), leave('Pose'), perform('Sit'), perform('RiseSit')]) {
+      const { client, reply } = stubClient();
+      const done = send(client)(cue);
+      expect(get(robotState).pending.previousGait).toBeUndefined();
+      reply('confirmed');
+      await done;
+      expect(get(robotState).settled.previousGait).toBe(previousGait);
+    }
+  });
 });
 
 describe("the robot's report", () => {
@@ -266,6 +301,30 @@ describe("the robot's report", () => {
     robotConnected.set(false);
     expect(get(robotState).settled).toEqual(settled);
     expect(get(reported)).toEqual({});
+  });
+
+  it('sets previousGait to the old gait when a report changes the gait', async () => {
+    await confirm(enter('Trotting'));
+    robotReport.set({ gait: 'Stairs' });
+    expect(get(robotState).settled).toMatchObject({ gait: 'Stairs', previousGait: 'Trotting' });
+    expect(get(reported)).toEqual({ gait: true });
+  });
+
+  it('keeps previousGait when a report states the settled gait, or a posture', async () => {
+    await confirm(enter('Trotting'));
+    const { previousGait } = get(robotState).settled;
+    robotReport.set({ gait: 'Trotting' });
+    robotReport.set({ posture: 'Sitting' });
+    robotReport.set({ posture: null });
+    expect(get(robotState).settled).toMatchObject({ gait: 'Trotting', previousGait });
+  });
+
+  it('keeps previousGait when a report states a gait after the gait was unknown', async () => {
+    await confirm(enter('Jumping'));
+    await confirm(leave('Jumping'));
+    expect(get(robotState).settled).toMatchObject({ gait: null, previousGait: 'Jumping' });
+    robotReport.set({ gait: 'CrossStep' });
+    expect(get(robotState).settled).toMatchObject({ gait: 'CrossStep', previousGait: 'Jumping' });
   });
 
   it('leaves a pending gait proposal pending', async () => {

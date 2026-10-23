@@ -10,6 +10,8 @@ export const robotState = confirmable<RobotState>({
     /// The robot boots in FreeWalk, in no posture.
     gait: 'FreeWalk',
     posture: null,
+    /// A toggle that leaves a gait before any other gait was known returns to the boot gait.
+    previousGait: 'FreeWalk',
     /// The robot boots green, keeps a colour until the next one is set, and never reports it.
     headlight: 'green',
     speed: 0,
@@ -21,9 +23,12 @@ const stated = writable<Partial<Record<keyof RobotState, true>>>({});
 /// The fields the robot has stated since the robot was last lost, each marked true.
 export const reported = readonly(stated);
 
-/// Each report settles exactly the fields it states and marks them reported.
+/// Each report settles exactly the fields it states and marks them reported. A report that changes
+/// a known settled gait also settles the old gait as `previousGait`, as a confirmed command would.
 robotReport.subscribe((_report) => {
-    robotState.observe(_report);
+    const { gait } = get(robotState).settled;
+    const changesGait = _report.gait !== undefined && gait !== null && _report.gait !== gait;
+    robotState.observe(changesGait ? { ..._report, previousGait: gait } : _report);
     stated.update((_marked) => ({ ..._marked, ...mapValues(_report, () => true as const) }));
 });
 
