@@ -8,12 +8,11 @@ unitree_webapp/
 │  └─ main.py          # FastAPI backend
 └─ unitree-go2-gui/
    ├─ public/
-   ├─ src
-   |  ├─ lib/ # Contains the webSocket client implementation
-   │  ├─ components/ # GUI components including video display
-   │  ├─ App.svelte   # main Svelte component
-   │  └─ ...
-   └─ commands_1.1.7.json list of commands together with various relevant metatada 
+   └─ src
+      ├─ lib/ # Contains the webSocket client implementation
+      ├─ components/ # GUI components including video display
+      ├─ App.svelte   # main Svelte component
+      └─ ...
 ```
 
 ## Dependencies 
