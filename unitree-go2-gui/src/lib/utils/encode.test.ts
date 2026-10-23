@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { entries, mapValues } from 'remeda';
-import { ACTIONS } from '../data/actions';
+import { ACTIONS, MODES } from '../data/sportCommands';
 import { CONDUITE, presets } from '../data/cues';
-import { MODES } from '../data/modes';
 import { COLOURS, SPEED_LEVELS } from '../data/settings';
 import { enter, leave, perform, set } from './commands';
 import { encode } from './webSocketClient';

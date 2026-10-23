@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Mode } from '../data/modes';
+import type { Mode } from '../data/sportCommands';
 import type { RobotState } from '../utils/commands';
 
 /// Whether the browser's control channel to the relay is open.

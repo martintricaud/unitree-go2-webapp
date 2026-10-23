@@ -10,9 +10,8 @@
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
     import { cueLabel, enter, leave, perform, set } from './lib/utils/commands';
-    import { ACTIONS } from './lib/data/actions';
+    import { ACTIONS, MODES } from './lib/data/sportCommands';
     import { CONDUITE, presets } from './lib/data/cues';
-    import { MODES } from './lib/data/modes';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { reported, robotState, send } from './lib/stores/robotState';
     import { displayed, fieldStatus } from './lib/utils/confirmable';

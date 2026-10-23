@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { keys } from 'remeda';
 import onDisk from '../../../../commands_1.1.7.json';
 import { COMMAND_TABLE } from '../../../scripts/commandTable';
-import { ACTIONS } from './actions';
+import { ACTIONS } from './sportCommands';
 
 describe('the command table', () => {
   it('matches commands_1.1.7.json, so a hand edit of either file fails here', () => {

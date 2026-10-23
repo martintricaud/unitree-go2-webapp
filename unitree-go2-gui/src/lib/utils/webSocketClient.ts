@@ -1,7 +1,6 @@
 import { isIncludedIn, keys, values } from 'remeda';
-import { ACTIONS } from '../data/actions';
-import { MCF_MODE_CODES, MODES } from '../data/modes';
-import type { Mode } from '../data/modes';
+import { ACTIONS, MCF_MODE_CODES, MODES } from '../data/sportCommands';
+import type { Mode } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';

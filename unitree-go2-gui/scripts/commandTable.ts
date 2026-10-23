@@ -1,6 +1,5 @@
 import { entries, omit, values } from 'remeda';
-import { ACTIONS } from '../src/lib/data/actions.ts';
-import { MODES } from '../src/lib/data/modes.ts';
+import { ACTIONS, MODES } from '../src/lib/data/sportCommands.ts';
 import { BRIGHTNESS, EULER, SETTINGS } from '../src/lib/data/settings.ts';
 
 /// Every command the frontend can encode, as the relay reads it from commands_1.1.7.json.

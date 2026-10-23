@@ -1,7 +1,6 @@
 import { reduce } from 'remeda';
-import { ACTIONS } from '../data/actions';
-import type { Action } from '../data/actions';
-import type { Mode } from '../data/modes';
+import { ACTIONS } from '../data/sportCommands';
+import type { Action, Mode } from '../data/sportCommands';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 
 type Setting = {
