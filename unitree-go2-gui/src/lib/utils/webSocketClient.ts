@@ -1,4 +1,4 @@
-import { isEmpty, isIncludedIn, keys, values } from 'remeda';
+import { isEmpty, isIncludedIn, values } from 'remeda';
 import { ACTIONS, MCF_CODES, MODES } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
@@ -153,7 +153,7 @@ export type Sink = { readyState: number; send(data: string): void };
 function parseRelayMessage(_raw: string) {
     try {
         const msg = JSON.parse(_raw);
-        const outcome = isIncludedIn(msg.outcome, keys(OUTCOMES)) ? msg.outcome : 'unknown';
+        const outcome = isIncludedIn(msg.outcome, OUTCOMES) ? msg.outcome : 'unknown';
         return (msg.type === 'command_result' ? { ...msg, outcome } : msg) as RelayMessage;
     } catch {
         return null;
@@ -163,7 +163,8 @@ function parseRelayMessage(_raw: string) {
 export class WebSocketClient {
     private socket: Sink | null = null;
     private previousBitmap: ImageBitmap | null = null;
-    private pending = new Map<
+    /// The requests awaiting the relay's verdict, by request id.
+    private awaiting = new Map<
         number,
         { resolve: (outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }
     >();
@@ -194,7 +195,7 @@ export class WebSocketClient {
         robotConnected.set(false);
         this.previousBitmap?.close();
         this.previousBitmap = null;
-        for (const [reqId, { label }] of [...this.pending]) {
+        for (const [reqId, { label }] of [...this.awaiting]) {
             this.settle(CHANNEL_CLOSED(reqId, label));
         }
     }
@@ -232,17 +233,17 @@ export class WebSocketClient {
                     console.warn('Dropping a verdict on a command this browser did not send:', msg);
                     return;
                 }
-                // No pending request: the verdict arrived after the backstop.
-                const pending = this.pending.get(msg.reqId);
+                // No awaiting request: the verdict arrived after the backstop.
+                const request = this.awaiting.get(msg.reqId);
                 const outcome = {
                     outcome: msg.outcome,
                     code: msg.code,
                     detail: msg.detail ?? '',
                     reqId: msg.reqId,
-                    label: pending?.label ?? msg.command_name ?? 'command',
+                    label: request?.label ?? msg.command_name ?? 'command',
                     at: Date.now(),
                 };
-                if (pending) this.settle(outcome);
+                if (request) this.settle(outcome);
                 else recordOutcome(outcome);
                 return;
             }
@@ -254,19 +255,21 @@ export class WebSocketClient {
         }
     }
 
-    /// Send a cue and wait for the relay's verdict on it.
-    request(cue: Cue): Promise<Outcome> {
+    /// Send a cue and wait for the relay's verdict on it. `reqId` is the id the relay sees, so the
+    /// caller can attach its own bookkeeping to the same id.
+    request(cue: Cue): { reqId: number; verdict: Promise<Outcome> } {
         const reqId = (this.lastRequestId += 1);
         const label = cueLabel(cue);
         if (!this.send({ ...encode(cue), reqId })) {
             const outcome = CHANNEL_CLOSED(reqId, label);
             recordOutcome(outcome);
-            return Promise.resolve(outcome);
+            return { reqId, verdict: Promise.resolve(outcome) };
         }
-        return new Promise((resolve) => {
+        const verdict = new Promise<Outcome>((resolve) => {
             const timer = setTimeout(() => this.settle(RELAY_SILENT(reqId, label)), REPLY_BACKSTOP_MS);
-            this.pending.set(reqId, { resolve, timer, label });
+            this.awaiting.set(reqId, { resolve, timer, label });
         });
+        return { reqId, verdict };
     }
 
     /// Never throws: a closed channel is an answer the caller must handle.
@@ -282,12 +285,12 @@ export class WebSocketClient {
     }
 
     private settle(outcome: Outcome) {
-        const pending = this.pending.get(outcome.reqId);
-        if (!pending) return;
-        clearTimeout(pending.timer);
-        this.pending.delete(outcome.reqId);
+        const request = this.awaiting.get(outcome.reqId);
+        if (!request) return;
+        clearTimeout(request.timer);
+        this.awaiting.delete(outcome.reqId);
         recordOutcome(outcome);
-        pending.resolve(outcome);
+        request.resolve(outcome);
     }
 
     private async showFrame(blob: Blob) {

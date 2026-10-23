@@ -7,22 +7,30 @@ import { reported, robotState, send } from './robotState';
 import { robotConnected, robotReport } from './connection';
 import type { Outcome } from './outcomes';
 
+/** The last request id a stub client minted. Shared by every stub, so no two requests in this
+ * file share an id, as with the real client. */
+let lastStubId = 0;
+
 /** A client whose requests stay unanswered until the test hands each a verdict, so the store
  * can be read while a cue is in flight. No socket and no relay are involved. */
 const stubClient = () => {
   const sent: Cue[] = [];
+  const reqIds: number[] = [];
   const answers: ((outcome: Outcome) => void)[] = [];
   const client = {
     request: (cue: Cue) => {
       sent.push(cue);
-      return new Promise<Outcome>((resolve) => {
+      const reqId = (lastStubId += 1);
+      reqIds.push(reqId);
+      const verdict = new Promise<Outcome>((resolve) => {
         answers.push(resolve);
       });
+      return { reqId, verdict };
     },
   };
   const reply = (outcome: Outcome['outcome'], index = answers.length - 1) =>
-    answers[index]({ outcome, code: null, detail: '', reqId: index, label: '', at: 0 });
-  return { client, sent, reply };
+    answers[index]({ outcome, code: null, detail: '', reqId: reqIds[index], label: '', at: 0 });
+  return { client, sent, reqIds, reply };
 };
 
 const SABOTS = sequence(
@@ -40,6 +48,16 @@ describe('robotState', () => {
       settled: { gait: 'FreeWalk', posture: null, headlight: 'green', speed: 0, obstacleAvoidance: true },
       pending: {},
     });
+  });
+
+  it('proposes under the request id the client sent to the relay', async () => {
+    const { client, reqIds, reply } = stubClient();
+    const done = send(client)(set({ name: 'headlight', value: 'red' }));
+    expect(get(robotState).pending.headlight?.reqId).toBe(reqIds[0]);
+
+    reply('confirmed');
+    await done;
+    expect(get(robotState).pending).toEqual({});
   });
 
   it('proposes each field a cue changes, and a confirmation settles them', async () => {

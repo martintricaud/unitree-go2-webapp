@@ -31,19 +31,18 @@ robotConnected.subscribe((_connected) => {
     if (!_connected) stated.set({});
 });
 
-/// Browser-side only: WebSocketClient mints the ids the relay sees.
-let lastProposal = 0;
-
 /// Shows each field the cue changes as pending until the relay's verdict settles or drops it.
+/// The proposal carries the request id the relay sees, so the verdict on that request resolves it.
 /// The client is taken by the one method used, so a test can stand in for the relay.
 export function send(_client: Pick<WebSocketClient, 'request'>) {
     return async function (_cue: Cue) {
         const shown = displayed(get(robotState));
         const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
-        const proposalId = (lastProposal += 1);
-        if (!isEmpty(changed)) robotState.propose(changed, proposalId);
-        const verdict = await _client.request(_cue);
-        robotState.resolve(proposalId, verdict);
-        return verdict;
+        const { reqId, verdict } = _client.request(_cue);
+        // Proposed before the first await, so no verdict can be handled before the proposal exists.
+        if (!isEmpty(changed)) robotState.propose(changed, reqId);
+        const outcome = await verdict;
+        robotState.resolve(reqId, outcome);
+        return outcome;
     };
 }

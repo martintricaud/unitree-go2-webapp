@@ -89,18 +89,18 @@ describe('request', () => {
         vi.useRealTimers();
     });
 
-    it('sends the encoded cue, tagged with a numeric request id', async () => {
+    it('sends the encoded cue, tagged with the request id it returns', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
-        expect(socket.written[0]).toEqual({ ...encode(HELLO), reqId: reqIdOf(socket) });
+        const { reqId, verdict: answer } = client.request(HELLO);
+        expect(socket.written[0]).toEqual({ ...encode(HELLO), reqId });
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await answer;
     });
 
     it('gives each command its own request id', async () => {
         const { client, socket } = openClient();
-        const first = client.request(HELLO);
-        const second = client.request(HELLO);
+        const first = client.request(HELLO).verdict;
+        const second = client.request(HELLO).verdict;
         expect(reqIdOf(socket, 0)).not.toBe(reqIdOf(socket, 1));
 
         await client.received(resultFor(reqIdOf(socket, 0), 'confirmed', 0));
@@ -111,7 +111,7 @@ describe('request', () => {
 
     it('resolves confirmed for a result carrying code 0', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         expect(await answer).toMatchObject({
             outcome: 'confirmed',
@@ -124,14 +124,14 @@ describe('request', () => {
 
     it('resolves failed for a result carrying a non-zero code', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'failed', 3203));
         expect(await answer).toMatchObject({ outcome: 'failed', code: 3203, detail: 'because' });
     });
 
     it('reads a result that carries no detail as an empty detail', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(
             JSON.stringify({ type: 'command_result', reqId: reqIdOf(socket), outcome: 'confirmed', code: 0, detail: null }),
         );
@@ -140,22 +140,22 @@ describe('request', () => {
 
     it('resolves rejected when the bridge turned the request away', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'rejected', null));
         expect((await answer).outcome).toBe('rejected');
     });
 
     it('reads a result whose outcome it does not recognise as unknown', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'pirouette', 0));
         expect((await answer).outcome).toBe('unknown');
     });
 
     it('matches each verdict to its own request when they arrive out of order', async () => {
         const { client, socket } = openClient();
-        const first = client.request(HELLO);
-        const second = client.request(DANCE);
+        const first = client.request(HELLO).verdict;
+        const second = client.request(DANCE).verdict;
 
         await client.received(resultFor(reqIdOf(socket, 1), 'failed', 3203));
         await client.received(resultFor(reqIdOf(socket, 0), 'confirmed', 0));
@@ -167,7 +167,7 @@ describe('request', () => {
     it('resolves failed at once when the socket is closed, without waiting out the backstop', async () => {
         const { client, socket } = openClient();
         socket.readyState = CLOSED;
-        const answer = await client.request(HELLO);
+        const answer = await client.request(HELLO).verdict;
         expect(answer).toMatchObject({ outcome: 'failed', label: 'Hello' });
         expect(socket.frames).toEqual([]);
     });
@@ -175,7 +175,7 @@ describe('request', () => {
     it('resolves unknown when no result arrives before the client-side timeout', async () => {
         vi.useFakeTimers();
         const { client } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await vi.advanceTimersByTimeAsync(BACKSTOP_MS + 1);
         expect(await answer).toMatchObject({ outcome: 'unknown', label: 'Hello' });
     });
@@ -184,7 +184,7 @@ describe('request', () => {
         vi.useFakeTimers();
         const { client, socket } = openClient();
         let settled = false;
-        const answer = client.request(HELLO).then((outcome) => {
+        const answer = client.request(HELLO).verdict.then((outcome) => {
             settled = true;
             return outcome;
         });
@@ -198,7 +198,7 @@ describe('request', () => {
 
     it('settles every waiting request when the control channel closes', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         const reqId = reqIdOf(socket);
         client.closed();
         expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
@@ -207,7 +207,7 @@ describe('request', () => {
 
     it('ignores a verdict that arrives after its request already settled', async () => {
         const { client, socket } = openClient();
-        const answer = client.request(HELLO);
+        const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         expect((await answer).outcome).toBe('confirmed');
 
@@ -311,7 +311,7 @@ describe('robot state', () => {
 
 /** Settles `_cue` through a client that confirms it at once, as the relay would. */
 const confirm = (_cue: Cue) =>
-    send({ request: () => Promise.resolve({ ...OK, reqId: 0 }) })(_cue);
+    send({ request: () => ({ reqId: 0, verdict: Promise.resolve({ ...OK, reqId: 0 }) }) })(_cue);
 
 const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
     JSON.stringify({ type: 'robot_settings', speedLevel, obstacleAvoidance });
@@ -504,7 +504,7 @@ describe('sport_state report', () => {
         const done = send(client)(enter('Jumping'));
         await client.received(sportState(2011));
         expect(get(robotState).settled.gait).toBe('Handstand');
-        expect(get(robotState).pending.gait?.value).toBe('Jumping');
+        expect(get(robotState).pending.gait).toEqual({ value: 'Jumping', reqId: reqIdOf(socket) });
 
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await done;
