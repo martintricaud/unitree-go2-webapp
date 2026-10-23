@@ -14,7 +14,7 @@
     import { CONDUITE, presets } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { reported, robotState, send } from './lib/stores/robotState';
-    import { displayed, fieldStatus } from './lib/utils/confirmable';
+    import { displayed } from './lib/utils/confirmable';
 
     // let intervalId: any;
     /* STATE VARIABLES */
@@ -243,7 +243,8 @@
         <Switch
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
-            status={fieldStatus($robotState, 'obstacleAvoidance')}
+            confirmed={$robotState.settled.obstacleAvoidance}
+            spinning={$robotState.pending.obstacleAvoidance !== undefined}
             disabled={!$robotConnected || !$reported.obstacleAvoidance}
             callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />

@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
 import { enter, leave, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { displayed, fieldStatus } from '../utils/confirmable';
+import { displayed } from '../utils/confirmable';
 import { reported, robotState, send } from './robotState';
 import { robotConnected, robotReport } from './connection';
 import type { Outcome } from './outcomes';
@@ -39,7 +39,6 @@ describe('robotState', () => {
     expect(get(robotState)).toEqual({
       settled: { gait: 'FreeWalk', posture: null, headlight: 'green', speed: 0, obstacleAvoidance: true },
       pending: {},
-      lastOutcome: {},
     });
   });
 
@@ -56,15 +55,15 @@ describe('robotState', () => {
     reply('confirmed');
     expect((await done).outcome).toBe('confirmed');
     expect(get(robotState).settled).toMatchObject({ gait: 'Backstand', headlight: 'blue' });
-    expect(fieldStatus(get(robotState), 'gait')).toBe('confirmed');
+    expect(get(robotState).pending).toEqual({});
   });
 
   it('proposes only the fields whose value differs from the displayed one', async () => {
     const { client, reply } = stubClient();
     // The headlight is already blue, so only the gait is proposed.
     const done = send(client)(sequence('', enter('Trotting'), set({ name: 'headlight', value: 'blue' })));
-    expect(fieldStatus(get(robotState), 'gait')).toBe('pending');
-    expect(fieldStatus(get(robotState), 'headlight')).not.toBe('pending');
+    expect(get(robotState).pending.gait).toBeDefined();
+    expect(get(robotState).pending.headlight).toBeUndefined();
     reply('confirmed');
     await done;
   });
@@ -79,7 +78,7 @@ describe('robotState', () => {
     await done;
     expect(get(robotState).settled).toEqual(before);
     expect(displayed(get(robotState))).toEqual(before);
-    expect(fieldStatus(get(robotState), 'gait')).toBe(_outcome);
+    expect(get(robotState).pending).toEqual({});
   });
 
   it('proposes nothing for a cue that changes no tracked field, and still sends it', async () => {
@@ -132,8 +131,8 @@ describe('robotState', () => {
     reply('failed', 0);
     await first;
     expect(get(robotState).settled.gait).toBe(gait);
-    expect(fieldStatus(get(robotState), 'gait')).toBe('failed');
-    expect(fieldStatus(get(robotState), 'posture')).toBe('pending');
+    expect(get(robotState).pending.gait).toBeUndefined();
+    expect(get(robotState).pending.posture).toBeDefined();
 
     reply('confirmed', 1);
     await second;
@@ -256,7 +255,7 @@ describe("the robot's report", () => {
     const done = send(client)(enter('Jumping'));
     robotReport.set({ gait: 'CrossStep' });
     expect(get(robotState).settled.gait).toBe('CrossStep');
-    expect(fieldStatus(get(robotState), 'gait')).toBe('pending');
+    expect(get(robotState).pending.gait).toBeDefined();
     expect(displayed(get(robotState)).gait).toBe('Jumping');
     reply('failed');
     await done;

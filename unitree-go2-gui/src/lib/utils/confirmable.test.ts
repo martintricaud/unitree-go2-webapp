@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
-import { confirmable, displayed, fieldStatus } from './confirmable';
+import { confirmable, displayed } from './confirmable';
 import type { Outcome } from '../stores/outcomes';
 
 const verdict = (_outcome: Outcome['outcome']): Outcome => ({
@@ -22,7 +22,7 @@ describe('what the control shows', () => {
     it('shows the value it was created with while nothing has been asked for', () => {
         const state = confirmable(START);
         expect(displayed(get(state))).toEqual(START);
-        expect(get(state)).toEqual({ settled: START, pending: {}, lastOutcome: {} });
+        expect(get(state)).toEqual({ settled: START, pending: {} });
     });
 
     it("shows the operator's choice from the moment it is proposed, before any verdict", () => {
@@ -47,7 +47,6 @@ describe('the verdict on a proposal', () => {
         expect(get(state)).toEqual({
             settled: { ...START, mode: 'Pose', headlight: 'red' },
             pending: {},
-            lastOutcome: { mode: CONFIRMED, headlight: CONFIRMED },
         });
     });
 
@@ -59,7 +58,7 @@ describe('the verdict on a proposal', () => {
         const state = confirmable(START);
         state.propose({ mode: 'Pose' }, 1);
         state.resolve(1, _outcome);
-        expect(get(state)).toEqual({ settled: START, pending: {}, lastOutcome: { mode: _outcome } });
+        expect(get(state)).toEqual({ settled: START, pending: {} });
         expect(displayed(get(state))).toEqual(START);
     });
 
@@ -78,8 +77,7 @@ describe('proposals on different fields', () => {
         const state = confirmable(START);
         state.propose({ mode: 'Pose' }, 1);
         state.propose({ headlight: 'red' }, 2);
-        expect(fieldStatus(get(state), 'mode')).toBe('pending');
-        expect(fieldStatus(get(state), 'headlight')).toBe('pending');
+        expect(get(state).pending).toEqual({ mode: { value: 'Pose', reqId: 1 }, headlight: { value: 'red', reqId: 2 } });
         expect(displayed(get(state))).toEqual({ ...START, mode: 'Pose', headlight: 'red' });
     });
 
@@ -90,13 +88,11 @@ describe('proposals on different fields', () => {
 
         state.resolve(2, CONFIRMED);
         expect(get(state).settled).toEqual({ ...START, headlight: 'red' });
-        expect(fieldStatus(get(state), 'mode')).toBe('pending');
-        expect(fieldStatus(get(state), 'headlight')).toBe('confirmed');
+        expect(get(state).pending).toEqual({ mode: { value: 'Pose', reqId: 1 } });
 
         state.resolve(1, FAILED);
         expect(get(state).settled).toEqual({ ...START, headlight: 'red' });
-        expect(fieldStatus(get(state), 'mode')).toBe('failed');
-        expect(fieldStatus(get(state), 'headlight')).toBe('confirmed');
+        expect(get(state).pending).toEqual({});
     });
 });
 
@@ -172,42 +168,11 @@ describe('subscribers', () => {
     });
 });
 
-describe('the status a control shows for one field', () => {
-    it('is null for every field while nothing has been attempted', () => {
-        const state = confirmable(START);
-        expect(fieldStatus(get(state), 'mode')).toBeNull();
-        expect(fieldStatus(get(state), 'headlight')).toBeNull();
-    });
-
-    it('is pending only on the fields a proposal carries', () => {
-        const state = confirmable(START);
-        state.propose({ mode: 'Pose' }, 1);
-        expect(fieldStatus(get(state), 'mode')).toBe('pending');
-        expect(fieldStatus(get(state), 'headlight')).toBeNull();
-    });
-
-    it("carries the field's last verdict once its proposal is answered", () => {
-        const state = confirmable(START);
-        state.propose({ headlight: 'red' }, 1);
-        state.resolve(1, UNKNOWN);
-        expect(fieldStatus(get(state), 'headlight')).toBe('unknown');
-        expect(fieldStatus(get(state), 'mode')).toBeNull();
-    });
-
-    it('is pending again when the field is proposed after a verdict', () => {
-        const state = confirmable(START);
-        state.propose({ headlight: 'red' }, 1);
-        state.resolve(1, FAILED);
-        state.propose({ headlight: 'red' }, 2);
-        expect(fieldStatus(get(state), 'headlight')).toBe('pending');
-    });
-});
-
 describe('a value the robot reports', () => {
     it('replaces the reported fields of the settled value and keeps the others', () => {
         const state = confirmable(START);
         state.observe({ speed: 1 });
-        expect(get(state)).toEqual({ settled: { ...START, speed: 1 }, pending: {}, lastOutcome: {} });
+        expect(get(state)).toEqual({ settled: { ...START, speed: 1 }, pending: {} });
     });
 
     it('leaves pending entries unchanged, so a pending value stays displayed', () => {
@@ -220,18 +185,6 @@ describe('a value the robot reports', () => {
         expect(get(state).pending).toBe(pending);
         expect(get(state).settled).toEqual({ ...START, speed: -1, mode: 'Damp' });
         expect(displayed(get(state))).toEqual({ ...START, speed: 1, mode: 'Pose' });
-    });
-
-    it('leaves the last outcomes untouched', () => {
-        const state = confirmable(START);
-        state.propose({ speed: 1 }, 1);
-        state.resolve(1, FAILED);
-        const { lastOutcome } = get(state);
-
-        state.observe({ speed: -1 });
-
-        expect(get(state).lastOutcome).toBe(lastOutcome);
-        expect(get(state).settled.speed).toBe(-1);
     });
 
     it('is what a refused proposal falls back to', () => {

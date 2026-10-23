@@ -2,13 +2,12 @@
     import { webSocketConnected, robotConnected } from '../lib/stores/connection';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
     import type { Outcome } from '../lib/stores/outcomes';
-    import OutcomeMark from './OutcomeMark.svelte';
 
     let showLog = false;
 </script>
 
 {#snippet summary(entry: Outcome)}
-    {entry.label} <OutcomeMark status={entry.outcome} /> {entry.outcome}{entry.code === null ? '' : ` (${entry.code})`}
+    {entry.label} {entry.outcome}{entry.code === null ? '' : ` (${entry.code})`}
 {/snippet}
 
 <div class="strip">

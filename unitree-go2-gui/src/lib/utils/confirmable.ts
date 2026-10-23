@@ -6,28 +6,20 @@ import type { Outcome } from '../stores/outcomes';
 /// Each field waits on its own request, so a verdict on one field leaves the others pending.
 /// A field whose pending entry is undefined shows `settled`, so clearing an entry restores the
 /// earlier value.
-///
-/// Each update below spreads the old record under a `mapValues` that replaces all its fields. The
-/// spread changes no value; it keeps each field's type, which `mapValues` loses on a generic record.
 export type Confirmable<T extends Record<string, unknown>> = {
     settled: T;
     pending: { [K in keyof T]?: { value: T[K]; reqId: number } };
-    lastOutcome: { [K in keyof T]?: Outcome };
 };
 
+/// The settled values with every pending value laid over them.
 export const displayed = <T extends Record<string, unknown>>(_state: Confirmable<T>): T => ({
+    // The spread keeps each field's type, as in `resolve`; `mapValues` then replaces every value.
     ..._state.settled,
     ...mapValues(_state.settled, (_value, _field) => {
         const _entry = _state.pending[_field];
         return _entry === undefined ? _value : _entry.value;
     }),
 });
-
-/// What a control showing one field reports about it.
-export function fieldStatus<T extends Record<string, unknown>>(_state: Confirmable<T>, _field: keyof T) {
-    if (_state.pending[_field] !== undefined) return 'pending';
-    return _state.lastOutcome[_field]?.outcome ?? null;
-}
 
 /// There is no `set`, so no caller can show a value that neither the operator asked for nor the
 /// robot stated.
@@ -38,7 +30,7 @@ export const confirmable = <T extends Record<string, unknown>>(
     resolve: (reqId: number, outcome: Outcome) => void;
     observe: (fields: Partial<T>) => void;
 } => {
-    const { subscribe, update } = writable<Confirmable<T>>({ settled, pending: {}, lastOutcome: {} });
+    const { subscribe, update } = writable<Confirmable<T>>({ settled, pending: {} });
     return {
         subscribe,
         /// A field already pending is replaced, so its earlier request's verdict no longer reaches it.
@@ -54,6 +46,8 @@ export const confirmable = <T extends Record<string, unknown>>(
                 const isAnswered = (_field: keyof T) => state.pending[_field]?.reqId === reqId;
                 if (!keys(state.settled).some(isAnswered)) return state;
                 const settles = outcome.outcome === 'confirmed';
+                // Each `mapValues` below replaces every field, so the spread before it changes no
+                // value. The spread keeps each field's type, which `mapValues` loses on a generic record.
                 return {
                     settled: {
                         ...state.settled,
@@ -65,12 +59,6 @@ export const confirmable = <T extends Record<string, unknown>>(
                     pending: {
                         ...state.pending,
                         ...mapValues(state.pending, (_entry, _field) => (isAnswered(_field) ? undefined : _entry)),
-                    },
-                    lastOutcome: {
-                        ...state.lastOutcome,
-                        ...mapValues(state.settled, (_value, _field) =>
-                            isAnswered(_field) ? outcome : state.lastOutcome[_field],
-                        ),
                     },
                 };
             }),
