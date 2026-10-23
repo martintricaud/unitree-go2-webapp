@@ -255,8 +255,8 @@ export class WebSocketClient {
         }
     }
 
-    /// Send a cue and wait for the relay's verdict on it. `reqId` is the id the relay sees, so the
-    /// caller can attach its own bookkeeping to the same id.
+    /// Send a cue. Returns at once with the id the relay sees and a promise of the relay's verdict,
+    /// so the caller can attach its own bookkeeping to the same id.
     request(cue: Cue): { reqId: number; verdict: Promise<Outcome> } {
         const reqId = (this.lastRequestId += 1);
         const label = cueLabel(cue);

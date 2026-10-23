@@ -135,7 +135,7 @@
             case 'Christine':
                 switch (event.key) {
                     // case 'ArrowRight':
-                    //     if (shown.mode !== 'Pose') {
+                    //     if (shown.posture !== 'Pose') {
                     //         void sendToRobot(presets.enterPose);
                     //     }
                     //     intervalId = setInterval(() => {

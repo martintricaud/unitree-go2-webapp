@@ -21,7 +21,7 @@
     role="switch"
     class="switch"
     class:on={confirmed ?? value}
-    class:active={value}
+    class:knob-right={value}
     {disabled}
     on:click={() => callback(!value)}>
     <div class="slider"></div>
@@ -86,22 +86,27 @@
         transition: left 0.3s;
     }
 
-    .switch.active .slider {
+    .switch.knob-right .slider {
         left: calc(var(--switch-width) - var(--slider-size) - var(--switch-padding));
     }
 
-    /* Centred in the track, so the knob covers it on neither side. */
+    /* Centred on the part of the track the knob does not cover. The track's inner width is
+       --switch-width minus its 6px of border, and the knob is --slider-size minus 6px wide. */
     .spinner {
         position: absolute;
         top: 50%;
-        left: 50%;
-        width: 8px;
-        height: 8px;
-        margin: -6px 0 0 -6px;
+        left: calc((var(--switch-width) + var(--slider-size) - 12px) / 2);
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
         border: 2px solid #555;
         border-top-color: transparent;
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
+    }
+
+    .switch.knob-right .spinner {
+        left: calc((var(--switch-width) - var(--slider-size)) / 2);
     }
 
     @keyframes spin {
