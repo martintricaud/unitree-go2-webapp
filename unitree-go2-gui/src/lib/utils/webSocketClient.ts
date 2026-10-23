@@ -1,12 +1,20 @@
 import { isIncludedIn, keys, values } from 'remeda';
 import { ACTIONS } from '../data/actions';
-import { MODES } from '../data/modes';
+import { MCF_MODE_CODES, MODES } from '../data/modes';
+import type { Mode } from '../data/modes';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
 import { OUTCOMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import { NO_ROBOT_SETTINGS, robotConnected, robotSettings, videoFrame, webSocketConnected } from '../stores/connection';
+import {
+    NO_ROBOT_SETTINGS,
+    robotConnected,
+    robotMode,
+    robotSettings,
+    videoFrame,
+    webSocketConnected,
+} from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -23,7 +31,10 @@ type RelayMessage =
           type: 'robot_settings';
           speedLevel: number | null;
           obstacleAvoidance: RobotState['obstacleAvoidance'] | null;
-      };
+      }
+    /// The robot's `rt/lf/sportmodestate` report, sent only when one of its fields changes. Null for
+    /// a field the report did not carry, or for a motion-control mode the relay could not read.
+    | { type: 'sport_state'; motionMode: string | null; mode: number | null; errorCode: number | null };
 
 /// A cue as the relay reads it.
 type Wire =
@@ -120,6 +131,15 @@ function RELAY_SILENT(_reqId: number, _label: string): Outcome {
     };
 }
 
+/// Widened to every number, so any reported code can be looked up; an absent code reads as undefined.
+const MODE_BY_CODE: Partial<Record<number, Mode>> = MCF_MODE_CODES;
+
+/// The mode a report names, or null for a report outside "mcf", whose codes this map does not cover.
+function decodeMode(_motionMode: string | null, _errorCode: number | null) {
+    if (_motionMode !== 'mcf' || _errorCode === null) return null;
+    return MODE_BY_CODE[_errorCode] ?? null;
+}
+
 /// The part of a WebSocket this client writes to, so a test can supply a recorder.
 export type Sink = { readyState: number; send(data: string): void };
 
@@ -168,6 +188,7 @@ export class WebSocketClient {
         webSocketConnected.set(false);
         robotConnected.set(false);
         robotSettings.set(NO_ROBOT_SETTINGS);
+        robotMode.set(null);
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.pending]) {
@@ -188,7 +209,10 @@ export class WebSocketClient {
         switch (msg.type) {
             case 'robot_state':
                 robotConnected.set(msg.connected);
-                if (!msg.connected) robotSettings.set(NO_ROBOT_SETTINGS);
+                if (!msg.connected) {
+                    robotSettings.set(NO_ROBOT_SETTINGS);
+                    robotMode.set(null);
+                }
                 return;
             case 'robot_settings': {
                 const speed = isIncludedIn(msg.speedLevel, values(SPEED_LEVELS)) ? msg.speedLevel : null;
@@ -200,6 +224,11 @@ export class WebSocketClient {
                 }));
                 return;
             }
+            case 'sport_state':
+                // An unmapped report sets null, so the next mapped report emits even when it names
+                // the same mode as the last one.
+                robotMode.set(decodeMode(msg.motionMode, msg.errorCode));
+                return;
             case 'command_result': {
                 if (msg.reqId === null) {
                     console.warn('Dropping a verdict on a command this browser did not send:', msg);

@@ -20,6 +20,19 @@ def reply_for(api_id, code, request_id=1):
     return {"type": "res", "topic": "rt/api/sport/request", "data": {"header": header}}
 
 
+MOTION_SWITCHER = "rt/api/motion_switcher/request"
+
+
+def motion_switcher_reply(name):
+    """The motion switcher's answer to api_id 1001: the mode's name inside a JSON string."""
+    header = {"identity": {"id": 1, "api_id": 1001}, "status": {"code": 0}}
+    return {
+        "type": "res",
+        "topic": MOTION_SWITCHER,
+        "data": {"header": header, "data": json.dumps({"name": name})},
+    }
+
+
 class FakeChannel:
     """The aiortc data channel as pub_sub uses it: a ready state and a send()."""
 
@@ -40,10 +53,15 @@ class ScriptedPubSub:
     ("late", n)  reply only after the caller has already timed out
     "reject"     the bridge refuses the request, in a message carrying no request id
     ("raise", e) fail to send at all
+    ("reply", r) answer with the reply r as given
+
+    `motion_switcher` is the script for the motion-control-mode request, which is told apart by
+    its topic because its api_id 1001 is also Damp's. By default the robot answers "mcf".
     """
 
-    def __init__(self, behaviour=None, reply_delay=0.001, late_delay=0.10):
+    def __init__(self, behaviour=None, reply_delay=0.001, late_delay=0.10, motion_switcher=None):
         self.behaviour = behaviour or {}
+        self.motion_switcher = motion_switcher or ("reply", motion_switcher_reply("mcf"))
         self.reply_delay = reply_delay
         self.late_delay = late_delay
         self.sent = []
@@ -71,7 +89,10 @@ class ScriptedPubSub:
     async def publish_request_new(self, topic, options=None, timeout=None):
         api_id = (options or {}).get("api_id")
         self.sent.append({"topic": topic, "options": options, "timeout": timeout, "awaited": True})
-        script = self.behaviour.get(api_id, ("code", 0))
+        if topic == MOTION_SWITCHER:
+            script = self.motion_switcher
+        else:
+            script = self.behaviour.get(api_id, ("code", 0))
 
         if script == "reject":
             asyncio.get_running_loop().call_soon(
@@ -86,6 +107,10 @@ class ScriptedPubSub:
 
         if script[0] == "raise":
             raise script[1]
+
+        if script[0] == "reply":
+            await asyncio.sleep(self.reply_delay)
+            return script[1]
 
         if script[0] == "late":
             await asyncio.sleep(self.late_delay)

@@ -1,9 +1,9 @@
-import { isDeepEqual, isNonNull, mapValues, pickBy } from 'remeda';
+import { isDeepEqual, isEmpty, isNonNull, mapValues, pickBy } from 'remeda';
 import { derived, get } from 'svelte/store';
 import { transition } from '../utils/commands';
 import type { Cue, RobotState } from '../utils/commands';
 import { confirmable, displayed } from '../utils/confirmable';
-import { robotSettings } from './connection';
+import { robotMode, robotSettings } from './connection';
 import type { WebSocketClient } from '../utils/webSocketClient';
 
 export const robotState = confirmable<RobotState>({
@@ -18,6 +18,11 @@ export const robotState = confirmable<RobotState>({
 /// The robot's report settles the fields it carries; a field it has not reported keeps its value.
 robotSettings.subscribe((_settings) => robotState.observe(pickBy(_settings, isNonNull)));
 
+/// A report that names no mode leaves the settled mode as it was.
+robotMode.subscribe((_mode) => {
+    if (_mode !== null) robotState.observe({ mode: _mode });
+});
+
 /// Whether the robot has reported each field it states since the robot or the control channel
 /// was last lost.
 export const reported = derived(robotSettings, (_settings) => mapValues(_settings, isNonNull));
@@ -25,14 +30,14 @@ export const reported = derived(robotSettings, (_settings) => mapValues(_setting
 /// Browser-side only: WebSocketClient mints the ids the relay sees.
 let lastProposal = 0;
 
-/// Shows the state the cue leads to as pending until the relay's verdict settles or reverts it.
+/// Shows each field the cue changes as pending until the relay's verdict settles or drops it.
 /// The client is taken by the one method used, so a test can stand in for the relay.
 export function send(_client: Pick<WebSocketClient, 'request'>) {
     return async function (_cue: Cue) {
         const shown = displayed(get(robotState));
-        const next = transition(_cue)(shown);
+        const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
         const proposalId = (lastProposal += 1);
-        if (!isDeepEqual(next, shown)) robotState.propose(next, proposalId);
+        if (!isEmpty(changed)) robotState.propose(changed, proposalId);
         const verdict = await _client.request(_cue);
         robotState.resolve(proposalId, verdict);
         return verdict;

@@ -11,7 +11,7 @@ import pytest
 import main
 from go2_webrtc_driver.msgs.error_handler import handle_error
 
-from .conftest import FakeConnection, FakeWebSocket, reply_for
+from .conftest import MOTION_SWITCHER, FakeConnection, FakeWebSocket, motion_switcher_reply, reply_for
 
 TOPIC = "rt/api/sport/request"
 
@@ -667,15 +667,15 @@ def settings_frames(ws):
     return [message for message in ws.sent if message.get("type") == "robot_settings"]
 
 
-async def deliver(pub_sub, message):
+async def deliver(pub_sub, message, topic=MULTIPLE_STATE):
     """Deliver a report, then let the notification task it schedules run."""
-    pub_sub.deliver(MULTIPLE_STATE, message)
+    pub_sub.deliver(topic, message)
     await asyncio.sleep(0)
 
 
 async def test_a_successful_connect_subscribes_to_the_robots_settings_once(monkeypatch, session, pub_sub):
     await connect_through_driver(monkeypatch, session, pub_sub)
-    assert pub_sub.subscribe_calls == [MULTIPLE_STATE]
+    assert pub_sub.subscribe_calls.count(MULTIPLE_STATE) == 1
 
 
 async def test_a_report_is_forwarded_with_both_values(monkeypatch, session, pub_sub, gui):
@@ -746,3 +746,155 @@ async def test_a_new_connect_attempt_forgets_the_last_report_sent(monkeypatch, s
     await connect_through_driver(monkeypatch, session, pub_sub)
     await deliver(pub_sub, report())
     assert len(settings_frames(gui)) == 2
+
+
+# ── The robot's mode report ──────────────────────────────────────────────────────────────
+
+SPORT_MOD_STATE = "rt/lf/sportmodestate"
+
+
+def sport_report(mode=0, error_code=2008):
+    """One rt/lf/sportmodestate message as the driver hands it over: `data` is a dict."""
+    data = {"mode": mode, "error_code": error_code, "progress": 0, "gait_type": 0}
+    return {"type": "msg", "topic": SPORT_MOD_STATE, "data": data}
+
+
+def sport_frames(ws):
+    return [message for message in ws.sent if message.get("type") == "sport_state"]
+
+
+def stream_frames(ws):
+    return [message for message in ws.sent if message.get("type") == "state_stream"]
+
+
+class FakeOscClient:
+    def __init__(self):
+        self.sent = []
+
+    def send_message(self, address, value):
+        self.sent.append((address, value))
+
+
+@pytest.fixture
+def osc(monkeypatch):
+    """The OSC client the monitor output writes to, so no test sends UDP."""
+    client = FakeOscClient()
+    monkeypatch.setattr(main, "osc_client", client)
+    return client
+
+
+async def test_a_successful_connect_asks_the_motion_mode_and_subscribes_the_mode_report_once(monkeypatch, session, pub_sub):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    requests = [sent for sent in pub_sub.sent if sent["topic"] == MOTION_SWITCHER]
+    assert requests == [
+        {"topic": MOTION_SWITCHER, "options": {"api_id": 1001}, "timeout": main.ACK_TIMEOUT, "awaited": True},
+    ]
+    assert session.motion_mode == "mcf"
+    assert pub_sub.subscribe_calls == [MULTIPLE_STATE, SPORT_MOD_STATE]
+
+
+async def test_a_mode_report_is_forwarded_with_the_motion_mode(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, sport_report(mode=0, error_code=2008), topic=SPORT_MOD_STATE)
+    assert sport_frames(gui) == [
+        {"type": "sport_state", "motionMode": "mcf", "mode": 0, "errorCode": 2008},
+    ]
+
+
+async def test_a_missing_mode_field_is_forwarded_as_none(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, {"data": {"mode": 1}}, topic=SPORT_MOD_STATE)
+    assert sport_frames(gui) == [
+        {"type": "sport_state", "motionMode": "mcf", "mode": 1, "errorCode": None},
+    ]
+
+
+async def test_a_repeated_mode_report_is_not_forwarded_again(monkeypatch, session, pub_sub, gui):
+    """The robot publishes at 20-50 Hz; the browser needs only the changes."""
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, sport_report(error_code=1013), topic=SPORT_MOD_STATE)
+    await deliver(pub_sub, sport_report(error_code=1013), topic=SPORT_MOD_STATE)
+    await deliver(pub_sub, sport_report(error_code=2008), topic=SPORT_MOD_STATE)
+    assert [frame["errorCode"] for frame in sport_frames(gui)] == [1013, 2008]
+
+
+@pytest.mark.parametrize("message", [
+    {"data": "not a dict"},
+    {"data": None},
+    {"topic": SPORT_MOD_STATE},
+    "not a message",
+])
+@pytest.mark.parametrize("monitoring", [False, True])
+async def test_an_unreadable_mode_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, osc, caplog, message, monitoring):
+    """With monitoring on, the monitor output still forwards the raw message as state_stream."""
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await session.subscribe_to_robotstate(monitoring)
+    await deliver(pub_sub, message, topic=SPORT_MOD_STATE)
+    assert sport_frames(gui) == []
+    if not monitoring:
+        assert gui.sent == []
+    assert any("rt/lf/sportmodestate" in record.getMessage() for record in caplog.records)
+
+
+async def test_monitoring_is_off_until_switched_on(monkeypatch, session, pub_sub, gui, osc):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, sport_report(error_code=1013), topic=SPORT_MOD_STATE)
+    assert stream_frames(gui) == []
+    assert osc.sent == []
+
+    await session.subscribe_to_robotstate(True)
+    report = sport_report(error_code=1013)
+    await deliver(pub_sub, report, topic=SPORT_MOD_STATE)
+    assert stream_frames(gui) == [{"type": "state_stream", "data": report["data"]}]
+    assert osc.sent == [("/go2/data", report["data"])]
+
+
+async def test_switching_monitoring_off_keeps_the_mode_report_subscribed(monkeypatch, session, pub_sub, gui, osc):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await session.subscribe_to_robotstate(True)
+    await session.subscribe_to_robotstate(False)
+    assert pub_sub.subscriptions[SPORT_MOD_STATE] == session.note_sport_state
+    assert pub_sub.subscribe_calls.count(SPORT_MOD_STATE) == 1
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    assert len(sport_frames(gui)) == 1
+    assert stream_frames(gui) == []
+
+
+@pytest.mark.parametrize("script", [
+    "silent",
+    ("raise", RuntimeError("channel closed")),
+    ("reply", None),
+    ("reply", {"type": "res", "data": {"data": "not json"}}),
+    ("reply", {"type": "res", "data": {"data": json.dumps({"mode": "mcf"})}}),
+    ("reply", motion_switcher_reply(None)),
+])
+async def test_an_unanswered_motion_mode_request_leaves_it_none_and_the_connection_up(monkeypatch, session, pub_sub, gui, fast_timeouts, script):
+    pub_sub.motion_switcher = script
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    assert session.conn is not None
+    assert session.motion_mode is None
+    assert pub_sub.subscribe_calls == [MULTIPLE_STATE, SPORT_MOD_STATE]
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    assert sport_frames(gui) == [
+        {"type": "sport_state", "motionMode": None, "mode": 0, "errorCode": 2008},
+    ]
+
+
+async def test_a_browser_that_connects_is_sent_the_next_mode_report_even_if_unchanged(monkeypatch, relay, pub_sub, gui):
+    await connect_through_driver(monkeypatch, relay, pub_sub)
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    assert len(sport_frames(gui)) == 1
+
+    reloaded = FakeWebSocket([])
+    await main.ws_api(reloaded)
+    assert relay.reported_sport_state is None
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    assert len(sport_frames(reloaded)) == 1
+
+
+async def test_a_new_connect_attempt_forgets_the_last_mode_report_sent(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
+    assert len(sport_frames(gui)) == 2

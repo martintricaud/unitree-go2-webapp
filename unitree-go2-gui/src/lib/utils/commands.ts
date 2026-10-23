@@ -62,12 +62,10 @@ export function cueLabel(_cue: Cue) {
     }
 }
 
-export type Posture = 'standing' | 'sitting' | 'lying';
-
 export type RobotState = {
     /// Null once a mode was left: the API does not say which mode follows.
     mode: Mode | null;
-    posture: Posture;
+    posture: Extract<(typeof ACTIONS)[Action], { posture: string }>['posture'];
     headlight: (typeof COLOURS)[number];
     speed: (typeof SPEED_LEVELS)[keyof typeof SPEED_LEVELS];
     obstacleAvoidance: boolean;

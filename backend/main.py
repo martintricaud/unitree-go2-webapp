@@ -102,6 +102,16 @@ class RobotSession:
         # The (speedLevel, obstacleAvoidance) pair the browser was last sent, for the same
         # reason. None means it has been sent none.
         self.reported_settings: tuple | None = None
+        # The motion-control mode the robot named when asked after connecting ("mcf", "normal",
+        # ...), or None when it did not answer. The meaning of `mode` and `error_code` on
+        # rt/lf/sportmodestate depends on it.
+        self.motion_mode: str | None = None
+        # The (motionMode, mode, errorCode) triple the browser was last sent, so sport_state is
+        # sent on a change and not on every message. None means it has been sent none.
+        self.reported_sport_state: tuple | None = None
+        # Whether the "Monitor State" switch is on: each rt/lf/sportmodestate message is then
+        # also printed, sent over OSC and forwarded whole as state_stream.
+        self.monitoring = False
         self.channel_open_since: float | None = None
         self.watcher: asyncio.Task | None = None
 
@@ -112,6 +122,8 @@ class RobotSession:
             return
         # The robot of this attempt has reported nothing yet, so its first report must be sent.
         self.reported_settings = None
+        self.reported_sport_state = None
+        self.motion_mode = None
         # Initialize the connection object with the defined connection method and IP
         # self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalSTA,ip=ip )
         self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalAP)
@@ -125,6 +137,10 @@ class RobotSession:
             # without asking. The driver drops a subscribe sent before the channel validates;
             # conn.connect() returns only after validation.
             self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["MULTIPLE_STATE"], self.note_settings)
+            self.motion_mode = await self.request_motion_mode()
+            # The driver keeps one callback per topic, so this is the only subscription to
+            # rt/lf/sportmodestate; the "Monitor State" switch only sets self.monitoring.
+            self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["LF_SPORT_MOD_STATE"], self.note_sport_state)
             # The channel is reported by watch_robot rather than here: the driver's validation
             # callback may not have run yet, so reading data_channel_opened at this moment can
             # say false about a connection that then works.
@@ -226,26 +242,70 @@ class RobotSession:
                 logging.exception("Failed to report the robot's state")
 
     async def subscribe_to_robotstate(self, switch):
-        def callback(message):
+        """Turn the monitor output of rt/lf/sportmodestate on or off. The topic stays
+        subscribed either way, because the mode report depends on it."""
+        self.monitoring = bool(switch)
+
+    async def request_motion_mode(self):
+        """Ask the motion switcher which motion-control mode the robot runs. Any failure
+        returns None and leaves the connection as it is: the mode report then carries no
+        motion-control mode, which tells the browser to ignore it."""
+        try:
+            reply = await self.conn.datachannel.pub_sub.publish_request_new(
+                RTC_TOPIC["MOTION_SWITCHER"], {"api_id": 1001}, timeout=ACK_TIMEOUT
+            )
+            name = json.loads(reply["data"]["data"])["name"]
+        except Exception:
+            logging.exception("The robot did not report its motion-control mode")
+            return None
+        if not isinstance(name, str):
+            logging.warning("Ignoring a motion-control mode that is not a name: %r", name)
+            return None
+        logging.info("The robot runs the motion-control mode %r", name)
+        return name
+
+    def monitor_sport_state(self, message):
+        """The "Monitor State" output: print the message, send it over OSC and forward it whole."""
+        try:
             print(message)
             osc_client.send_message("/go2/data", message.get('data'))
-            try:
-                asyncio.get_running_loop().create_task(
-                    notify_frontend({
-                        'type': 'state_stream',
-                        'data': message.get('data')
-                    })
-                )
-            except Exception as e:
-                logging.exception("Failed to schedule state notification")
-        if switch:
-            self.conn.datachannel.pub_sub.subscribe(
-                RTC_TOPIC['LF_SPORT_MOD_STATE'], callback )
-            # the following topics have a subscribe method: MULTIPLE_STATE, SPORT_MOD_STATE, LOW_STATE
-   
-        else :
-            self.conn.datachannel.pub_sub.unsubscribe(RTC_TOPIC['LF_SPORT_MOD_STATE'])
-        
+            asyncio.get_running_loop().create_task(
+                notify_frontend({'type': 'state_stream', 'data': message.get('data')})
+            )
+        except Exception:
+            logging.exception("Failed to monitor an rt/lf/sportmodestate message")
+
+    def note_sport_state(self, message):
+        """Forward the mode the robot reports on rt/lf/sportmodestate, with the motion-control
+        mode that gives it its meaning, when the triple differs from what the browser was last
+        sent. The topic publishes at 20-50 Hz, so an unchanged report is dropped. The driver
+        calls this synchronously, so the send is scheduled as a task."""
+        if self.monitoring:
+            self.monitor_sport_state(message)
+        try:
+            data = message["data"]
+            if not isinstance(data, dict):
+                raise TypeError(f"data is a {type(data).__name__}, not a dict")
+            sport_state = (self.motion_mode, data.get("mode"), data.get("error_code"))
+        except Exception:
+            logging.exception("Ignoring an unreadable rt/lf/sportmodestate message: %r", message)
+            return
+        if sport_state == self.reported_sport_state:
+            return
+        motion_mode, mode, error_code = sport_state
+        try:
+            asyncio.get_running_loop().create_task(
+                notify_frontend({
+                    "type": "sport_state",
+                    "motionMode": motion_mode,
+                    "mode": mode,
+                    "errorCode": error_code,
+                })
+            )
+            self.reported_sport_state = sport_state
+        except Exception:
+            logging.exception("Failed to schedule the sport-state notification")
+
     def note_settings(self, message):
         """Forward the speed level and obstacle-avoidance switch the robot reports on
         rt/multiplestate, when they differ from what the browser was last sent. The driver
@@ -475,6 +535,7 @@ async def ws_api(ws: WebSocket):
     # answer rather than treat it as unchanged from what the previous browser was told.
     robot.reported_reachable = None
     robot.reported_settings = None
+    robot.reported_sport_state = None
     try:
         while True:
             try:

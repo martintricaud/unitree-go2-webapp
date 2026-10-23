@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import { NO_ROBOT_SETTINGS, robotConnected, robotSettings } from '../stores/connection';
+import { NO_ROBOT_SETTINGS, robotConnected, robotMode, robotSettings } from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
 import { reported, robotState } from '../stores/robotState';
-import { perform, sequence } from './commands';
+import { enter, perform, sequence } from './commands';
+import { send } from '../stores/robotState';
 
 // The relay bounds every command at 5s.
 const RELAY_WORST_CASE_MS = 5_000;
@@ -34,6 +35,8 @@ class FakeSocket implements Sink {
 const HELLO = perform('Hello');
 
 const DANCE = sequence('Dance', HELLO);
+
+const OK = { outcome: 'confirmed', code: 0, detail: '', label: '', at: 0 } as const;
 
 const resultFor = (reqId: number, outcome: string, code: number | null, detail = 'because') =>
     JSON.stringify({ type: 'command_result', reqId, outcome, code, detail });
@@ -386,5 +389,76 @@ describe('robot settings', () => {
         client.closed();
         expect(get(robotSettings)).toEqual(NO_ROBOT_SETTINGS);
         expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
+    });
+});
+
+describe('mode report', () => {
+    beforeEach(() => {
+        robotMode.set(null);
+    });
+
+    const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
+        JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
+
+    it('settles the mode to Leaping on code 2008 under mcf', async () => {
+        const { client } = openClient();
+        await client.received(sportState(2008));
+        expect(get(robotMode)).toBe('Leaping');
+        expect(get(robotState).settled.mode).toBe('Leaping');
+    });
+
+    it.each([
+        ['BalanceStand (1013)', 1013, 'mcf'],
+        ['an unmapped code', 4242, 'mcf'],
+        ['no code', null, 'mcf'],
+        ['a motion-control mode other than mcf', 2008, 'normal'],
+        ['an unread motion-control mode', 2008, null],
+    ])('leaves the mode unchanged on %s', async (_case, _code, _motionMode) => {
+        const { client } = openClient();
+        await client.received(sportState(1016));
+        await client.received(sportState(_code, _motionMode));
+        expect(get(robotMode)).toBeNull();
+        expect(get(robotState).settled.mode).toBe('Trotting');
+    });
+
+    it('settles the earlier mode again when it is reported after an unmapped report', async () => {
+        const { client } = openClient();
+        await client.received(sportState(2017));
+        expect(get(robotState).settled.mode).toBe('Backstand');
+
+        // A cue settles another mode while the robot's report names none.
+        await client.received(sportState(1013));
+        const stub = { request: () => Promise.resolve({ ...OK, reqId: 0 }) };
+        await send(stub)(enter('Damp'));
+        expect(get(robotState).settled.mode).toBe('Damp');
+
+        await client.received(sportState(2017));
+        expect(get(robotState).settled.mode).toBe('Backstand');
+    });
+
+    it('leaves a pending mode proposal pending', async () => {
+        const { client, socket } = openClient();
+        const done = send(client)(enter('Jumping'));
+        await client.received(sportState(2011));
+        expect(get(robotState).settled.mode).toBe('Handstand');
+        expect(get(robotState).pending.mode?.value).toBe('Jumping');
+
+        await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
+        await done;
+        expect(get(robotState).settled.mode).toBe('Jumping');
+    });
+
+    it('forgets the report when the robot is lost', async () => {
+        const { client } = openClient();
+        await client.received(sportState(2008));
+        await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
+        expect(get(robotMode)).toBeNull();
+    });
+
+    it('forgets the report when the control channel closes', async () => {
+        const { client } = openClient();
+        await client.received(sportState(2008));
+        client.closed();
+        expect(get(robotMode)).toBeNull();
     });
 });

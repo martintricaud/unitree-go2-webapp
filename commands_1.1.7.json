@@ -69,7 +69,7 @@
         "command_name": "ClassicWalk",
         "topic": "SPORT_MOD",
         "api_id": 2049,
-        "description": "Comme le mode par défaut (FreeWalk?) mais en plus lent et plus pataud.Correspond à Normal sur la télécommande"
+        "description": "Comme le mode par défaut (FreeWalk?) mais en plus lent et plus pataud. Correspond à Normal sur la télécommande"
     },
     {
         "command_name": "Backstand",

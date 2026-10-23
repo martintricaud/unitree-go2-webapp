@@ -47,7 +47,7 @@ export const MODES = {
         api_id: 2049,
         argument: 'data',
         description:
-            'Comme le mode par défaut (FreeWalk?) mais en plus lent et plus pataud.Correspond à Normal sur la télécommande',
+            'Comme le mode par défaut (FreeWalk?) mais en plus lent et plus pataud. Correspond à Normal sur la télécommande',
     },
     Backstand: {
         api_id: 2050,
@@ -64,3 +64,23 @@ export const MODES = {
 } as const;
 
 export type Mode = keyof typeof MODES;
+
+/// Under the motion-control mode "mcf", the robot reports its mode in `error_code` as one of these
+/// codes. They are transcribed from the official app by legion1581/unitree_ui; Unitree does not
+/// document them. A code absent here names no mode: this covers 1013 (BalanceStand, which
+/// StaticWalk, Trotting and EconomicGait report while standing) and any other code.
+export const MCF_MODE_CODES = {
+    0: 'FreeWalk',
+    100: 'FreeWalk',
+    1001: 'Damp',
+    1091: 'Pose',
+    1015: 'StaticWalk',
+    1016: 'Trotting',
+    1017: 'EconomicGait',
+    2007: 'FreeAvoid',
+    2008: 'Leaping',
+    2009: 'Jumping',
+    2011: 'Handstand',
+    2016: 'CrossStep',
+    2017: 'Backstand',
+} as const satisfies Record<number, Mode>;

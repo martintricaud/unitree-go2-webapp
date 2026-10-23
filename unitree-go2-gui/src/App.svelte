@@ -268,8 +268,8 @@
         {#each keys(MODES) as modeName}
             <Radio
                 optionName={modeName}
-                selected={shown.mode === modeName}
-                status={fieldStatus($robotState, 'mode')}
+                selected={$robotState.settled.mode === modeName}
+                spinning={$robotState.pending.mode?.value === modeName}
                 disabled={!$robotConnected}
                 callback={() => sendToRobot(enter(modeName))}
             />
@@ -280,8 +280,8 @@
         {#each COLOURS as colour}
             <Radio
                 optionName={colour}
-                selected={shown.headlight === colour}
-                status={fieldStatus($robotState, 'headlight')}
+                selected={$robotState.settled.headlight === colour}
+                spinning={$robotState.pending.headlight?.value === colour}
                 disabled={!$robotConnected}
                 callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
             />
@@ -294,8 +294,8 @@
         {#each entries(SPEED_LEVELS) as [speedName, level]}
             <Radio
                 optionName={speedName}
-                selected={shown.speed === level}
-                status={fieldStatus($robotState, 'speed')}
+                selected={$robotState.settled.speed === level}
+                spinning={$robotState.pending.speed?.value === level}
                 disabled={!$robotConnected || !$reported.speed}
                 callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />

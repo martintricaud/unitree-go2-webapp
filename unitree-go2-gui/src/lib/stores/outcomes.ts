@@ -5,10 +5,10 @@ import { derived, writable } from 'svelte/store';
 /// `unknown`: no answer in time. `failed`: the robot refused.
 /// `rejected`: the WebRTC bridge refused before the robot saw it.
 export const OUTCOMES = {
-    confirmed: { mayHaveRun: true },
-    unknown: { mayHaveRun: true },
-    failed: { mayHaveRun: false },
-    rejected: { mayHaveRun: false },
+    confirmed: true,
+    unknown: true,
+    failed: true,
+    rejected: true,
 } as const;
 
 /// The verdict on one request. `code` is null when the robot sent no `status.code`.

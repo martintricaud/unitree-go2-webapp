@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import type { Mode } from '../data/modes';
 import type { RobotState } from '../utils/commands';
 
 /// Whether the browser's control channel to the relay is open.
@@ -17,3 +18,7 @@ export const NO_ROBOT_SETTINGS: {
 /// The robot's last report of each field it states, or null until the robot reports it while
 /// both the robot and the control channel are up.
 export const robotSettings = writable(NO_ROBOT_SETTINGS);
+
+/// The mode the robot last reported, or null when its last report named no mode, or when the robot
+/// or the control channel was lost since.
+export const robotMode = writable<Mode | null>(null);
