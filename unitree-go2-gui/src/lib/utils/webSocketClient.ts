@@ -1,12 +1,12 @@
-import { isIncludedIn, keys } from 'remeda';
+import { isIncludedIn, keys, values } from 'remeda';
 import { ACTIONS } from '../data/actions';
 import { MODES } from '../data/modes';
-import { BRIGHTNESS, EULER, SETTINGS } from '../data/settings';
+import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
-import type { Cue } from './commands';
+import type { Cue, RobotState } from './commands';
 import { OUTCOMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import { robotConnected, videoFrame, webSocketConnected } from '../stores/connection';
+import { NO_ROBOT_SETTINGS, robotConnected, robotSettings, videoFrame, webSocketConnected } from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -17,7 +17,13 @@ type RelayMessage =
           reqId: number | null;
           command_name: string | null;
       })
-    | { type: 'state_stream'; data: unknown };
+    | { type: 'state_stream'; data: unknown }
+    /// Null for a field the robot's report did not carry.
+    | {
+          type: 'robot_settings';
+          speedLevel: number | null;
+          obstacleAvoidance: RobotState['obstacleAvoidance'] | null;
+      };
 
 /// A cue as the relay reads it.
 type Wire =
@@ -88,8 +94,7 @@ const RELAY_URL = 'ws://localhost:8000/ws';
 const OPEN = 1;
 const CLOSED = 3;
 
-/// The relay bounds a command at max(5s, exec_time + 3s), at most 13s with the longest
-/// exec_time (10s), so this fires only once the relay has stopped answering.
+/// The relay bounds a single command at 5s, so this fires only once the relay has stopped answering.
 const REPLY_BACKSTOP_MS = 20_000;
 
 /// A command that never left the browser did not run: a failure, not a silence.
@@ -162,6 +167,7 @@ export class WebSocketClient {
     closed() {
         webSocketConnected.set(false);
         robotConnected.set(false);
+        robotSettings.set(NO_ROBOT_SETTINGS);
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.pending]) {
@@ -182,7 +188,18 @@ export class WebSocketClient {
         switch (msg.type) {
             case 'robot_state':
                 robotConnected.set(msg.connected);
+                if (!msg.connected) robotSettings.set(NO_ROBOT_SETTINGS);
                 return;
+            case 'robot_settings': {
+                const speed = isIncludedIn(msg.speedLevel, values(SPEED_LEVELS)) ? msg.speedLevel : null;
+                if (speed === null) console.warn('Ignoring a speed level outside SPEED_LEVELS:', msg.speedLevel);
+                // A field the report does not carry keeps the robot's earlier report of it.
+                robotSettings.update((_last) => ({
+                    speed: speed ?? _last.speed,
+                    obstacleAvoidance: msg.obstacleAvoidance ?? _last.obstacleAvoidance,
+                }));
+                return;
+            }
             case 'command_result': {
                 if (msg.reqId === null) {
                     console.warn('Dropping a verdict on a command this browser did not send:', msg);

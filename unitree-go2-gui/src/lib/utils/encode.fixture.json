@@ -407,6 +407,7 @@
   "presets": {
     "enterPose": {
       "kind": "sequence",
+      "displayName": "Enter Pose",
       "sequence": [
         {
           "kind": "command",
@@ -427,6 +428,7 @@
     },
     "exitPose": {
       "kind": "sequence",
+      "displayName": "Exit Pose",
       "sequence": [
         {
           "parameter": {

@@ -43,11 +43,7 @@
 
 <style>
     .strip {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 10;
+        grid-area: strip;
         background: rgb(230, 230, 230);
         border-top: 2px solid #999;
         padding: 0.2em 0.6em;

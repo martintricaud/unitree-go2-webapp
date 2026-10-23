@@ -15,7 +15,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 from collections import deque
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 import asyncio, logging, json, time, cv2
 from aiortc import MediaStreamTrack
 import av
@@ -24,9 +23,9 @@ av.logging.set_level(av.logging.ERROR)
 osc_client = udp_client.SimpleUDPClient("192.168.1.130", 6000)
 broadcaster = FrameBroadcaster()
 
-COMMANDS_PATH = Path(__file__).resolve().parent.parent / "commands_1.1.7.json"
-ACK_TIMEOUT_FLOOR = 5.0
-ACK_TIMEOUT_MARGIN = 3.0
+# The sport service replies once it accepts a command, before the motion plays: Unitree's SDK
+# waits 1s by default and its Go2 example 10s. 5s leaves room for a slow link.
+ACK_TIMEOUT = 5.0
 
 # The driver beats every two seconds (msgs/heartbeat.py) and records the time of each reply.
 # Three intervals with no reply is the robot being gone.
@@ -34,39 +33,14 @@ HEARTBEAT_PERIOD = 2.0
 HEARTBEAT_MISSES_ALLOWED = 3
 ROBOT_POLL_SECONDS = 1.0
 
+# One attempt covers ICE gathering, the HTTP exchange of SDP (the driver tries port 8081, then
+# 9991) and up to 5s for the data channel to validate, so the bound must sit well above 5s.
+CONNECT_TIMEOUT = 20.0
+
 CONFIRMED, FAILED, REJECTED, UNKNOWN = "confirmed", "failed", "rejected", "unknown"
 # A cue's verdict is its worst step. A refusal outranks silence because it is something the
 # robot said, and every step must confirm for the cue to confirm.
 OUTCOME_PRECEDENCE = (FAILED, REJECTED, UNKNOWN, CONFIRMED)
-
-
-def read_exec_times(path=COMMANDS_PATH):
-    """Map (topic, api_id) to the command's execution time in seconds. The key must carry the
-    topic: api_ids repeat across topics, and 1005 is StandDown under SPORT_MOD and Brightness
-    under VUI."""
-    try:
-        entries = json.loads(path.read_text())
-    except Exception:
-        logging.exception("No command table at %s, so every command gets the timeout floor", path)
-        return {}
-    return {
-        (entry.get("topic"), entry.get("api_id")): entry.get("exec_time")
-        for entry in entries
-        if entry.get("api_id") is not None
-    }
-
-
-EXEC_TIMES = read_exec_times()
-
-
-def ack_timeout(topic, api_id, exec_times=EXEC_TIMES):
-    """How long one command may wait for its reply. Sized to the motion where exec_time is
-    known, because the robot may answer only once the motion completes; a flat bound would
-    manufacture a failure for every command whose motion outlasts it."""
-    exec_time = exec_times.get((topic, api_id))
-    if exec_time is None:
-        return ACK_TIMEOUT_FLOOR
-    return max(ACK_TIMEOUT_FLOOR, exec_time + ACK_TIMEOUT_MARGIN)
 
 
 def outcome_of(reply):
@@ -80,6 +54,16 @@ def outcome_of(reply):
     if code == 0:
         return (CONFIRMED, 0, None)
     return (FAILED, code, f"status.code={code}")
+
+
+def log_step(msg, outcome, elapsed):
+    """Record each step of a cue: the relay reports only the worst step to the browser."""
+    verdict, code, detail = outcome
+    logging.info(
+        "Step %s (%s %s, parameter=%s): %s, code=%s, %s, after %.2fs",
+        msg.get("command_name"), msg.get("topic"), msg.get("api_id"), msg.get("parameter"),
+        verdict, code, detail, elapsed,
+    )
 
 
 def cue_outcome(step_outcomes):
@@ -115,23 +99,32 @@ class RobotSession:
         # What the browser was last told, so robot_state is sent on a transition and not on
         # every poll. None means it has been told nothing yet.
         self.reported_reachable: bool | None = None
+        # The (speedLevel, obstacleAvoidance) pair the browser was last sent, for the same
+        # reason. None means it has been sent none.
+        self.reported_settings: tuple | None = None
         self.channel_open_since: float | None = None
         self.watcher: asyncio.Task | None = None
 
     ## Connect to the robot with a timeout. watch_robot is what tells the frontend about it.
-    async def connect(self, ip: str, timeout: int = 5):
+    async def connect(self, ip: str, timeout: float = CONNECT_TIMEOUT):
         # Avoid reconnecting if already connected
         if self.conn and self.conn.isConnected:
             return
+        # The robot of this attempt has reported nothing yet, so its first report must be sent.
+        self.reported_settings = None
         # Initialize the connection object with the defined connection method and IP
         # self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalSTA,ip=ip )
         self.conn = WebRTCConnection(WebRTCConnectionMethod.LocalAP)
-        
+
         try:
-            await asyncio.wait_for(self.conn.connect(), timeout)  # Add timeout to connect
+            await asyncio.wait_for(self.conn.connect(), timeout)
             # The driver starts the heartbeat in on_validate; starting it here too leaves
             # a timer chain stop_heartbeat cannot cancel.
             self.conn.datachannel.pub_sub.set_on_err_callback(self.note_rejection)
+            # The robot publishes this topic periodically, so the browser learns its settings
+            # without asking. The driver drops a subscribe sent before the channel validates;
+            # conn.connect() returns only after validation.
+            self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["MULTIPLE_STATE"], self.note_settings)
             # The channel is reported by watch_robot rather than here: the driver's validation
             # callback may not have run yet, so reading data_channel_opened at this moment can
             # say false about a connection that then works.
@@ -141,11 +134,26 @@ class RobotSession:
 
         
         except asyncio.TimeoutError:
-            print("Connection attempt timed out.")  # Handle timeout
-            self.conn = None  # Reset connection on timeout
-        except Exception as e:
-            print(f"An error occurred during connection: {e}")  # Handle other exceptions
-    
+            logging.warning("The robot did not connect within %gs.", timeout)
+            await self.abandon_connection()
+        except (Exception, SystemExit):
+            # The driver calls sys.exit when the robot sends no SDP answer or the data channel
+            # does not open, so SystemExit is a failed attempt here, not a shutdown.
+            logging.exception("The connection attempt failed.")
+            await self.abandon_connection()
+
+    async def abandon_connection(self):
+        """Close a half-made connection so the next attempt starts clean. Without the close,
+        the peer connection of a timed-out attempt stays open and the robot may still hold it
+        when the next attempt arrives."""
+        conn, self.conn = self.conn, None
+        if conn is None:
+            return
+        try:
+            await conn.disconnect()
+        except Exception:
+            logging.exception("Failed to close the abandoned connection.")
+
     async def toggleLidar(self, switch: bool):
         state = "on" if switch else "off"
         def lidar_callback(message):
@@ -238,6 +246,33 @@ class RobotSession:
         else :
             self.conn.datachannel.pub_sub.unsubscribe(RTC_TOPIC['LF_SPORT_MOD_STATE'])
         
+    def note_settings(self, message):
+        """Forward the speed level and obstacle-avoidance switch the robot reports on
+        rt/multiplestate, when they differ from what the browser was last sent. The driver
+        calls this synchronously, so the send is scheduled as a task."""
+        try:
+            data = message["data"]
+            if isinstance(data, str):
+                data = json.loads(data)
+            settings = (data.get("speedLevel"), data.get("obstaclesAvoidSwitch"))
+        except Exception:
+            logging.exception("Ignoring an unreadable rt/multiplestate message: %r", message)
+            return
+        if settings == self.reported_settings:
+            return
+        speed_level, obstacle_avoidance = settings
+        try:
+            asyncio.get_running_loop().create_task(
+                notify_frontend({
+                    "type": "robot_settings",
+                    "speedLevel": speed_level,
+                    "obstacleAvoidance": obstacle_avoidance,
+                })
+            )
+            self.reported_settings = settings
+        except Exception:
+            logging.exception("Failed to schedule the settings notification")
+
     def note_rejection(self, message):
         """Attribute a bridge `err` to the command in flight. An `err` carries no request id,
         so this is sound only because the single worker serializes dispatch and there is never
@@ -262,7 +297,7 @@ class RobotSession:
         if "parameter" in msg:
             payload["parameter"] = msg.get("parameter")
 
-        timeout = ack_timeout(topic, api_id)
+        timeout = ACK_TIMEOUT
         rejection = asyncio.get_running_loop().create_future()
         self.rejection = rejection
         request = asyncio.ensure_future(
@@ -335,7 +370,10 @@ class RobotSession:
                     # than raising, so the closing step most cues use to restore FreeWalk still
                     # runs. Only an exception abandons the rest, where every remaining step
                     # would raise the same way.
-                    outcomes.append(await self.dispatch(msg))
+                    sent_at = time.monotonic()
+                    outcome = await self.dispatch(msg)
+                    log_step(msg, outcome, time.monotonic() - sent_at)
+                    outcomes.append(outcome)
                 case {"kind": "wait", "wait": seconds}:
                     await asyncio.sleep(seconds)
                 case {"kind": "sequence", "sequence": nested}:
@@ -436,6 +474,7 @@ async def ws_api(ws: WebSocket):
     # This browser has been told nothing about the robot, so the next poll must state the
     # answer rather than treat it as unchanged from what the previous browser was told.
     robot.reported_reachable = None
+    robot.reported_settings = None
     try:
         while True:
             try:

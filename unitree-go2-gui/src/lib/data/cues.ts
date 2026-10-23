@@ -42,8 +42,8 @@ export const presets = {
         wait(0.1),
     ),
     exitSit: sequence('', perform('RiseSit'), enter('FreeWalk')),
-    exitPose: sequence('', leave('Pose'), wait(0.1), enter('FreeWalk')),
-    enterPose: sequence('', perform('StopMove'), enter('Pose')),
+    exitPose: sequence('Exit Pose', leave('Pose'), wait(0.1), enter('FreeWalk')),
+    enterPose: sequence('Enter Pose', perform('StopMove'), enter('Pose')),
     dance: sequence('Dance', perform('Dance2'), wait(0.1), enter('FreeWalk')),
 };
 

@@ -13,20 +13,21 @@ body {
   height: 100vh !important;
   width: 100vw;
   overflow: hidden;
-   background: solid rgb(230, 230, 230);
+  background: solid rgb(230, 230, 230);
+  font-size: small;
 }
 
 
 #app {
-  border: .5em solid rgb(230, 230, 230);
-  background: solid rgb(230, 230, 230);
+  border: 1em solid rgb(230, 230, 230);
+  background-color: rgb(230, 230, 230);
   gap: 1em;
   width: 100vw;
   height: 100vh;
   display: grid;
   grid-template-columns: 1fr minmax(10ch, max-content);
-  grid-template-rows: calc(100vh - 20rem) 20rem;
-  grid-template-areas: "topleft sidebar" "bottomleft sidebar";
+  grid-template-rows: minmax(0, 1fr) 20rem auto;
+  grid-template-areas: "topleft sidebar" "bottomleft sidebar" "strip strip";
 }
 
 button {
@@ -65,7 +66,6 @@ button:focus-visible {
 
 #sidebar {
   grid-area: sidebar;
-  background-color: rgb(230, 230, 230);
 }
 
 .ui-pane {
@@ -74,9 +74,7 @@ button:focus-visible {
   display: flex;
   flex-wrap: nowrap;
   flex-direction: row;
-
   overflow-y: hidden;
-  background-color: rgb(230, 230, 230);
   gap: 1em;
   grid-area: bottomleft;
 }
@@ -84,8 +82,6 @@ button:focus-visible {
 .ui-pane>* {
   width: max-content;
   height: 100%;
-  overflow-y: scroll;
-  padding-top: 1em;
   padding-bottom: 1em;
 }
 

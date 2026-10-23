@@ -15,7 +15,7 @@ from .conftest import FakeConnection, FakeWebSocket, reply_for
 
 TOPIC = "rt/api/sport/request"
 
-# api_ids absent from commands_1.1.7.json, so the timeout floor is what applies to them.
+# api_ids no robot command uses, so each test's scripted pub_sub decides how they are answered.
 OK, FAILS, MUTE, SILENT, REFUSED = 9001, 9002, 9003, 9004, 9005
 
 
@@ -60,41 +60,6 @@ def test_no_usable_reply_is_unknown():
     assert main.outcome_of(None)[0] == main.UNKNOWN
 
 
-# ── Sizing the wait ──────────────────────────────────────────────────────────────────────
-
-
-def test_the_command_table_is_keyed_by_topic_and_api_id(tmp_path):
-    """api_id 1005 is StandDown under SPORT_MOD and Brightness under VUI, so the api_id alone
-    cannot identify a command."""
-    table = tmp_path / "commands.json"
-    table.write_text(
-        json.dumps(
-            [
-                {"command_name": "StandDown", "api_id": 1005, "topic": "SPORT_MOD", "exec_time": 2.26},
-                {"command_name": "Brightness", "api_id": 1005, "topic": "VUI", "exec_time": None},
-            ]
-        )
-    )
-    assert main.read_exec_times(table) == {("SPORT_MOD", 1005): 2.26, ("VUI", 1005): None}
-
-
-def test_an_unreadable_command_table_leaves_every_command_on_the_floor(tmp_path):
-    assert main.read_exec_times(tmp_path / "absent.json") == {}
-
-
-def test_the_relay_loads_the_shipped_command_table():
-    assert main.EXEC_TIMES, "the relay must read commands_1.1.7.json itself"
-    assert all(len(key) == 2 for key in main.EXEC_TIMES)
-
-
-def test_the_ack_bound_is_sized_to_the_motion_and_floored():
-    exec_times = {("SPORT_MOD", 1): 10, ("SPORT_MOD", 2): 1, ("VUI", 3): None}
-    assert main.ack_timeout("SPORT_MOD", 1, exec_times) == 13.0
-    assert main.ack_timeout("SPORT_MOD", 2, exec_times) == main.ACK_TIMEOUT_FLOOR
-    assert main.ack_timeout("VUI", 3, exec_times) == main.ACK_TIMEOUT_FLOOR
-    assert main.ack_timeout("SPORT_MOD", 4242, exec_times) == main.ACK_TIMEOUT_FLOOR
-
-
 # ── Dispatching one command ──────────────────────────────────────────────────────────────
 
 
@@ -110,7 +75,7 @@ async def test_a_silent_command_resolves_unknown_within_its_bound(session, pub_s
     outcome, code, detail = await session.dispatch(command(SILENT))
     assert (outcome, code) == (main.UNKNOWN, None)
     assert "no reply within" in detail
-    assert time.perf_counter() - started < main.ACK_TIMEOUT_FLOOR * 4
+    assert time.perf_counter() - started < main.ACK_TIMEOUT * 4
 
 
 async def test_a_timed_out_command_is_never_retried(session, pub_sub, fast_timeouts):
@@ -142,7 +107,7 @@ async def test_dispatch_passes_the_parameter_through(session, pub_sub, fast_time
 
 async def test_dispatch_bounds_the_wait_it_hands_the_driver(session, pub_sub):
     await session.dispatch(command(OK))
-    assert pub_sub.sent[0]["timeout"] == main.ACK_TIMEOUT_FLOOR
+    assert pub_sub.sent[0]["timeout"] == main.ACK_TIMEOUT
 
 
 # ── One verdict per cue ──────────────────────────────────────────────────────────────────
@@ -277,7 +242,7 @@ async def test_a_silent_command_does_not_strand_the_cues_behind_it(relay, worker
     await main.ws_api(FakeWebSocket(frames))
     accepted = time.perf_counter() - started
 
-    assert accepted < main.ACK_TIMEOUT_FLOOR, "the receive loop waited on the robot"
+    assert accepted < main.ACK_TIMEOUT, "the receive loop waited on the robot"
     assert len(relay.results) < 5, "the receive loop drained the queue instead of returning"
 
     await asyncio.wait_for(relay.commands.join(), 3)
@@ -615,3 +580,169 @@ def test_a_fault_snapshot_reads_every_triple(capsys):
 def test_an_empty_fault_snapshot_does_not_raise(capsys):
     handle_error({"type": "errors", "data": []})
     assert capsys.readouterr().out == ""
+
+
+# ── Connecting ───────────────────────────────────────────────────────────────────────────
+
+
+class FailingDriverConnection:
+    """A driver connection whose connect() either never finishes or fails the way the driver
+    does, by calling sys.exit."""
+
+    instances = []
+
+    def __init__(self, method, how):
+        self.how = how
+        self.isConnected = False
+        self.disconnected = False
+        FailingDriverConnection.instances.append(self)
+
+    async def connect(self):
+        if self.how == "hang":
+            await asyncio.sleep(3600)
+        raise SystemExit(1)
+
+    async def disconnect(self):
+        self.disconnected = True
+
+
+@pytest.mark.parametrize("how", ["hang", "exit"])
+async def test_a_failed_attempt_closes_its_connection_and_leaves_none(monkeypatch, how):
+    FailingDriverConnection.instances = []
+    monkeypatch.setattr(main, "WebRTCConnection", lambda method: FailingDriverConnection(method, how))
+    robot = main.RobotSession()
+    await robot.connect("192.168.12.1", timeout=0.05)
+    assert robot.conn is None
+    assert [conn.disconnected for conn in FailingDriverConnection.instances] == [True]
+
+
+async def test_every_step_of_a_cue_is_logged_with_its_own_verdict(session, caplog, fast_timeouts):
+    session.conn.datachannel.pub_sub.behaviour = {FAILS: ("code", 3203)}
+    with caplog.at_level(logging.INFO):
+        await session.run_sequence([command(OK, name="StopMove"), command(FAILS, name="Pose")])
+    steps = [record.getMessage() for record in caplog.records if record.getMessage().startswith("Step ")]
+    assert len(steps) == 2
+    assert "StopMove" in steps[0] and "confirmed" in steps[0]
+    assert "Pose" in steps[1] and "failed" in steps[1] and "code=3203" in steps[1]
+
+
+# ── The robot's reported settings ────────────────────────────────────────────────────────
+
+MULTIPLE_STATE = "rt/multiplestate"
+
+
+class FakeVideo:
+    def add_track_callback(self, callback):
+        pass
+
+    def switchVideoChannel(self, switch):
+        pass
+
+
+class ConnectingDriverConnection(FakeConnection):
+    """A driver connection whose connect() succeeds, over the test's scripted pub_sub."""
+
+    def __init__(self, pub_sub):
+        super().__init__(pub_sub)
+        self.isConnected = False
+        self.video = FakeVideo()
+
+    async def connect(self):
+        self.isConnected = True
+
+
+async def connect_through_driver(monkeypatch, session, pub_sub):
+    monkeypatch.setattr(main, "WebRTCConnection", lambda method: ConnectingDriverConnection(pub_sub))
+    session.conn = None
+    await session.connect("192.168.12.1")
+
+
+def report(speed_level=0, obstacle_avoidance=True):
+    """One rt/multiplestate message as the driver hands it over: `data` is a JSON string."""
+    data = {"speedLevel": speed_level, "obstaclesAvoidSwitch": obstacle_avoidance, "volume": 5}
+    return {"type": "msg", "topic": MULTIPLE_STATE, "data": json.dumps(data)}
+
+
+def settings_frames(ws):
+    return [message for message in ws.sent if message.get("type") == "robot_settings"]
+
+
+async def deliver(pub_sub, message):
+    """Deliver a report, then let the notification task it schedules run."""
+    pub_sub.deliver(MULTIPLE_STATE, message)
+    await asyncio.sleep(0)
+
+
+async def test_a_successful_connect_subscribes_to_the_robots_settings_once(monkeypatch, session, pub_sub):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    assert pub_sub.subscribe_calls == [MULTIPLE_STATE]
+
+
+async def test_a_report_is_forwarded_with_both_values(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, report(speed_level=1, obstacle_avoidance=False))
+    assert settings_frames(gui) == [
+        {"type": "robot_settings", "speedLevel": 1, "obstacleAvoidance": False},
+    ]
+
+
+async def test_a_report_whose_data_is_already_a_dict_is_read(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, {"data": {"speedLevel": -1, "obstaclesAvoidSwitch": True}})
+    assert settings_frames(gui) == [
+        {"type": "robot_settings", "speedLevel": -1, "obstacleAvoidance": True},
+    ]
+
+
+async def test_a_missing_field_is_forwarded_as_none(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, {"data": json.dumps({"speedLevel": 0})})
+    assert settings_frames(gui) == [
+        {"type": "robot_settings", "speedLevel": 0, "obstacleAvoidance": None},
+    ]
+
+
+async def test_a_repeated_report_is_not_forwarded_again(monkeypatch, session, pub_sub, gui):
+    """The robot publishes periodically; the browser needs only the changes."""
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, report())
+    await deliver(pub_sub, report())
+    await deliver(pub_sub, report(speed_level=1))
+    assert [frame["speedLevel"] for frame in settings_frames(gui)] == [0, 1]
+
+
+@pytest.mark.parametrize("message", [
+    {"data": "not json"},
+    {"data": None},
+    {"data": "[1, 2]"},
+    {"topic": MULTIPLE_STATE},
+])
+async def test_an_unreadable_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, caplog, message):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, message)
+    assert settings_frames(gui) == []
+    assert any("rt/multiplestate" in record.getMessage() for record in caplog.records)
+
+
+async def test_a_browser_that_connects_is_sent_the_next_report_even_if_unchanged(monkeypatch, relay, pub_sub, gui):
+    """A page reload knows nothing, so the next report must reach it even though the previous
+    page was already sent the same pair."""
+    await connect_through_driver(monkeypatch, relay, pub_sub)
+    await deliver(pub_sub, report())
+    assert len(settings_frames(gui)) == 1
+
+    reloaded = FakeWebSocket([])
+    await main.ws_api(reloaded)
+    assert relay.reported_settings is None
+    await deliver(pub_sub, report())
+    assert settings_frames(reloaded) == [
+        {"type": "robot_settings", "speedLevel": 0, "obstacleAvoidance": True},
+    ]
+
+
+async def test_a_new_connect_attempt_forgets_the_last_report_sent(monkeypatch, session, pub_sub, gui):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, report())
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    await deliver(pub_sub, report())
+    assert len(settings_frames(gui)) == 2

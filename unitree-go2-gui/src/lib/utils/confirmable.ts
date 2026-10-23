@@ -25,12 +25,14 @@ export function fieldStatus<T>(_state: Confirmable<T>, _field: keyof T) {
     return null;
 }
 
-/// There is no `set`, so no caller can show a value the robot was never asked for.
+/// There is no `set`, so no caller can show a value that neither the operator asked for nor the
+/// robot stated.
 export const confirmable = <T>(
     settled: T,
 ): Readable<Confirmable<T>> & {
     propose: (proposed: T, reqId: number) => void;
     resolve: (reqId: number, outcome: Outcome) => void;
+    observe: (fields: Partial<T>) => void;
 } => {
     const { subscribe, update } = writable<Confirmable<T>>({
         settled,
@@ -53,5 +55,8 @@ export const confirmable = <T>(
                           lastAttempt: { from: state.settled, proposed: state.pending.proposed, outcome },
                       },
             ),
+        /// A robot report is a value the robot itself states, so it needs no verdict and may bypass
+        /// propose and resolve. It replaces `settled` only: a pending proposal stays displayed.
+        observe: (fields) => update((state) => ({ ...state, settled: { ...state.settled, ...fields } })),
     };
 };

@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import { robotConnected } from '../stores/connection';
+import { NO_ROBOT_SETTINGS, robotConnected, robotSettings } from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
+import { reported, robotState } from '../stores/robotState';
 import { perform, sequence } from './commands';
 
-// The relay bounds one command at max(5s, exec_time + 3s), and the longest exec_time in
-// commands_1.1.7.json is 10s, so 13s is the longest wait the relay itself can be in.
-const RELAY_WORST_CASE_MS = 13_000;
+// The relay bounds every command at 5s.
+const RELAY_WORST_CASE_MS = 5_000;
 const BACKSTOP_MS = 20_000;
 
 const OPEN = 1;
@@ -302,5 +302,89 @@ describe('robot state', () => {
         expect(get(outcomeLog)).toEqual([]);
         expect(warn).toHaveBeenCalledTimes(2);
         warn.mockRestore();
+    });
+});
+
+describe('robot settings', () => {
+    beforeEach(() => {
+        robotSettings.set(NO_ROBOT_SETTINGS);
+    });
+
+    const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
+        JSON.stringify({ type: 'robot_settings', speedLevel, obstacleAvoidance });
+
+    it.each([-1, 0, 1])('sets the speed to level %i and marks it reported', async (level) => {
+        const { client } = openClient();
+        await client.received(settings(level, null));
+        expect(get(robotSettings).speed).toBe(level);
+        expect(get(robotState).settled.speed).toBe(level);
+        expect(get(reported).speed).toBe(true);
+    });
+
+    it.each([2, null])('leaves an unreported speed unreported for level %s, and warns', async (level) => {
+        const { client } = openClient();
+        const speed = get(robotState).settled.speed;
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        await client.received(settings(level, null));
+
+        expect(get(robotSettings).speed).toBeNull();
+        expect(get(robotState).settled.speed).toBe(speed);
+        expect(get(reported).speed).toBe(false);
+        expect(warn).toHaveBeenCalledOnce();
+        warn.mockRestore();
+    });
+
+    it("keeps the robot's earlier speed when a later report carries an unrecognised level", async () => {
+        const { client } = openClient();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        await client.received(settings(-1, null));
+        await client.received(settings(2, null));
+        expect(get(robotSettings).speed).toBe(-1);
+        expect(get(robotState).settled.speed).toBe(-1);
+        expect(get(reported).speed).toBe(true);
+        warn.mockRestore();
+    });
+
+    it('sets obstacle avoidance and marks it reported', async () => {
+        const { client } = openClient();
+        await client.received(settings(0, false));
+        expect(get(robotState).settled.obstacleAvoidance).toBe(false);
+        expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
+
+        await client.received(settings(0, true));
+        expect(get(robotState).settled.obstacleAvoidance).toBe(true);
+    });
+
+    it("keeps the robot's earlier obstacle avoidance when a later report carries none", async () => {
+        const { client } = openClient();
+        await client.received(settings(0, false));
+        await client.received(settings(0, null));
+        expect(get(robotSettings).obstacleAvoidance).toBe(false);
+        expect(get(robotState).settled.obstacleAvoidance).toBe(false);
+        expect(get(reported).obstacleAvoidance).toBe(true);
+    });
+
+    it('marks both fields unreported when the robot is lost', async () => {
+        const { client } = openClient();
+        await client.received(settings(0, true));
+        await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
+        expect(get(robotSettings)).toEqual(NO_ROBOT_SETTINGS);
+        expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
+    });
+
+    it('keeps both fields reported while the robot stays connected', async () => {
+        const { client } = openClient();
+        await client.received(settings(0, true));
+        await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
+        expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
+    });
+
+    it('marks both fields unreported when the control channel closes', async () => {
+        const { client } = openClient();
+        await client.received(settings(0, true));
+        client.closed();
+        expect(get(robotSettings)).toEqual(NO_ROBOT_SETTINGS);
+        expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
     });
 });

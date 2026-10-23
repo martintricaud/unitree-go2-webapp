@@ -48,9 +48,22 @@ class ScriptedPubSub:
         self.late_delay = late_delay
         self.sent = []
         self.on_err_callback = None
+        # Every subscribe call in order, and the callback each topic currently holds: the
+        # driver keeps one callback per topic.
+        self.subscribe_calls = []
+        self.subscriptions = {}
 
     def set_on_err_callback(self, callback):
         self.on_err_callback = callback
+
+    def subscribe(self, topic, callback=None):
+        self.subscribe_calls.append(topic)
+        self.subscriptions[topic] = callback
+
+    def deliver(self, topic, message):
+        """Hand a message the robot published on `topic` to its callback, synchronously, as
+        the driver does."""
+        self.subscriptions[topic](message)
 
     def publish_without_callback(self, topic, data=None, msg_type=None):
         self.sent.append({"topic": topic, "data": data, "awaited": False})
@@ -138,10 +151,8 @@ class FakeWebSocket:
 
 @pytest.fixture
 def fast_timeouts(monkeypatch):
-    """Shrink the ack bound so a silent command resolves in a fraction of a second. Tests using
-    this send api_ids absent from the command table, so the floor is what applies."""
-    monkeypatch.setattr(main, "ACK_TIMEOUT_FLOOR", 0.15)
-    monkeypatch.setattr(main, "ACK_TIMEOUT_MARGIN", 0.0)
+    """Shrink the ack bound so a silent command resolves in a fraction of a second."""
+    monkeypatch.setattr(main, "ACK_TIMEOUT", 0.15)
 
 
 @pytest.fixture

@@ -14,7 +14,7 @@
     import { CONDUITE, presets } from './lib/data/cues';
     import { MODES } from './lib/data/modes';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
-    import { robotState, send } from './lib/stores/robotState';
+    import { reported, robotState, send } from './lib/stores/robotState';
     import { displayed, fieldStatus } from './lib/utils/confirmable';
 
     // let intervalId: any;
@@ -50,6 +50,15 @@
         cuePointer.update(function (_at) {
             return clamp(_at + _steps, { min: 0, max: CONDUITE.length - 1 });
         });
+    }
+
+    /// The cue a held key is executing, drawn pressed until the key is released.
+    let pressedCue: number | null = null;
+
+    function executeCue(_steps: number) {
+        pressedCue = $cuePointer;
+        sendCue($cuePointer);
+        moveCuePointer(_steps);
     }
 
     onMount(() => {
@@ -94,12 +103,10 @@
             case 'Martin':
                 switch (event.key) {
                     case 'ArrowRight':
-                        sendCue($cuePointer);
-                        moveCuePointer(1);
+                        executeCue(1);
                         break;
                     case 'ArrowLeft':
-                        sendCue($cuePointer);
-                        moveCuePointer(-1);
+                        executeCue(-1);
                         break;
                     case 'ArrowDown':
                         moveCuePointer(1);
@@ -108,7 +115,7 @@
                         moveCuePointer(-1);
                         break;
                     case 'Enter':
-                        sendCue($cuePointer);
+                        executeCue(0);
                         break;
                     case 'a':
                         togglePose();
@@ -173,6 +180,7 @@
 <StatusStrip />
 <svelte:window
     on:keyup={(event) => {
+        if (['ArrowRight', 'ArrowLeft', 'Enter'].includes(event.key)) pressedCue = null;
         // switch (operator) {
         //     case 'Christine':
         //         if (event.key === 'ArrowRight') {
@@ -235,7 +243,7 @@
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
             status={fieldStatus($robotState, 'obstacleAvoidance')}
-            disabled={!$robotConnected}
+            disabled={!$robotConnected || !$reported.obstacleAvoidance}
             callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />
         <Switch
@@ -288,7 +296,7 @@
                 optionName={speedName}
                 selected={shown.speed === level}
                 status={fieldStatus($robotState, 'speed')}
-                disabled={!$robotConnected}
+                disabled={!$robotConnected || !$reported.speed}
                 callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />
         {/each}
@@ -297,7 +305,8 @@
 <div id="sidebar" class="actionsequence">
  {#each CONDUITE as action, i}
             <button
-                class={`${i == $cuePointer ? 'active-step' : ''}`}
+                class:active-step={i === $cuePointer}
+                class:pressed={i === pressedCue}
                 on:click={() => sendCue(i)}
             >
                 {cueLabel(action)}
@@ -313,6 +322,13 @@
         overflow-y: auto;
     }
     .active-step {
-        border: 2px solid blue;
+        /* outline: 2px solid blue; */
+        font-weight: bold;
+        box-shadow: inset 0 0 10px rgb(0, 218, 163);
+        border-color: rgb(0, 218, 163);
+    }
+    .actionsequence button:active,
+    .pressed {
+        border-style: inset;
     }
 </style>

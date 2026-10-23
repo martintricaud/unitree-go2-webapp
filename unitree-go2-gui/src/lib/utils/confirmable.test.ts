@@ -36,7 +36,7 @@ describe('what the control shows', () => {
         const mode = confirmable('FreeWalk');
         expect('set' in mode).toBe(false);
         expect('update' in mode).toBe(false);
-        expect(Object.keys(mode).sort()).toEqual(['propose', 'resolve', 'subscribe']);
+        expect(Object.keys(mode).sort()).toEqual(['observe', 'propose', 'resolve', 'subscribe']);
     });
 });
 
@@ -205,5 +205,51 @@ describe('the status a control shows for one field', () => {
         const state = confirmable(START);
         expect(fieldStatus(get(state), 'mode')).toBeNull();
         expect(fieldStatus(get(state), 'headlight')).toBeNull();
+    });
+});
+
+describe('a value the robot reports', () => {
+    const START = { speed: 0, obstacleAvoidance: true };
+
+    it('replaces the reported fields of the settled value and keeps the others', () => {
+        const state = confirmable(START);
+        state.observe({ speed: 1 });
+        expect(get(state)).toEqual({
+            settled: { speed: 1, obstacleAvoidance: true },
+            pending: null,
+            lastAttempt: null,
+        });
+    });
+
+    it('leaves a pending proposal displayed until its verdict arrives', () => {
+        const state = confirmable(START);
+        state.propose({ ...START, obstacleAvoidance: false }, 1);
+        const { pending } = get(state);
+
+        state.observe({ speed: -1, obstacleAvoidance: true });
+
+        expect(get(state).pending).toBe(pending);
+        expect(get(state).settled).toEqual({ speed: -1, obstacleAvoidance: true });
+        expect(displayed(get(state))).toEqual({ ...START, obstacleAvoidance: false });
+    });
+
+    it('leaves the last attempt untouched', () => {
+        const state = confirmable(START);
+        state.propose({ ...START, speed: 1 }, 1);
+        state.resolve(1, FAILED);
+        const { lastAttempt } = get(state);
+
+        state.observe({ speed: -1 });
+
+        expect(get(state).lastAttempt).toBe(lastAttempt);
+        expect(get(state).settled.speed).toBe(-1);
+    });
+
+    it('is what a refused proposal reverts to', () => {
+        const state = confirmable(START);
+        state.propose({ ...START, obstacleAvoidance: false }, 1);
+        state.observe({ speed: 1 });
+        state.resolve(1, FAILED);
+        expect(displayed(get(state))).toEqual({ speed: 1, obstacleAvoidance: true });
     });
 });
