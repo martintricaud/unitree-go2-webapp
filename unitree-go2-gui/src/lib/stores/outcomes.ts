@@ -19,18 +19,18 @@ export type Outcome = {
 /// Matches the relay's own result buffer.
 const LOG_LIMIT = 200;
 
+/// Creates a log of outcomes, newest first, holding at most `LOG_LIMIT` entries.
+export const createOutcomeLog = () => {
+    const { subscribe, set, update } = writable<Outcome[]>([]);
+    return {
+        subscribe,
+        record: (_outcome: Outcome) => update((_log) => [_outcome, ..._log].slice(0, LOG_LIMIT)),
+        clear: () => set([]),
+    };
+};
+
 /// Every outcome since the control channel opened, newest first.
-export const outcomeLog = writable<Outcome[]>([]);
-
-export function recordOutcome(_outcome: Outcome) {
-    outcomeLog.update(function (_log) {
-        return [_outcome, ..._log].slice(0, LOG_LIMIT);
-    });
-}
-
-export function clearOutcomes() {
-    outcomeLog.set([]);
-}
+export const outcomeLog = createOutcomeLog();
 
 export const lastOutcome = derived(outcomeLog, (_log) => _log.at(0) ?? null);
 

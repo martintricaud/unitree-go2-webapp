@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import { robotConnected, robotReport } from '../stores/connection';
-import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
+import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
+import { createOutcomeLog, lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
 import { reported, robotState } from '../stores/robotState';
 import { enter, perform, sequence, set } from './commands';
 import type { Cue } from './commands';
@@ -42,13 +42,27 @@ const OK = { outcome: 'confirmed', code: 0, detail: '', label: '', at: 0 } as co
 const resultFor = (reqId: number, outcome: string, code: number | null, detail = 'because') =>
     JSON.stringify({ type: 'command_result', reqId, outcome, code, detail });
 
+type Stores = ConstructorParameters<typeof WebSocketClient>[0];
+
+/** Stores no other test writes, so a test that reads them depends on no earlier test. */
+const freshStores = (): Stores => ({
+    webSocketConnected: writable(false),
+    robotConnected: writable(false),
+    videoFrame: writable(null),
+    robotReport: writable({}),
+    outcomeLog: createOutcomeLog(),
+});
+
+/** The app's stores, for the tests that read what the app derives from them. */
+const appStores: Stores = { webSocketConnected, robotConnected, videoFrame, robotReport, outcomeLog };
+
 /** A client attached to a fresh open socket, with the outcome log cleared as on connect. */
-const openClient = () => {
+const openClient = (_stores: Stores = freshStores()) => {
     const socket = new FakeSocket();
-    const client = new WebSocketClient();
+    const client = new WebSocketClient(_stores);
     client.attach(socket);
     client.opened();
-    return { client, socket };
+    return { client, socket, stores: _stores };
 };
 
 const reqIdOf = (socket: FakeSocket, index = 0): number => {
@@ -73,7 +87,7 @@ describe('send', () => {
     });
 
     it('answers false rather than throwing when no socket has been attached', () => {
-        const client = new WebSocketClient();
+        const client = new WebSocketClient(freshStores());
         expect(client.send(HELLO)).toBe(false);
     });
 
@@ -197,39 +211,40 @@ describe('request', () => {
     });
 
     it('settles every waiting request when the control channel closes', async () => {
-        const { client, socket } = openClient();
+        const { client, socket, stores } = openClient();
         const answer = client.request(HELLO).verdict;
         const reqId = reqIdOf(socket);
         client.closed();
         expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
-        expect(get(robotConnected)).toBe(false);
+        expect(get(stores.robotConnected)).toBe(false);
     });
 
     it('ignores a verdict that arrives after its request already settled', async () => {
-        const { client, socket } = openClient();
+        const { client, socket, stores } = openClient();
         const answer = client.request(HELLO).verdict;
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         expect((await answer).outcome).toBe('confirmed');
 
         await client.received(resultFor(reqIdOf(socket), 'failed', 3203));
-        expect(get(outcomeLog).map((entry) => entry.outcome)).toEqual(['failed', 'confirmed']);
+        expect(get(stores.outcomeLog).map((entry) => entry.outcome)).toEqual(['failed', 'confirmed']);
     });
 });
 
 describe('the outcome log', () => {
+    // `lastOutcome` and `outcomeCounts` derive from the app's log, so these clients write to it.
     beforeEach(() => {
         vi.useRealTimers();
     });
 
     it('labels an entry with the command the browser sent', async () => {
-        const { client, socket } = openClient();
+        const { client, socket } = openClient(appStores);
         client.request(DANCE);
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         expect(get(lastOutcome)).toMatchObject({ label: 'Dance', outcome: 'confirmed', code: 0 });
     });
 
     it('drops a result that carries no request id, since this browser always sends one', async () => {
-        const { client } = openClient();
+        const { client } = openClient(appStores);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(
             JSON.stringify({
@@ -247,7 +262,7 @@ describe('the outcome log', () => {
     });
 
     it('counts every outcome, and reports zero for the names nothing landed on', async () => {
-        const { client, socket } = openClient();
+        const { client, socket } = openClient(appStores);
         client.request(HELLO);
         client.request(HELLO);
         client.request(HELLO);
@@ -264,7 +279,7 @@ describe('the outcome log', () => {
     });
 
     it('starts again when the control channel opens', async () => {
-        const { client, socket } = openClient();
+        const { client, socket } = openClient(appStores);
         client.request(HELLO);
         await client.received(resultFor(reqIdOf(socket), 'failed', 3203));
         expect(get(outcomeLog)).toHaveLength(1);
@@ -278,32 +293,32 @@ describe('the outcome log', () => {
 
 describe('robot state', () => {
     it('follows every robot_state the relay sends, not only the first', async () => {
-        const { client } = openClient();
+        const { client, stores } = openClient();
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(robotConnected)).toBe(false);
+        expect(get(stores.robotConnected)).toBe(false);
 
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
-        expect(get(robotConnected)).toBe(true);
+        expect(get(stores.robotConnected)).toBe(true);
 
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(robotConnected)).toBe(false);
+        expect(get(stores.robotConnected)).toBe(false);
     });
 
     it('drops a frame it cannot read without disturbing what it already knows', async () => {
-        const { client } = openClient();
+        const { client, stores } = openClient();
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         await client.received('{ this is not json');
-        expect(get(robotConnected)).toBe(true);
+        expect(get(stores.robotConnected)).toBe(true);
     });
 
     it('ignores JSON that is not a relay message', async () => {
-        const { client } = openClient();
+        const { client, stores } = openClient();
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         await client.received('null');
         await client.received(JSON.stringify({ type: 'pirouette', connected: false }));
-        expect(get(robotConnected)).toBe(true);
-        expect(get(outcomeLog)).toEqual([]);
+        expect(get(stores.robotConnected)).toBe(true);
+        expect(get(stores.outcomeLog)).toEqual([]);
         expect(warn).toHaveBeenCalledTimes(2);
         warn.mockRestore();
     });
@@ -319,9 +334,10 @@ const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
 const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
     JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
 
-/** A client whose robot is up, with nothing the robot stated before counted as reported. */
+/** A client whose robot is up, with nothing the robot stated before counted as reported. It writes
+ * the app's connection stores, which `robotState` follows, and a log of its own. */
 const connectedClient = async () => {
-    const opened = openClient();
+    const opened = openClient({ ...appStores, outcomeLog: createOutcomeLog() });
     await opened.client.received(JSON.stringify({ type: 'robot_state', connected: false }));
     await opened.client.received(JSON.stringify({ type: 'robot_state', connected: true }));
     return opened;

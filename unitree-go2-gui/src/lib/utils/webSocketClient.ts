@@ -3,9 +3,10 @@ import { ACTIONS, MCF_CODES, MODES } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
-import { OUTCOMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
-import type { Outcome } from '../stores/outcomes';
+import { OUTCOMES, outcomeLog } from '../stores/outcomes';
+import type { Outcome, createOutcomeLog } from '../stores/outcomes';
 import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
+import type * as connection from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -100,49 +101,37 @@ const CLOSED = 3;
 const REPLY_BACKSTOP_MS = 20_000;
 
 /// A command that never left the browser did not run: a failure, not a silence.
-function CHANNEL_CLOSED(_reqId: number, _label: string): Outcome {
+function CHANNEL_CLOSED(_reqId: number, _label: string, _at: number): Outcome {
     return {
         outcome: 'failed',
         code: null,
         detail: 'the control channel is closed, so the command never left the browser',
         reqId: _reqId,
         label: _label,
-        at: Date.now(),
+        at: _at,
     };
 }
 
-function RELAY_SILENT(_reqId: number, _label: string): Outcome {
+function RELAY_SILENT(_reqId: number, _label: string, _at: number): Outcome {
     return {
         outcome: 'unknown',
         code: null,
         detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
         reqId: _reqId,
         label: _label,
-        at: Date.now(),
+        at: _at,
     };
 }
 
 /// Widened to every number, so any reported code can be looked up; an absent code reads as undefined.
 const FIELDS_BY_CODE: Partial<Record<number, Partial<Pick<RobotState, 'gait' | 'posture'>>>> = MCF_CODES;
 
-/// The unknown codes already logged, so each is logged once.
-const warnedCodes = new Set<number>();
-
-/// The fields a report states. A report outside "mcf", whose codes the table does not cover, states
-/// nothing. An unknown code states nothing and is logged once, so the missing codes can be collected.
+/// The fields a report states, or the code when the table does not cover it. A report outside
+/// "mcf", whose codes the table does not cover, states nothing.
 function decodeSportState(_motionMode: string | null, _errorCode: number | null) {
-    if (_motionMode !== 'mcf' || _errorCode === null) return {};
+    if (_motionMode !== 'mcf' || _errorCode === null) return { report: {} };
     const fields = FIELDS_BY_CODE[_errorCode];
-    if (fields === undefined && !warnedCodes.has(_errorCode)) {
-        warnedCodes.add(_errorCode);
-        console.warn('Ignoring a sport_state code missing from MCF_CODES:', _errorCode);
-    }
-    return fields ?? {};
-}
-
-/// Publishes the fields a frame states as one new report; a frame that states none publishes nothing.
-function publish(_report: Partial<RobotState>) {
-    if (!isEmpty(_report)) robotReport.set(_report);
+    return fields === undefined ? { unknownCode: _errorCode } : { report: fields };
 }
 
 /// The part of a WebSocket this client writes to, so a test can supply a recorder.
@@ -160,6 +149,12 @@ function parseRelayMessage(_raw: string) {
     }
 }
 
+/// The stores a client writes. The app passes its own; a test passes fresh ones.
+type ClientStores = Pick<
+    typeof connection,
+    'webSocketConnected' | 'robotConnected' | 'videoFrame' | 'robotReport'
+> & { outcomeLog: ReturnType<typeof createOutcomeLog> };
+
 export class WebSocketClient {
     private socket: Sink | null = null;
     private previousBitmap: ImageBitmap | null = null;
@@ -169,6 +164,14 @@ export class WebSocketClient {
         { resolve: (outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }
     >();
     private lastRequestId = 0;
+    /// The unknown sport_state codes already logged, so each is logged once.
+    private warnedCodes = new Set<number>();
+
+    private readonly stores: ClientStores;
+
+    constructor(_stores: ClientStores) {
+        this.stores = _stores;
+    }
 
     connect() {
         if (this.socket && this.socket.readyState < CLOSED) return;
@@ -186,17 +189,17 @@ export class WebSocketClient {
     }
 
     opened() {
-        webSocketConnected.set(true);
-        clearOutcomes();
+        this.stores.webSocketConnected.set(true);
+        this.stores.outcomeLog.clear();
     }
 
     closed() {
-        webSocketConnected.set(false);
-        robotConnected.set(false);
+        this.stores.webSocketConnected.set(false);
+        this.stores.robotConnected.set(false);
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.awaiting]) {
-            this.settle(CHANNEL_CLOSED(reqId, label));
+            this.settle(CHANNEL_CLOSED(reqId, label, Date.now()));
         }
     }
 
@@ -212,20 +215,22 @@ export class WebSocketClient {
         }
         switch (msg.type) {
             case 'robot_state':
-                robotConnected.set(msg.connected);
+                this.stores.robotConnected.set(msg.connected);
                 return;
             case 'robot_settings': {
                 const { speedLevel, obstacleAvoidance } = msg;
                 const isLevel = isIncludedIn(speedLevel, values(SPEED_LEVELS));
                 if (!isLevel) console.warn('Ignoring a speed level outside SPEED_LEVELS:', speedLevel);
-                publish({
+                this.publish({
                     ...(isLevel ? { speed: speedLevel } : {}),
                     ...(typeof obstacleAvoidance === 'boolean' ? { obstacleAvoidance } : {}),
                 });
                 return;
             }
             case 'sport_state': {
-                publish(decodeSportState(msg.motionMode, msg.errorCode));
+                const decoded = decodeSportState(msg.motionMode, msg.errorCode);
+                if (decoded.unknownCode !== undefined) this.warnUnknownCode(decoded.unknownCode);
+                else this.publish(decoded.report);
                 return;
             }
             case 'command_result': {
@@ -244,7 +249,7 @@ export class WebSocketClient {
                     at: Date.now(),
                 };
                 if (request) this.settle(outcome);
-                else recordOutcome(outcome);
+                else this.stores.outcomeLog.record(outcome);
                 return;
             }
             case 'state_stream':
@@ -261,12 +266,12 @@ export class WebSocketClient {
         const reqId = (this.lastRequestId += 1);
         const label = cueLabel(cue);
         if (!this.send({ ...encode(cue), reqId })) {
-            const outcome = CHANNEL_CLOSED(reqId, label);
-            recordOutcome(outcome);
+            const outcome = CHANNEL_CLOSED(reqId, label, Date.now());
+            this.stores.outcomeLog.record(outcome);
             return { reqId, verdict: Promise.resolve(outcome) };
         }
         const verdict = new Promise<Outcome>((resolve) => {
-            const timer = setTimeout(() => this.settle(RELAY_SILENT(reqId, label)), REPLY_BACKSTOP_MS);
+            const timer = setTimeout(() => this.settle(RELAY_SILENT(reqId, label, Date.now())), REPLY_BACKSTOP_MS);
             this.awaiting.set(reqId, { resolve, timer, label });
         });
         return { reqId, verdict };
@@ -289,8 +294,20 @@ export class WebSocketClient {
         if (!request) return;
         clearTimeout(request.timer);
         this.awaiting.delete(outcome.reqId);
-        recordOutcome(outcome);
+        this.stores.outcomeLog.record(outcome);
         request.resolve(outcome);
+    }
+
+    /// Publishes the fields a frame states as one new report; a frame that states none publishes nothing.
+    private publish(_report: Partial<RobotState>) {
+        if (!isEmpty(_report)) this.stores.robotReport.set(_report);
+    }
+
+    /// An unknown code states nothing and is logged once, so the missing codes can be collected.
+    private warnUnknownCode(_code: number) {
+        if (this.warnedCodes.has(_code)) return;
+        this.warnedCodes.add(_code);
+        console.warn('Ignoring a sport_state code missing from MCF_CODES:', _code);
     }
 
     private async showFrame(blob: Blob) {
@@ -298,11 +315,17 @@ export class WebSocketClient {
             const bitmap = await createImageBitmap(blob);
             this.previousBitmap?.close();
             this.previousBitmap = bitmap;
-            videoFrame.set(bitmap);
+            this.stores.videoFrame.set(bitmap);
         } catch (error) {
             console.error('Failed to decode video frame:', error);
         }
     }
 }
 
-export const websocket = new WebSocketClient();
+export const websocket = new WebSocketClient({
+    webSocketConnected,
+    robotConnected,
+    videoFrame,
+    robotReport,
+    outcomeLog,
+});
