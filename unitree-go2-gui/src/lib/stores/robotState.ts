@@ -7,8 +7,9 @@ import { robotConnected, robotReport } from './connection';
 import type { WebSocketClient } from '../utils/webSocketClient';
 
 export const robotState = confirmable<RobotState>({
-    mode: 'FreeWalk',
-    posture: 'standing',
+    /// The robot boots in FreeWalk, in no posture.
+    gait: 'FreeWalk',
+    posture: null,
     /// The robot boots green, keeps a colour until the next one is set, and never reports it.
     headlight: 'green',
     speed: 0,

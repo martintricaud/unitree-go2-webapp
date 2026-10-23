@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { dim, enter, leave, orient, perform, sequence, set, transition, wait } from './commands';
+import { activeMode, dim, enter, leave, orient, perform, sequence, set, transition, wait } from './commands';
 import type { RobotState } from './commands';
 import { presets } from '../data/cues';
 
 const INITIAL_ROBOT_STATE: RobotState = {
-  mode: 'FreeWalk',
-  posture: 'standing',
+  gait: 'FreeWalk',
+  posture: null,
   headlight: 'white',
   speed: 0,
   obstacleAvoidance: true,
@@ -13,31 +13,58 @@ const INITIAL_ROBOT_STATE: RobotState = {
 
 const STATES: RobotState[] = [
   INITIAL_ROBOT_STATE,
-  { mode: null, posture: 'sitting', headlight: 'red', speed: -1, obstacleAvoidance: false },
-  { mode: 'Pose', posture: 'lying', headlight: 'blue', speed: 1, obstacleAvoidance: true },
+  { gait: null, posture: 'Sitting', headlight: 'red', speed: -1, obstacleAvoidance: false },
+  { gait: 'Trotting', posture: 'Lying', headlight: 'blue', speed: 1, obstacleAvoidance: true },
 ];
 
 describe('transition', () => {
-  it('ends in FreeWalk after leaving Pose and entering FreeWalk, from any state', () => {
+  it('ends in FreeWalk, in no posture, after leaving Pose and entering FreeWalk, from any state', () => {
     STATES.forEach((state) => {
-      expect(transition(sequence('', leave('Pose'), enter('FreeWalk')))(state).mode).toBe('FreeWalk');
+      expect(transition(sequence('', leave('Pose'), enter('FreeWalk')))(state)).toMatchObject({
+        gait: 'FreeWalk',
+        posture: null,
+      });
     });
   });
 
-  it('enters a mode, and leaving one shows no mode', () => {
-    expect(transition(enter('Handstand'))(INITIAL_ROBOT_STATE).mode).toBe('Handstand');
-    expect(transition(leave('FreeWalk'))(INITIAL_ROBOT_STATE).mode).toBeNull();
+  it('enters a gait, and leaving a gait sets the gait to null', () => {
+    expect(transition(enter('Handstand'))(INITIAL_ROBOT_STATE).gait).toBe('Handstand');
+    expect(transition(leave('FreeWalk'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, gait: null });
   });
 
-  it('sets the posture an action ends in', () => {
-    expect(transition(perform('Sit'))(INITIAL_ROBOT_STATE).posture).toBe('sitting');
-    expect(transition(perform('StandDown'))(INITIAL_ROBOT_STATE).posture).toBe('lying');
-    expect(transition(perform('RiseSit'))(STATES[1]).posture).toBe('standing');
-    expect(transition(perform('StandUp'))(STATES[2]).posture).toBe('standing');
+  it('clears the posture on entering a gait from a posture', () => {
+    expect(transition(enter('Leaping'))(STATES[2])).toEqual({ ...STATES[2], gait: 'Leaping', posture: null });
   });
 
-  it('is the identity for an action with no posture, an orientation, a dim and a wait', () => {
-    [perform('Hello'), orient(0, -1, 0), dim(4), wait(1)].forEach((cue) => {
+  it('keeps the gait on entering or leaving a posture mode', () => {
+    expect(transition(enter('Pose'))(STATES[2])).toEqual({ ...STATES[2], posture: 'Pose' });
+    expect(transition(enter('Damp'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, posture: 'Damp' });
+    expect(transition(leave('Pose'))(STATES[2])).toEqual({ ...STATES[2], posture: null });
+  });
+
+  it('sets the posture an action leaves the robot in, and keeps the gait', () => {
+    expect(transition(perform('Sit'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, posture: 'Sitting' });
+    expect(transition(perform('StandDown'))(INITIAL_ROBOT_STATE).posture).toBe('Lying');
+    expect(transition(perform('StandUp'))(STATES[2])).toEqual({ ...STATES[2], posture: 'JointLock' });
+    (['RiseSit', 'RecoveryStand', 'BalanceStand'] as const).forEach((action) => {
+      expect(transition(perform(action))(STATES[2])).toEqual({ ...STATES[2], posture: null });
+    });
+  });
+
+  it('leaves the gait as it was before Sit, and no posture, after Sit then RiseSit', () => {
+    STATES.forEach((state) => {
+      expect(transition(sequence('', perform('Sit'), perform('RiseSit')))(state)).toEqual({ ...state, posture: null });
+    });
+  });
+
+  it('shows the posture when there is one, otherwise the gait', () => {
+    expect(activeMode(INITIAL_ROBOT_STATE)).toBe('FreeWalk');
+    expect(activeMode(STATES[2])).toBe('Lying');
+    expect(activeMode({ gait: null, posture: null })).toBeNull();
+  });
+
+  it('is the identity for a one-shot action, an orientation, a dim and a wait', () => {
+    [perform('Hello'), perform('FrontFlip'), perform('StopMove'), orient(0, -1, 0), dim(4), wait(1)].forEach((cue) => {
       STATES.forEach((state) => {
         expect(transition(cue)(state)).toEqual(state);
       });
@@ -54,7 +81,7 @@ describe('transition', () => {
 
   it('composes a sequence left to right, nested sequences included', () => {
     const cue = sequence('', enter('Pose'), sequence('', presets.exitSit, set({ name: 'headlight', value: 'red' })));
-    expect(transition(cue)(STATES[1])).toEqual({ ...STATES[1], mode: 'FreeWalk', posture: 'standing', headlight: 'red' });
+    expect(transition(cue)(STATES[1])).toEqual({ ...STATES[1], gait: 'FreeWalk', posture: null, headlight: 'red' });
   });
 
   it('refuses commands that do not exist, at compile time', () => {

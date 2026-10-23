@@ -1,6 +1,6 @@
 import { reduce } from 'remeda';
-import { ACTIONS } from '../data/sportCommands';
-import type { Action, Mode } from '../data/sportCommands';
+import { ACTIONS, MODES } from '../data/sportCommands';
+import type { Action, Gait, Mode, Posture } from '../data/sportCommands';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 
 type Setting = {
@@ -62,22 +62,29 @@ export function cueLabel(_cue: Cue) {
 }
 
 export type RobotState = {
-    /// Null once a mode was left: the API does not say which mode follows.
-    mode: Mode | null;
-    posture: Extract<(typeof ACTIONS)[Action], { posture: string }>['posture'];
+    /// Null when the gait is unknown, as after a gait was left: the API does not say which gait
+    /// follows. While the robot is in a posture, this keeps the gait it returns to on standing up.
+    gait: Gait | null;
+    /// Null when the robot is in its gait.
+    posture: Posture | null;
     headlight: (typeof COLOURS)[number];
     speed: (typeof SPEED_LEVELS)[keyof typeof SPEED_LEVELS];
     obstacleAvoidance: boolean;
 };
+
+/// True for a mode whose `kind` is a gait; the other modes are postures.
+const isGaitMode = (_mode: Mode): _mode is Extract<Mode, Gait> => MODES[_mode].kind === 'gait';
 
 /// The state the robot is in once the cue has run from `_state`.
 export function transition(_cue: Cue): (_state: RobotState) => RobotState {
     return function (_state) {
         switch (_cue.kind) {
             case 'enter':
-                return { ..._state, mode: _cue.mode };
+                return isGaitMode(_cue.mode)
+                    ? { ..._state, gait: _cue.mode, posture: null }
+                    : { ..._state, posture: _cue.mode };
             case 'leave':
-                return { ..._state, mode: null };
+                return isGaitMode(_cue.mode) ? { ..._state, gait: null } : { ..._state, posture: null };
             case 'perform': {
                 const action = ACTIONS[_cue.action];
                 return 'posture' in action ? { ..._state, posture: action.posture } : _state;
@@ -93,3 +100,6 @@ export function transition(_cue: Cue): (_state: RobotState) => RobotState {
         }
     };
 }
+
+/// What the mode buttons show: the posture when there is one, otherwise the gait.
+export const activeMode = (_state: Pick<RobotState, 'gait' | 'posture'>) => _state.posture ?? _state.gait;

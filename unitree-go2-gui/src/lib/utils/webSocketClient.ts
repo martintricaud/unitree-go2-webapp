@@ -1,6 +1,5 @@
 import { isEmpty, isIncludedIn, keys, values } from 'remeda';
-import { ACTIONS, MCF_MODE_CODES, MODES } from '../data/sportCommands';
-import type { Mode } from '../data/sportCommands';
+import { ACTIONS, MCF_CODES, MODES } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
@@ -124,12 +123,21 @@ function RELAY_SILENT(_reqId: number, _label: string): Outcome {
 }
 
 /// Widened to every number, so any reported code can be looked up; an absent code reads as undefined.
-const MODE_BY_CODE: Partial<Record<number, Mode>> = MCF_MODE_CODES;
+const FIELDS_BY_CODE: Partial<Record<number, Partial<Pick<RobotState, 'gait' | 'posture'>>>> = MCF_CODES;
 
-/// The mode a report names, or null for a report outside "mcf", whose codes this map does not cover.
-function decodeMode(_motionMode: string | null, _errorCode: number | null) {
-    if (_motionMode !== 'mcf' || _errorCode === null) return null;
-    return MODE_BY_CODE[_errorCode] ?? null;
+/// The unknown codes already logged, so each is logged once.
+const warnedCodes = new Set<number>();
+
+/// The fields a report states. A report outside "mcf", whose codes the table does not cover, states
+/// nothing. An unknown code states nothing and is logged once, so the missing codes can be collected.
+function decodeSportState(_motionMode: string | null, _errorCode: number | null) {
+    if (_motionMode !== 'mcf' || _errorCode === null) return {};
+    const fields = FIELDS_BY_CODE[_errorCode];
+    if (fields === undefined && !warnedCodes.has(_errorCode)) {
+        warnedCodes.add(_errorCode);
+        console.warn('Ignoring a sport_state code missing from MCF_CODES:', _errorCode);
+    }
+    return fields ?? {};
 }
 
 /// Publishes the fields a frame states as one new report; a frame that states none publishes nothing.
@@ -216,8 +224,7 @@ export class WebSocketClient {
                 return;
             }
             case 'sport_state': {
-                const mode = decodeMode(msg.motionMode, msg.errorCode);
-                publish(mode === null ? {} : { mode });
+                publish(decodeSportState(msg.motionMode, msg.errorCode));
                 return;
             }
             case 'command_result': {

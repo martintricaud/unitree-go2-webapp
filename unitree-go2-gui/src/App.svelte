@@ -9,7 +9,7 @@
     import Radio from './components/Radio.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import { cueLabel, enter, leave, perform, set } from './lib/utils/commands';
+    import { activeMode, cueLabel, enter, leave, perform, set } from './lib/utils/commands';
     import { ACTIONS, MODES } from './lib/data/sportCommands';
     import { CONDUITE, presets } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
@@ -83,15 +83,17 @@
     /// The keys both operators share. Each asks for the opposite of what its control shows, so
     /// a refused command leaves the next press asking for the same thing again.
     const togglePose = () => {
-        void sendToRobot(shown.mode !== 'Pose' ? presets.enterPose : presets.exitPose);
+        void sendToRobot(shown.posture !== 'Pose' ? presets.enterPose : presets.exitPose);
     };
 
     const toggleLeaping = () => {
-        void sendToRobot(shown.mode !== 'Leaping' ? enter('Leaping') : leave('Leaping'));
+        void sendToRobot(
+            shown.gait === 'Leaping' && shown.posture === null ? leave('Leaping') : enter('Leaping'),
+        );
     };
 
     const toggleSit = () => {
-        void sendToRobot(shown.posture === 'sitting' ? presets.exitSit : perform('Sit'));
+        void sendToRobot(shown.posture === 'Sitting' ? presets.exitSit : perform('Sit'));
     };
 
     const dance = () => void sendToRobot(presets.dance);
@@ -144,14 +146,14 @@
                     //     break;
                     case 'ArrowLeft':
                         void sendToRobot(
-                            shown.posture === 'lying' ? presets.stopAndStand : presets.stopAndCrouch,
+                            shown.posture === 'Lying' ? presets.stopAndStand : presets.stopAndCrouch,
                         );
                         break;
                     case 'ArrowUp':
                         standContent();
                         break;
                     case 'ArrowDown':
-                        void sendToRobot(enter(shown.mode !== 'Trotting' ? 'Trotting' : 'FreeWalk'));
+                        void sendToRobot(enter(shown.gait !== 'Trotting' ? 'Trotting' : 'FreeWalk'));
                         break;
                     case 'b':
                         toggleLeaping();
@@ -267,9 +269,9 @@
         {#each keys(MODES) as modeName}
             <Radio
                 optionName={modeName}
-                selected={$robotState.settled.mode === modeName}
-                spinning={$robotState.pending.mode?.value === modeName}
-                disabled={!$robotConnected}
+                selected={activeMode($robotState.settled) === modeName}
+                spinning={activeMode(shown) === modeName && activeMode(shown) !== activeMode($robotState.settled)}
+                disabled={!$robotConnected || !($reported.gait || $reported.posture)}
                 callback={() => sendToRobot(enter(modeName))}
             />
         {/each}
