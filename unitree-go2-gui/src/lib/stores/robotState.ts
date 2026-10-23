@@ -1,9 +1,9 @@
-import { isDeepEqual, isEmpty, isNonNull, mapValues, pickBy } from 'remeda';
-import { derived, get } from 'svelte/store';
+import { isDeepEqual, isEmpty, mapValues, pickBy } from 'remeda';
+import { get, readonly, writable } from 'svelte/store';
 import { transition } from '../utils/commands';
 import type { Cue, RobotState } from '../utils/commands';
 import { confirmable, displayed } from '../utils/confirmable';
-import { robotMode, robotSettings } from './connection';
+import { robotConnected, robotReport } from './connection';
 import type { WebSocketClient } from '../utils/webSocketClient';
 
 export const robotState = confirmable<RobotState>({
@@ -15,17 +15,20 @@ export const robotState = confirmable<RobotState>({
     obstacleAvoidance: true,
 });
 
-/// The robot's report settles the fields it carries; a field it has not reported keeps its value.
-robotSettings.subscribe((_settings) => robotState.observe(pickBy(_settings, isNonNull)));
+const stated = writable<Partial<Record<keyof RobotState, true>>>({});
 
-/// A report that names no mode leaves the settled mode as it was.
-robotMode.subscribe((_mode) => {
-    if (_mode !== null) robotState.observe({ mode: _mode });
+/// The fields the robot has stated since the robot was last lost, each marked true.
+export const reported = readonly(stated);
+
+/// Each report settles exactly the fields it states and marks them reported.
+robotReport.subscribe((_report) => {
+    robotState.observe(_report);
+    stated.update((_marked) => ({ ..._marked, ...mapValues(_report, () => true as const) }));
 });
 
-/// Whether the robot has reported each field it states since the robot or the control channel
-/// was last lost.
-export const reported = derived(robotSettings, (_settings) => mapValues(_settings, isNonNull));
+robotConnected.subscribe((_connected) => {
+    if (!_connected) stated.set({});
+});
 
 /// Browser-side only: WebSocketClient mints the ids the relay sees.
 let lastProposal = 0;

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import { NO_ROBOT_SETTINGS, robotConnected, robotMode, robotSettings } from '../stores/connection';
+import { robotConnected, robotReport } from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
 import { reported, robotState } from '../stores/robotState';
-import { enter, perform, sequence } from './commands';
+import { enter, perform, sequence, set } from './commands';
+import type { Cue } from './commands';
 import { send } from '../stores/robotState';
 
 // The relay bounds every command at 5s.
@@ -308,49 +309,56 @@ describe('robot state', () => {
     });
 });
 
+/** Settles `_cue` through a client that confirms it at once, as the relay would. */
+const confirm = (_cue: Cue) =>
+    send({ request: () => Promise.resolve({ ...OK, reqId: 0 }) })(_cue);
+
+const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
+    JSON.stringify({ type: 'robot_settings', speedLevel, obstacleAvoidance });
+
+const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
+    JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
+
+/** A client whose robot is up, with nothing the robot stated before counted as reported. */
+const connectedClient = async () => {
+    const opened = openClient();
+    await opened.client.received(JSON.stringify({ type: 'robot_state', connected: false }));
+    await opened.client.received(JSON.stringify({ type: 'robot_state', connected: true }));
+    return opened;
+};
+
 describe('robot settings', () => {
-    beforeEach(() => {
-        robotSettings.set(NO_ROBOT_SETTINGS);
-    });
-
-    const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
-        JSON.stringify({ type: 'robot_settings', speedLevel, obstacleAvoidance });
-
-    it.each([-1, 0, 1])('sets the speed to level %i and marks it reported', async (level) => {
-        const { client } = openClient();
+    it.each([-1, 0, 1])('reports speed level %i, and only the speed', async (level) => {
+        const { client } = await connectedClient();
         await client.received(settings(level, null));
-        expect(get(robotSettings).speed).toBe(level);
+        expect(get(robotReport)).toEqual({ speed: level });
         expect(get(robotState).settled.speed).toBe(level);
-        expect(get(reported).speed).toBe(true);
+        expect(get(reported)).toEqual({ speed: true });
     });
 
-    it.each([2, null])('leaves an unreported speed unreported for level %s, and warns', async (level) => {
-        const { client } = openClient();
+    it.each([2, null])('states no speed for level %s, and warns', async (level) => {
+        const { client } = await connectedClient();
         const speed = get(robotState).settled.speed;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        await client.received(settings(level, null));
+        await client.received(settings(level, true));
 
-        expect(get(robotSettings).speed).toBeNull();
+        expect(get(robotReport)).toEqual({ obstacleAvoidance: true });
         expect(get(robotState).settled.speed).toBe(speed);
-        expect(get(reported).speed).toBe(false);
+        expect(get(reported)).toEqual({ obstacleAvoidance: true });
         expect(warn).toHaveBeenCalledOnce();
         warn.mockRestore();
     });
 
-    it("keeps the robot's earlier speed when a later report carries an unrecognised level", async () => {
-        const { client } = openClient();
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        await client.received(settings(-1, null));
-        await client.received(settings(2, null));
-        expect(get(robotSettings).speed).toBe(-1);
-        expect(get(robotState).settled.speed).toBe(-1);
-        expect(get(reported).speed).toBe(true);
-        warn.mockRestore();
+    it.each([null, 'yes', 1])('states no obstacle avoidance for %s', async (value) => {
+        const { client } = await connectedClient();
+        await client.received(settings(0, value));
+        expect(get(robotReport)).toEqual({ speed: 0 });
+        expect(get(reported)).toEqual({ speed: true });
     });
 
-    it('sets obstacle avoidance and marks it reported', async () => {
-        const { client } = openClient();
+    it('reports obstacle avoidance', async () => {
+        const { client } = await connectedClient();
         await client.received(settings(0, false));
         expect(get(robotState).settled.obstacleAvoidance).toBe(false);
         expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
@@ -359,52 +367,56 @@ describe('robot settings', () => {
         expect(get(robotState).settled.obstacleAvoidance).toBe(true);
     });
 
-    it("keeps the robot's earlier obstacle avoidance when a later report carries none", async () => {
-        const { client } = openClient();
-        await client.received(settings(0, false));
-        await client.received(settings(0, null));
-        expect(get(robotSettings).obstacleAvoidance).toBe(false);
-        expect(get(robotState).settled.obstacleAvoidance).toBe(false);
-        expect(get(reported).obstacleAvoidance).toBe(true);
+    it('leaves robotReport unchanged on a frame that states nothing', async () => {
+        const { client } = await connectedClient();
+        await client.received(settings(-1, null));
+        const before = get(robotReport);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        await client.received(settings(2, 'yes'));
+        await client.received(sportState(4242));
+        expect(get(robotReport)).toBe(before);
+        expect(get(robotState).settled.speed).toBe(-1);
+        expect(get(reported)).toEqual({ speed: true });
+        warn.mockRestore();
     });
 
-    it('marks both fields unreported when the robot is lost', async () => {
-        const { client } = openClient();
+    it('does not re-apply an earlier mode report on a speed report', async () => {
+        const { client } = await connectedClient();
+        await client.received(sportState(2017));
+        await confirm(enter('Damp'));
+        await client.received(settings(1, null));
+        expect(get(robotState).settled).toMatchObject({ mode: 'Damp', speed: 1 });
+    });
+
+    it('clears reported when the robot is lost', async () => {
+        const { client } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(robotSettings)).toEqual(NO_ROBOT_SETTINGS);
-        expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
+        expect(get(reported)).toEqual({});
     });
 
-    it('keeps both fields reported while the robot stays connected', async () => {
-        const { client } = openClient();
+    it('keeps reported while the robot stays connected', async () => {
+        const { client } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
     });
 
-    it('marks both fields unreported when the control channel closes', async () => {
-        const { client } = openClient();
+    it('clears reported when the control channel closes', async () => {
+        const { client } = await connectedClient();
         await client.received(settings(0, true));
         client.closed();
-        expect(get(robotSettings)).toEqual(NO_ROBOT_SETTINGS);
-        expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
+        expect(get(reported)).toEqual({});
     });
 });
 
 describe('mode report', () => {
-    beforeEach(() => {
-        robotMode.set(null);
-    });
-
-    const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
-        JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
-
-    it('settles the mode to Leaping on code 2008 under mcf', async () => {
-        const { client } = openClient();
+    it('reports Leaping on code 2008 under mcf, and only the mode', async () => {
+        const { client } = await connectedClient();
         await client.received(sportState(2008));
-        expect(get(robotMode)).toBe('Leaping');
+        expect(get(robotReport)).toEqual({ mode: 'Leaping' });
         expect(get(robotState).settled.mode).toBe('Leaping');
+        expect(get(reported)).toEqual({ mode: true });
     });
 
     it.each([
@@ -413,31 +425,37 @@ describe('mode report', () => {
         ['no code', null, 'mcf'],
         ['a motion-control mode other than mcf', 2008, 'normal'],
         ['an unread motion-control mode', 2008, null],
-    ])('leaves the mode unchanged on %s', async (_case, _code, _motionMode) => {
-        const { client } = openClient();
+    ])('states nothing on %s', async (_case, _code, _motionMode) => {
+        const { client } = await connectedClient();
         await client.received(sportState(1016));
+        const before = get(robotReport);
         await client.received(sportState(_code, _motionMode));
-        expect(get(robotMode)).toBeNull();
+        expect(get(robotReport)).toBe(before);
         expect(get(robotState).settled.mode).toBe('Trotting');
     });
 
-    it('settles the earlier mode again when it is reported after an unmapped report', async () => {
-        const { client } = openClient();
+    it('applies each of two reports stating the same mode', async () => {
+        const { client } = await connectedClient();
         await client.received(sportState(2017));
         expect(get(robotState).settled.mode).toBe('Backstand');
 
-        // A cue settles another mode while the robot's report names none.
-        await client.received(sportState(1013));
-        const stub = { request: () => Promise.resolve({ ...OK, reqId: 0 }) };
-        await send(stub)(enter('Damp'));
+        await confirm(enter('Damp'));
         expect(get(robotState).settled.mode).toBe('Damp');
 
         await client.received(sportState(2017));
         expect(get(robotState).settled.mode).toBe('Backstand');
     });
 
+    it('does not re-apply an earlier speed report on a mode report', async () => {
+        const { client } = await connectedClient();
+        await client.received(settings(-1, null));
+        await confirm(set({ name: 'speed', value: 1 }));
+        await client.received(sportState(2008));
+        expect(get(robotState).settled).toMatchObject({ mode: 'Leaping', speed: 1 });
+    });
+
     it('leaves a pending mode proposal pending', async () => {
-        const { client, socket } = openClient();
+        const { client, socket } = await connectedClient();
         const done = send(client)(enter('Jumping'));
         await client.received(sportState(2011));
         expect(get(robotState).settled.mode).toBe('Handstand');
@@ -446,19 +464,5 @@ describe('mode report', () => {
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await done;
         expect(get(robotState).settled.mode).toBe('Jumping');
-    });
-
-    it('forgets the report when the robot is lost', async () => {
-        const { client } = openClient();
-        await client.received(sportState(2008));
-        await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(robotMode)).toBeNull();
-    });
-
-    it('forgets the report when the control channel closes', async () => {
-        const { client } = openClient();
-        await client.received(sportState(2008));
-        client.closed();
-        expect(get(robotMode)).toBeNull();
     });
 });

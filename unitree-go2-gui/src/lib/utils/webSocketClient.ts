@@ -1,4 +1,4 @@
-import { isIncludedIn, keys, values } from 'remeda';
+import { isEmpty, isIncludedIn, keys, values } from 'remeda';
 import { ACTIONS, MCF_MODE_CODES, MODES } from '../data/sportCommands';
 import type { Mode } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
@@ -6,14 +6,7 @@ import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
 import { OUTCOMES, clearOutcomes, recordOutcome } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import {
-    NO_ROBOT_SETTINGS,
-    robotConnected,
-    robotMode,
-    robotSettings,
-    videoFrame,
-    webSocketConnected,
-} from '../stores/connection';
+import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -139,6 +132,11 @@ function decodeMode(_motionMode: string | null, _errorCode: number | null) {
     return MODE_BY_CODE[_errorCode] ?? null;
 }
 
+/// Publishes the fields a frame states as one new report; a frame that states none publishes nothing.
+function publish(_report: Partial<RobotState>) {
+    if (!isEmpty(_report)) robotReport.set(_report);
+}
+
 /// The part of a WebSocket this client writes to, so a test can supply a recorder.
 export type Sink = { readyState: number; send(data: string): void };
 
@@ -186,8 +184,6 @@ export class WebSocketClient {
     closed() {
         webSocketConnected.set(false);
         robotConnected.set(false);
-        robotSettings.set(NO_ROBOT_SETTINGS);
-        robotMode.set(null);
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.pending]) {
@@ -208,26 +204,22 @@ export class WebSocketClient {
         switch (msg.type) {
             case 'robot_state':
                 robotConnected.set(msg.connected);
-                if (!msg.connected) {
-                    robotSettings.set(NO_ROBOT_SETTINGS);
-                    robotMode.set(null);
-                }
                 return;
             case 'robot_settings': {
-                const speed = isIncludedIn(msg.speedLevel, values(SPEED_LEVELS)) ? msg.speedLevel : null;
-                if (speed === null) console.warn('Ignoring a speed level outside SPEED_LEVELS:', msg.speedLevel);
-                // A field the report does not carry keeps the robot's earlier report of it.
-                robotSettings.update((_last) => ({
-                    speed: speed ?? _last.speed,
-                    obstacleAvoidance: msg.obstacleAvoidance ?? _last.obstacleAvoidance,
-                }));
+                const { speedLevel, obstacleAvoidance } = msg;
+                const isLevel = isIncludedIn(speedLevel, values(SPEED_LEVELS));
+                if (!isLevel) console.warn('Ignoring a speed level outside SPEED_LEVELS:', speedLevel);
+                publish({
+                    ...(isLevel ? { speed: speedLevel } : {}),
+                    ...(typeof obstacleAvoidance === 'boolean' ? { obstacleAvoidance } : {}),
+                });
                 return;
             }
-            case 'sport_state':
-                // An unmapped report sets null, so the next mapped report emits even when it names
-                // the same mode as the last one.
-                robotMode.set(decodeMode(msg.motionMode, msg.errorCode));
+            case 'sport_state': {
+                const mode = decodeMode(msg.motionMode, msg.errorCode);
+                publish(mode === null ? {} : { mode });
                 return;
+            }
             case 'command_result': {
                 if (msg.reqId === null) {
                     console.warn('Dropping a verdict on a command this browser did not send:', msg);

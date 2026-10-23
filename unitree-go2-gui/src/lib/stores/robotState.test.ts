@@ -4,7 +4,7 @@ import { enter, leave, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { displayed, fieldStatus } from '../utils/confirmable';
 import { reported, robotState, send } from './robotState';
-import { NO_ROBOT_SETTINGS, robotMode, robotSettings } from './connection';
+import { robotConnected, robotReport } from './connection';
 import type { Outcome } from './outcomes';
 
 /** A client whose requests stay unanswered until the test hands each a verdict, so the store
@@ -158,62 +158,67 @@ describe('robotState', () => {
 });
 
 describe("the robot's report", () => {
-  it('starts with no field reported', () => {
-    expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
+  // The robot is up, and nothing it stated before this test counts as reported.
+  beforeEach(() => {
+    robotConnected.set(false);
+    robotConnected.set(true);
   });
 
-  it('settles each reported field and marks only that field reported', () => {
-    robotSettings.set({ speed: 1, obstacleAvoidance: null });
-    expect(get(robotState).settled.speed).toBe(1);
-    expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: false });
+  /** Settles `_cue` through a client that confirms it at once. */
+  const confirm = (_cue: Cue) => {
+    const { client, reply } = stubClient();
+    const done = send(client)(_cue);
+    reply('confirmed');
+    return done;
+  };
 
-    robotSettings.set({ speed: 1, obstacleAvoidance: false });
-    expect(get(robotState).settled.obstacleAvoidance).toBe(false);
+  it('starts with no field reported', () => {
+    expect(get(reported)).toEqual({});
+  });
+
+  it('applies exactly the fields a report states, and changes no other field', () => {
+    const before = get(robotState).settled;
+    robotReport.set({ speed: 1 });
+    expect(get(robotState).settled).toEqual({ ...before, speed: 1 });
+    expect(get(reported)).toEqual({ speed: true });
+
+    robotReport.set({ obstacleAvoidance: false });
+    expect(get(robotState).settled).toEqual({ ...before, speed: 1, obstacleAvoidance: false });
     expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
   });
 
-  it('keeps the settled values but marks both fields unreported once the report is cleared', () => {
-    robotSettings.set({ speed: -1, obstacleAvoidance: true });
-    const { settled } = get(robotState);
-    robotSettings.set(NO_ROBOT_SETTINGS);
-    expect(get(robotState).settled).toEqual(settled);
-    expect(get(reported)).toEqual({ speed: false, obstacleAvoidance: false });
-  });
-});
-
-describe("the robot's mode report", () => {
-  beforeEach(() => {
-    robotMode.set(null);
-  });
-
-  it('settles the reported mode', () => {
-    robotMode.set('Leaping');
-    expect(get(robotState).settled.mode).toBe('Leaping');
-  });
-
-  it('leaves the settled mode unchanged when the report names no mode', () => {
-    robotMode.set('Handstand');
-    robotMode.set(null);
-    expect(get(robotState).settled.mode).toBe('Handstand');
-  });
-
-  it('settles the same mode again after a report that named no mode', async () => {
-    robotMode.set('Backstand');
-    robotMode.set(null);
-    const { client, reply } = stubClient();
-    const done = send(client)(enter('Damp'));
-    reply('confirmed');
-    await done;
+  it('applies each of two reports stating the same mode', async () => {
+    robotReport.set({ mode: 'Backstand' });
+    await confirm(enter('Damp'));
     expect(get(robotState).settled.mode).toBe('Damp');
 
-    robotMode.set('Backstand');
+    robotReport.set({ mode: 'Backstand' });
     expect(get(robotState).settled.mode).toBe('Backstand');
+  });
+
+  it('does not re-apply an earlier mode report on a speed report, nor the reverse', async () => {
+    robotReport.set({ mode: 'Handstand' });
+    await confirm(enter('Damp'));
+    robotReport.set({ speed: -1 });
+    expect(get(robotState).settled).toMatchObject({ mode: 'Damp', speed: -1 });
+
+    await confirm(set({ name: 'speed', value: 0 }));
+    robotReport.set({ mode: 'Leaping' });
+    expect(get(robotState).settled).toMatchObject({ mode: 'Leaping', speed: 0 });
+  });
+
+  it('keeps the settled values but clears reported when robotConnected turns false', () => {
+    robotReport.set({ speed: -1, obstacleAvoidance: true });
+    const { settled } = get(robotState);
+    robotConnected.set(false);
+    expect(get(robotState).settled).toEqual(settled);
+    expect(get(reported)).toEqual({});
   });
 
   it('leaves a pending mode proposal pending', async () => {
     const { client, reply } = stubClient();
     const done = send(client)(enter('Jumping'));
-    robotMode.set('CrossStep');
+    robotReport.set({ mode: 'CrossStep' });
     expect(get(robotState).settled.mode).toBe('CrossStep');
     expect(fieldStatus(get(robotState), 'mode')).toBe('pending');
     expect(displayed(get(robotState)).mode).toBe('Jumping');
