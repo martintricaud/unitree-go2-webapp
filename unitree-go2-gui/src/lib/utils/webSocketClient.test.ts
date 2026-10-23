@@ -4,10 +4,9 @@ import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
 import { createOutcomeLog, lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
-import { reported, robotState } from '../stores/robotState';
+import { createRobotState } from '../stores/robotState';
 import { enter, perform, sequence, set } from './commands';
 import type { Cue } from './commands';
-import { send } from '../stores/robotState';
 
 // The relay bounds every command at 5s.
 const RELAY_WORST_CASE_MS = 5_000;
@@ -36,8 +35,6 @@ class FakeSocket implements Sink {
 const HELLO = perform('Hello');
 
 const DANCE = sequence('Dance', HELLO);
-
-const OK = { outcome: 'confirmed', code: 0, detail: '', label: '', at: 0 } as const;
 
 const resultFor = (reqId: number, outcome: string, code: number | null, detail = 'because') =>
     JSON.stringify({ type: 'command_result', reqId, outcome, code, detail });
@@ -324,42 +321,50 @@ describe('robot state', () => {
     });
 });
 
-/** Settles `_cue` through a client that confirms it at once, as the relay would. */
-const confirm = (_cue: Cue) =>
-    send({ request: () => ({ reqId: 0, verdict: Promise.resolve({ ...OK, reqId: 0 }) }) })(_cue);
-
 const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
     JSON.stringify({ type: 'robot_settings', speedLevel, obstacleAvoidance });
 
 const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
     JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
 
-/** A client whose robot is up, with nothing the robot stated before counted as reported. It writes
- * the app's connection stores, which `robotState` follows, and a log of its own. */
+/** A client whose robot is up, on fresh stores, with a robot state of its own that follows them and
+ * sends through the client. Nothing the robot stated before counts as reported. */
 const connectedClient = async () => {
-    const opened = openClient({ ...appStores, outcomeLog: createOutcomeLog() });
-    await opened.client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-    await opened.client.received(JSON.stringify({ type: 'robot_state', connected: true }));
-    return opened;
+    const opened = openClient();
+    const { client, socket, stores } = opened;
+    const robotState = createRobotState({
+        client,
+        robotReport: stores.robotReport,
+        robotConnected: stores.robotConnected,
+    });
+    await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
+    await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
+    /** Settles `_cue` by answering its request with a confirmation, as the relay would. */
+    const confirm = async (_cue: Cue) => {
+        const done = robotState.send(_cue);
+        await client.received(resultFor(reqIdOf(socket, socket.frames.length - 1), 'confirmed', 0));
+        return done;
+    };
+    return { ...opened, robotState, reported: robotState.reported, confirm };
 };
 
 describe('robot settings', () => {
     it.each([-1, 0, 1])('reports speed level %i, and only the speed', async (level) => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState, reported } = await connectedClient();
         await client.received(settings(level, null));
-        expect(get(robotReport)).toEqual({ speed: level });
+        expect(get(stores.robotReport)).toEqual({ speed: level });
         expect(get(robotState).settled.speed).toBe(level);
         expect(get(reported)).toEqual({ speed: true });
     });
 
     it.each([2, null])('states no speed for level %s, and warns', async (level) => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState, reported } = await connectedClient();
         const speed = get(robotState).settled.speed;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         await client.received(settings(level, true));
 
-        expect(get(robotReport)).toEqual({ obstacleAvoidance: true });
+        expect(get(stores.robotReport)).toEqual({ obstacleAvoidance: true });
         expect(get(robotState).settled.speed).toBe(speed);
         expect(get(reported)).toEqual({ obstacleAvoidance: true });
         expect(warn).toHaveBeenCalledOnce();
@@ -367,14 +372,14 @@ describe('robot settings', () => {
     });
 
     it.each([null, 'yes', 1])('states no obstacle avoidance for %s', async (value) => {
-        const { client } = await connectedClient();
+        const { client, stores, reported } = await connectedClient();
         await client.received(settings(0, value));
-        expect(get(robotReport)).toEqual({ speed: 0 });
+        expect(get(stores.robotReport)).toEqual({ speed: 0 });
         expect(get(reported)).toEqual({ speed: true });
     });
 
     it('reports obstacle avoidance', async () => {
-        const { client } = await connectedClient();
+        const { client, robotState, reported } = await connectedClient();
         await client.received(settings(0, false));
         expect(get(robotState).settled.obstacleAvoidance).toBe(false);
         expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
@@ -384,20 +389,20 @@ describe('robot settings', () => {
     });
 
     it('leaves robotReport unchanged on a frame that states nothing', async () => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState, reported } = await connectedClient();
         await client.received(settings(-1, null));
-        const before = get(robotReport);
+        const before = get(stores.robotReport);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(settings(2, 'yes'));
         await client.received(sportState(4242));
-        expect(get(robotReport)).toBe(before);
+        expect(get(stores.robotReport)).toBe(before);
         expect(get(robotState).settled.speed).toBe(-1);
         expect(get(reported)).toEqual({ speed: true });
         warn.mockRestore();
     });
 
     it('does not re-apply an earlier gait report on a speed report', async () => {
-        const { client } = await connectedClient();
+        const { client, robotState, confirm } = await connectedClient();
         await client.received(sportState(2017));
         await confirm(enter('Trotting'));
         await client.received(settings(1, null));
@@ -405,21 +410,21 @@ describe('robot settings', () => {
     });
 
     it('clears reported when the robot is lost', async () => {
-        const { client } = await connectedClient();
+        const { client, reported } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
         expect(get(reported)).toEqual({});
     });
 
     it('keeps reported while the robot stays connected', async () => {
-        const { client } = await connectedClient();
+        const { client, reported } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
     });
 
     it('clears reported when the control channel closes', async () => {
-        const { client } = await connectedClient();
+        const { client, reported } = await connectedClient();
         await client.received(settings(0, true));
         client.closed();
         expect(get(reported)).toEqual({});
@@ -428,9 +433,9 @@ describe('robot settings', () => {
 
 describe('sport_state report', () => {
     it('reports Leaping on code 2008 under mcf, and no posture', async () => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState, reported } = await connectedClient();
         await client.received(sportState(2008));
-        expect(get(robotReport)).toEqual({ gait: 'Leaping', posture: null });
+        expect(get(stores.robotReport)).toEqual({ gait: 'Leaping', posture: null });
         expect(get(robotState).settled).toMatchObject({ gait: 'Leaping', posture: null });
         expect(get(reported)).toEqual({ gait: true, posture: true });
     });
@@ -442,20 +447,20 @@ describe('sport_state report', () => {
         [1007, 'Sitting'],
         [1091, 'Pose'],
     ])('reports code %i as the posture %s, and keeps the gait', async (_code, _posture) => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState, reported } = await connectedClient();
         await client.received(sportState(2017));
         await client.received(sportState(_code));
-        expect(get(robotReport)).toEqual({ posture: _posture });
+        expect(get(stores.robotReport)).toEqual({ posture: _posture });
         expect(get(robotState).settled).toMatchObject({ gait: 'Backstand', posture: _posture });
         expect(get(reported)).toEqual({ gait: true, posture: true });
     });
 
     it('keeps the gait and clears the posture on code 1013', async () => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState } = await connectedClient();
         await client.received(sportState(1015));
         await client.received(sportState(1007));
         await client.received(sportState(1013));
-        expect(get(robotReport)).toEqual({ posture: null });
+        expect(get(stores.robotReport)).toEqual({ posture: null });
         expect(get(robotState).settled).toMatchObject({ gait: 'StaticWalk', posture: null });
     });
 
@@ -466,27 +471,27 @@ describe('sport_state report', () => {
         ['a motion-control mode other than mcf', 2008, 'normal'],
         ['an unread motion-control mode', 2008, null],
     ])('states nothing on %s, and warns of nothing', async (_case, _code, _motionMode) => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState } = await connectedClient();
         await client.received(sportState(1016));
         await client.received(sportState(1004));
-        const before = get(robotReport);
+        const before = get(stores.robotReport);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(sportState(_code, _motionMode));
-        expect(get(robotReport)).toBe(before);
+        expect(get(stores.robotReport)).toBe(before);
         expect(get(robotState).settled).toMatchObject({ gait: 'Trotting', posture: 'Lying' });
         expect(warn).not.toHaveBeenCalled();
         warn.mockRestore();
     });
 
     it('changes nothing on an unknown code, and warns once per code', async () => {
-        const { client } = await connectedClient();
+        const { client, stores, robotState } = await connectedClient();
         await client.received(sportState(1016));
-        const before = get(robotReport);
+        const before = get(stores.robotReport);
         const { settled } = get(robotState);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(sportState(9001));
         await client.received(sportState(9001));
-        expect(get(robotReport)).toBe(before);
+        expect(get(stores.robotReport)).toBe(before);
         expect(get(robotState).settled).toEqual(settled);
         expect(warn).toHaveBeenCalledOnce();
 
@@ -496,7 +501,7 @@ describe('sport_state report', () => {
     });
 
     it('applies each of two reports stating the same gait', async () => {
-        const { client } = await connectedClient();
+        const { client, robotState, confirm } = await connectedClient();
         await client.received(sportState(2017));
         expect(get(robotState).settled.gait).toBe('Backstand');
 
@@ -508,7 +513,7 @@ describe('sport_state report', () => {
     });
 
     it('does not re-apply an earlier speed report on a gait report', async () => {
-        const { client } = await connectedClient();
+        const { client, robotState, confirm } = await connectedClient();
         await client.received(settings(-1, null));
         await confirm(set({ name: 'speed', value: 1 }));
         await client.received(sportState(2008));
@@ -516,8 +521,8 @@ describe('sport_state report', () => {
     });
 
     it('leaves a pending gait proposal pending', async () => {
-        const { client, socket } = await connectedClient();
-        const done = send(client)(enter('Jumping'));
+        const { client, socket, robotState } = await connectedClient();
+        const done = robotState.send(enter('Jumping'));
         await client.received(sportState(2011));
         expect(get(robotState).settled.gait).toBe('Handstand');
         expect(get(robotState).pending.gait).toEqual({ value: 'Jumping', reqId: reqIdOf(socket) });

@@ -14,7 +14,7 @@
     import { ACTIONS, MODES } from './lib/data/sportCommands';
     import { CONDUITE, presets } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
-    import { reported, robotState, send } from './lib/stores/robotState';
+    import { robotState } from './lib/stores/robotState';
     import { displayed } from './lib/utils/confirmable';
 
     // let intervalId: any;
@@ -36,7 +36,10 @@
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
-    const sendToRobot = send(websocket);
+    const sendToRobot = robotState.send;
+
+    /// A top-level binding, so the markup can subscribe to it with `$reported`.
+    const reported = robotState.reported;
 
     /// Send the cue at this index of the cue sheet.
     const sendCue = (index: number) => void sendToRobot(CONDUITE[index]);
