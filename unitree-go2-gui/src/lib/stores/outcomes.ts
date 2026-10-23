@@ -1,4 +1,4 @@
-import { constant, countBy, fromKeys, prop } from 'remeda';
+import { constant, countBy, fromKeys, prop, take } from 'remeda';
 import { derived, writable } from 'svelte/store';
 
 /// `confirmed`: the robot's service accepted the request, which does not prove it moved.
@@ -19,18 +19,11 @@ export type Outcome = {
 /// Matches the relay's own result buffer.
 const LOG_LIMIT = 200;
 
-/// Creates a log of outcomes, newest first, holding at most `LOG_LIMIT` entries.
-export const createOutcomeLog = () => {
-    const { subscribe, set, update } = writable<Outcome[]>([]);
-    return {
-        subscribe,
-        record: (_outcome: Outcome) => update((_log) => [_outcome, ..._log].slice(0, LOG_LIMIT)),
-        clear: () => set([]),
-    };
-};
-
 /// Every outcome since the control channel opened, newest first.
-export const outcomeLog = createOutcomeLog();
+export const outcomeLog = writable<Outcome[]>([]);
+
+/// The log once `_outcome` is recorded: it goes first, and the oldest entries beyond `LOG_LIMIT` drop.
+export const recorded = (_outcome: Outcome) => (_log: Outcome[]) => take([_outcome, ..._log], LOG_LIMIT);
 
 export const lastOutcome = derived(outcomeLog, (_log) => _log.at(0) ?? null);
 

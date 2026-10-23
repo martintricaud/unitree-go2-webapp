@@ -3,8 +3,8 @@ import { ACTIONS, MCF_CODES, MODES } from '../data/sportCommands';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
-import { OUTCOMES, outcomeLog } from '../stores/outcomes';
-import type { Outcome, createOutcomeLog } from '../stores/outcomes';
+import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes';
 import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
 import type * as connection from '../stores/connection';
 
@@ -153,7 +153,7 @@ function parseRelayMessage(_raw: string) {
 type ClientStores = Pick<
     typeof connection,
     'webSocketConnected' | 'robotConnected' | 'videoFrame' | 'robotReport'
-> & { outcomeLog: ReturnType<typeof createOutcomeLog> };
+> & { outcomeLog: typeof outcomeLog };
 
 export class WebSocketClient {
     private socket: Sink | null = null;
@@ -190,7 +190,7 @@ export class WebSocketClient {
 
     opened() {
         this.stores.webSocketConnected.set(true);
-        this.stores.outcomeLog.clear();
+        this.stores.outcomeLog.set([]);
     }
 
     closed() {
@@ -249,7 +249,7 @@ export class WebSocketClient {
                     at: Date.now(),
                 };
                 if (request) this.settle(outcome);
-                else this.stores.outcomeLog.record(outcome);
+                else this.stores.outcomeLog.update(recorded(outcome));
                 return;
             }
             case 'state_stream':
@@ -267,7 +267,7 @@ export class WebSocketClient {
         const label = cueLabel(cue);
         if (!this.send({ ...encode(cue), reqId })) {
             const outcome = CHANNEL_CLOSED(reqId, label, Date.now());
-            this.stores.outcomeLog.record(outcome);
+            this.stores.outcomeLog.update(recorded(outcome));
             return { reqId, verdict: Promise.resolve(outcome) };
         }
         const verdict = new Promise<Outcome>((resolve) => {
@@ -294,7 +294,7 @@ export class WebSocketClient {
         if (!request) return;
         clearTimeout(request.timer);
         this.awaiting.delete(outcome.reqId);
-        this.stores.outcomeLog.record(outcome);
+        this.stores.outcomeLog.update(recorded(outcome));
         request.resolve(outcome);
     }
 

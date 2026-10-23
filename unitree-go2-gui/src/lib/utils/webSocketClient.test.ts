@@ -3,7 +3,8 @@ import { get, writable } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
-import { createOutcomeLog, lastOutcome, outcomeCounts, outcomeLog } from '../stores/outcomes';
+import { lastOutcome, outcomeCounts, outcomeLog, recorded } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes';
 import { createRobotState } from '../stores/robotState';
 import { enter, perform, sequence, set } from './commands';
 import type { Cue } from './commands';
@@ -47,7 +48,7 @@ const freshStores = (): Stores => ({
     robotConnected: writable(false),
     videoFrame: writable(null),
     robotReport: writable({}),
-    outcomeLog: createOutcomeLog(),
+    outcomeLog: writable<Outcome[]>([]),
 });
 
 /** The app's stores, for the tests that read what the app derives from them. */
@@ -231,6 +232,22 @@ describe('the outcome log', () => {
     // `lastOutcome` and `outcomeCounts` derive from the app's log, so these clients write to it.
     beforeEach(() => {
         vi.useRealTimers();
+    });
+
+    it('records the newest outcome first and keeps at most 200', () => {
+        const outcome = (_reqId: number): Outcome => ({
+            outcome: 'confirmed',
+            code: 0,
+            detail: '',
+            reqId: _reqId,
+            label: '',
+            at: 0,
+        });
+        const full = Array.from({ length: 200 }, (_value, _index) => outcome(_index));
+        const log = recorded(outcome(200))(full);
+        expect(log).toHaveLength(200);
+        expect(log[0].reqId).toBe(200);
+        expect(log.at(-1)?.reqId).toBe(198);
     });
 
     it('labels an entry with the command the browser sent', async () => {
