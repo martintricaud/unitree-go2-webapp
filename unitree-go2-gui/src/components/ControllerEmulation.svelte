@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { cueSheet } from '../lib/stores/cueSheet';
+
     /// Each button stands for the keyboard key `key`, and occupies one cell of a 3×3 grid, given as
     /// "row / column".
     const DIRECTIONS = [
@@ -18,6 +20,9 @@
     /// is released.
     export let callback: (key: (typeof DIRECTIONS | typeof ACTIONS)[number]['key'], pressed: boolean) => void;
     export let disabled: boolean = false;
+
+    /// A top-level binding, so the markup can subscribe to it with `$bindings`.
+    const { bindings } = cueSheet;
 </script>
 
 
@@ -27,6 +32,7 @@
             {#each block.buttons as button}
                 <button
                     aria-label={button.name}
+                    title={$bindings[button.key].label}
                     style:grid-area={button.area}
                     {disabled}
                     on:pointerdown={() => callback(button.key, true)}
