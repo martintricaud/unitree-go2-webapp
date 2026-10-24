@@ -48,27 +48,41 @@
 
 
 <style>
+    /* Every size inside is a fraction of this element's width, so the emulator scales with its
+       container. The radius is 15% of the width on both axes: the height is twice the width. */
     .controller {
+        container-type: inline-size;
         display: flex;
         flex-direction: column;
         aspect-ratio: 1 / 2;
         width: 100%;
         background-color: #ddd;
         border: 1px solid #999;
-        border-radius: 24px;
+        border-radius: 15% / 7.5%;
         overflow: hidden;
+        /* Stacked shadows of growing blur fade out more smoothly than a single one. */
+        box-shadow:
+            0 1px 2px rgb(0 0 0 / 0.08),
+            0 4px 8px rgb(0 0 0 / 0.08),
+            0 12px 24px rgb(0 0 0 / 0.12);
     }
 
+    /* minmax(0, 1fr) lets a track shrink below its button's content, so the block stays square. */
     .block {
         aspect-ratio: 1;
         display: grid;
-        grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+        grid-template: repeat(3, minmax(0, 1fr)) / repeat(3, minmax(0, 1fr));
         padding: 15%;
         box-sizing: border-box;
     }
 
+    /* Overrides the global button rule's min-height, padding and border, which are in em and
+       would not scale. */
     button {
+        min-height: 0;
         padding: 0;
+        font-size: 10cqi;
+        line-height: 1;
         border: 1px solid #999;
         background-color: rgb(230, 230, 230);
         cursor: pointer;

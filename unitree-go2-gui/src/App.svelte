@@ -188,20 +188,30 @@
 </div>
 
 <style>
-    /* Always in the grid; closed, it takes no width. The grid has no column gap, so the closed
-       column takes no space, and the open drawer sets its own spacing. */
+    /* Floats over the top-left of the page. A fixed element shrinks to its content, and the
+       emulator takes its width from the drawer, so min-width gives the drawer its width.
+       Closed, it slides out to the left and is hidden once the slide ends. */
     .drawer {
-        grid-area: drawer;
-        width: 0;
-        overflow: hidden;
-        margin-inline-end: 0;
-        transition: width 0.2s, margin-inline-end 0.2s;
+        position: fixed;
+        top: 0;
+        left: 0;
+        min-width: 12rem;
+        padding: 1em;
+        background: transparent;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 0.2s, visibility 0.2s;
+        /* The transparent padding must not block clicks on the page under it. */
+        pointer-events: none;
+    }
+
+    .drawer > :global(*) {
+        pointer-events: auto;
     }
 
     .drawer.open {
-        width: 12rem;
-        overflow-y: auto;
-        margin-inline-end: 1em;
+        transform: none;
+        visibility: visible;
     }
 
     .actionsequence {

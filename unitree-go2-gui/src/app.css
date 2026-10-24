@@ -19,15 +19,20 @@ body {
 
 
 #app {
-  border: 1em solid rgb(230, 230, 230);
-  background-color: rgb(230, 230, 230);
-  row-gap: 1em;
+  border: 2px solid rgb(177,177,177) ;
+  background-color:rgb(177,177,177) ;
+  gap: 2px;
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-columns: auto 1fr minmax(10ch, max-content);
+  grid-template-columns: 1fr minmax(10ch, max-content);
   grid-template-rows: minmax(0, 1fr) 20rem auto;
-  grid-template-areas: "drawer topleft sidebar" "drawer bottomleft sidebar" "strip strip strip";
+  grid-template-areas: "topleft sidebar" "bottomleft sidebar" "strip strip";
+}
+
+/* Zero specificity, so a child can set its own background with a class. */
+:where(#app > *) {
+  background-color: rgb(230, 230, 230);
 }
 
 button {
@@ -64,11 +69,8 @@ button:focus-visible {
   }
 }
 
-/* #app has no column gap, so that the closed drawer column takes no space; each column
-   after the first sets its own spacing. */
 #sidebar {
   grid-area: sidebar;
-  margin-inline-start: 1em;
 }
 
 .ui-pane {
