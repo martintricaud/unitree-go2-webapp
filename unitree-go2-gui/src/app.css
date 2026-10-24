@@ -21,13 +21,13 @@ body {
 #app {
   border: 1em solid rgb(230, 230, 230);
   background-color: rgb(230, 230, 230);
-  gap: 1em;
+  row-gap: 1em;
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-columns: 1fr minmax(10ch, max-content);
+  grid-template-columns: auto 1fr minmax(10ch, max-content);
   grid-template-rows: minmax(0, 1fr) 20rem auto;
-  grid-template-areas: "topleft sidebar" "bottomleft sidebar" "strip strip";
+  grid-template-areas: "drawer topleft sidebar" "drawer bottomleft sidebar" "strip strip strip";
 }
 
 button {
@@ -64,8 +64,11 @@ button:focus-visible {
   }
 }
 
+/* #app has no column gap, so that the closed drawer column takes no space; each column
+   after the first sets its own spacing. */
 #sidebar {
   grid-area: sidebar;
+  margin-inline-start: 1em;
 }
 
 .ui-pane {

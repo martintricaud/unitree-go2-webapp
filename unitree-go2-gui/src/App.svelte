@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { entries, keys } from 'remeda';
+    import { entries, isIncludedIn, keys } from 'remeda';
     import { onMount } from 'svelte';
     import { websocket } from './lib/utils/webSocketClient';
     import { webSocketConnected, robotConnected, lidarOn, monitoringOn } from './lib/stores/connection';
@@ -7,6 +7,7 @@
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
+    import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
     import { activeMode, cueLabel, enter, perform, set } from './lib/utils/commands';
     import { ACTIONS, MODES } from './lib/data/sportCommands';
@@ -29,8 +30,18 @@
     /// A top-level binding, so the markup can subscribe to it with `$reported`.
     const reported = robotState.reported;
 
-    /// Top-level bindings, so the markup can subscribe to them with `$pointer` and `$pressed`.
-    const { pointer, pressed } = cueSheet;
+    /// Top-level bindings, so the markup can subscribe to them with `$pointer`, `$pressed` and
+    /// `$bindings`.
+    const { pointer, pressed, bindings } = cueSheet;
+
+    /// Whether the left sidebar holding the controller emulator is open. It starts closed.
+    let drawerOpen = false;
+
+    /// Releasing a key that fires a cue ends that cue's pressed drawing. The keyboard and the
+    /// emulator both release through here.
+    const release = (_key: string) => {
+        if (isIncludedIn(_key, keys($bindings)) && $bindings[_key].kind === 'fire') cueSheet.release();
+    };
 
     $: shown = displayed($robotState);
 
@@ -52,11 +63,12 @@
     faceLandmarksEnabled={FACE_LANDMARKS}
 />
 <!-- <Lidar /> -->
-<StatusStrip />
+<StatusStrip {drawerOpen} callback={(next) => (drawerOpen = next)} />
+<aside class="drawer" class:open={drawerOpen}>
+    <ControllerEmulation callback={(key, down) => (down ? cueSheet.press(key) : release(key))} />
+</aside>
 <svelte:window
-    on:keyup={(event) => {
-        if (['ArrowRight', 'ArrowLeft', 'Enter'].includes(event.key)) cueSheet.release();
-    }}
+    on:keyup={(event) => release(event.key)}
     on:keydown|preventDefault={(event) => {
         // A held key repeats its keydown; every binding acts once per press.
         if (!event.repeat) cueSheet.press(event.key);
@@ -176,6 +188,22 @@
 </div>
 
 <style>
+    /* Always in the grid; closed, it takes no width. The grid has no column gap, so the closed
+       column takes no space, and the open drawer sets its own spacing. */
+    .drawer {
+        grid-area: drawer;
+        width: 0;
+        overflow: hidden;
+        margin-inline-end: 0;
+        transition: width 0.2s, margin-inline-end 0.2s;
+    }
+
+    .drawer.open {
+        width: 12rem;
+        overflow-y: auto;
+        margin-inline-end: 1em;
+    }
+
     .actionsequence {
         display: flex;
         flex-direction: column;

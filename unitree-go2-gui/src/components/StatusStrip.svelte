@@ -4,6 +4,10 @@
     import type { Outcome } from '../lib/stores/outcomes';
 
     let showLog = false;
+
+    /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
+    export let drawerOpen: boolean;
+    export let callback: (next: boolean) => void;
 </script>
 
 {#snippet summary(entry: Outcome)}
@@ -23,6 +27,9 @@
         </span>
         <button class="toggle" on:click={() => (showLog = !showLog)}>
             {showLog ? 'Hide' : 'Show'} log ({$outcomeLog.length})
+        </button>
+        <button class="toggle" on:click={() => callback(!drawerOpen)}>
+            {drawerOpen ? 'Hide' : 'Show'} controller
         </button>
     </div>
     {#if showLog}

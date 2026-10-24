@@ -1,20 +1,22 @@
 <script lang="ts">
-    /// Each button occupies one cell of a 3×3 grid, given as "row / column".
+    /// Each button stands for the keyboard key `key`, and occupies one cell of a 3×3 grid, given as
+    /// "row / column".
     const DIRECTIONS = [
-        { name: 'up', label: '▲', area: '1 / 2' },
-        { name: 'left', label: '◀', area: '2 / 1' },
-        { name: 'right', label: '▶', area: '2 / 3' },
-        { name: 'down', label: '▼', area: '3 / 2' },
+        { name: 'up', key: 'ArrowUp', label: '▲', area: '1 / 2' },
+        { name: 'left', key: 'ArrowLeft', label: '◀', area: '2 / 1' },
+        { name: 'right', key: 'ArrowRight', label: '▶', area: '2 / 3' },
+        { name: 'down', key: 'ArrowDown', label: '▼', area: '3 / 2' },
     ] as const;
     const ACTIONS = [
-        { name: 'Y', label: 'Y', area: '1 / 2' },
-        { name: 'X', label: 'X', area: '2 / 1' },
-        { name: 'B', label: 'B', area: '2 / 3' },
-        { name: 'A', label: 'A', area: '3 / 2' },
+        { name: 'Y', key: 'y', label: 'Y', area: '1 / 2' },
+        { name: 'X', key: 'x', label: 'X', area: '2 / 1' },
+        { name: 'B', key: 'b', label: 'B', area: '2 / 3' },
+        { name: 'A', key: 'a', label: 'A', area: '3 / 2' },
     ] as const;
 
-    /// Called with `true` when a button is pressed and with `false` when it is released.
-    export let callback: (button: (typeof DIRECTIONS | typeof ACTIONS)[number]['name'], pressed: boolean) => void;
+    /// Called with the button's key, and with `true` when the button is pressed and `false` when it
+    /// is released.
+    export let callback: (key: (typeof DIRECTIONS | typeof ACTIONS)[number]['key'], pressed: boolean) => void;
     export let disabled: boolean = false;
 </script>
 
@@ -27,9 +29,9 @@
                     aria-label={button.name}
                     style:grid-area={button.area}
                     {disabled}
-                    on:pointerdown={() => callback(button.name, true)}
-                    on:pointerup={() => callback(button.name, false)}
-                    on:pointerleave={(event) => event.buttons && callback(button.name, false)}>
+                    on:pointerdown={() => callback(button.key, true)}
+                    on:pointerup={() => callback(button.key, false)}
+                    on:pointerleave={(event) => event.buttons && callback(button.key, false)}>
                     {button.label}
                 </button>
             {/each}
