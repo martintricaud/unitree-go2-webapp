@@ -13,3 +13,10 @@ export const videoFrame = writable<ImageBitmap | null>(null);
 /// The fields the robot stated in its latest report. Each report replaces the value with a new
 /// object, so subscribers are notified of every report, including one that repeats the previous values.
 export const robotReport = writable<Partial<RobotState>>({});
+
+/// Whether the relay was last told to stream the lidar. The relay sends no verdict on it.
+export const lidarOn = writable(false);
+
+/// Whether the relay was last told to subscribe to the robot's state stream. The relay sends no
+/// verdict on it.
+export const monitoringOn = writable(false);

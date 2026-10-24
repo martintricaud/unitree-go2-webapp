@@ -1,6 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { activeMode, dim, enter, isEnterable, leave, leavePosture, orient, perform, sequence, set, switchTo, transition, wait } from './commands';
+import {
+  activeMode,
+  dim,
+  enter,
+  leave,
+  leavePosture,
+  orient,
+  perform,
+  sequence,
+  set,
+  switchTo,
+  toggleLeaping,
+  togglePose,
+  toggleSit,
+  transition,
+  wait,
+} from './commands';
 import type { Cue, RobotState } from './commands';
+import type { Confirmable } from './confirmable';
 import { presets } from '../data/cues';
 
 const INITIAL_ROBOT_STATE: RobotState = {
@@ -204,53 +221,70 @@ describe('switchTo', () => {
   });
 });
 
-/** The robot state after each of `presses` cues, each built from the state before it and confirmed. */
-const run = (state: RobotState, presses: ((_state: RobotState) => Cue)[]) =>
-  presses.reduce<{ state: RobotState; sent: Cue[] }>(
+/** `state` with nothing waiting for a verdict. */
+const settled = (state: RobotState): Confirmable<RobotState> => ({ settled: state, pending: {} });
+
+/** The robot state after each of `presses` cues, each built from the state before it and confirmed.
+ * A press that returns no cue sends nothing and changes nothing. */
+const run = (state: RobotState, presses: ((_state: Confirmable<RobotState>) => Cue | null)[]) =>
+  presses.reduce<{ state: RobotState; sent: (Cue | null)[] }>(
     ({ state: before, sent }, press) => {
-      const cue = press(before);
-      return { state: transition(cue)(before), sent: [...sent, cue] };
+      const cue = press(settled(before));
+      return { state: cue === null ? before : transition(cue)(before), sent: [...sent, cue] };
     },
     { state, sent: [] },
   );
 
-/** The b key as App.svelte binds it: from Leaping in no posture, back to the previous gait; otherwise
- * into Leaping. */
-const pressB = (state: RobotState): Cue => {
-  if (state.gait !== 'Leaping' || state.posture !== null) return switchTo('Leaping')(state);
-  return switchTo(isEnterable(state.previousGait) ? state.previousGait : 'FreeWalk')(state);
-};
-
-/** The a key as App.svelte binds it: out of Pose into the gait, otherwise into Pose. */
-const pressA = (state: RobotState): Cue =>
-  state.posture === 'Pose' ? leavePosture('Pose') : switchTo('Pose')(state);
-
 describe('the toggle keys', () => {
   it('b from FreeWalk sends Leaping, then FreeWalk, then Leaping again', () => {
-    const { sent, state } = run(INITIAL_ROBOT_STATE, [pressB, pressB, pressB]);
+    const { sent, state } = run(INITIAL_ROBOT_STATE, [toggleLeaping, toggleLeaping, toggleLeaping]);
     expect(sent).toEqual([enter('Leaping'), enter('FreeWalk'), enter('Leaping')]);
     expect(state).toMatchObject({ gait: 'Leaping', previousGait: 'FreeWalk' });
   });
 
   it('b from StaticWalk, then b again, returns to StaticWalk', () => {
-    const { sent, state } = run(at('StaticWalk', null), [pressB, pressB]);
+    const { sent, state } = run(at('StaticWalk', null), [toggleLeaping, toggleLeaping]);
     expect(sent).toEqual([enter('Leaping'), enter('StaticWalk')]);
     expect(state).toMatchObject({ gait: 'StaticWalk', previousGait: 'Leaping' });
   });
 
   it('b from Leaping after a gait the app cannot command switches to FreeWalk, and keeps toggling', () => {
-    const { sent, state } = run({ ...at('Leaping', null), previousGait: 'Stairs' }, [pressB, pressB, pressB]);
+    const { sent, state } = run({ ...at('Leaping', null), previousGait: 'Stairs' }, [
+      toggleLeaping,
+      toggleLeaping,
+      toggleLeaping,
+    ]);
     expect(sent).toEqual([enter('FreeWalk'), enter('Leaping'), enter('FreeWalk')]);
     expect(state).toMatchObject({ gait: 'FreeWalk', previousGait: 'Leaping' });
   });
 
   it('a from a gait sends StopMove and Pose on, then only Pose off', () => {
-    const { sent, state } = run(at('Trotting', null), [pressA, pressA]);
+    const { sent, state } = run(at('Trotting', null), [togglePose, togglePose]);
     expect(sent).toEqual([sequence('Enter Pose', perform('StopMove'), enter('Pose')), leave('Pose')]);
     expect(state).toMatchObject({ gait: 'Trotting', posture: null, previousGait: 'FreeWalk' });
   });
 
   it('a out of Pose sends only Pose off when the gait is unknown', () => {
-    expect(pressA(at(null, 'Pose'))).toEqual(leave('Pose'));
+    expect(togglePose(settled(at(null, 'Pose')))).toEqual(leave('Pose'));
+  });
+
+  it('x sits from a gait, then rises', () => {
+    const { sent } = run(at('FreeWalk', null), [toggleSit, toggleSit]);
+    expect(sent).toEqual([perform('Sit'), perform('RiseSit')]);
+  });
+
+  it('returns no cue while a toggled field waits for a verdict, and a cue once another field waits', () => {
+    const waiting = (field: keyof RobotState): Confirmable<RobotState> => ({
+      settled: INITIAL_ROBOT_STATE,
+      pending: { [field]: { value: INITIAL_ROBOT_STATE[field], reqId: 1 } },
+    });
+    [togglePose, toggleSit, toggleLeaping].forEach((toggle) => {
+      expect(toggle(waiting('posture'))).toBeNull();
+      expect(toggle(waiting('headlight'))).not.toBeNull();
+    });
+    expect(toggleLeaping(waiting('gait'))).toBeNull();
+    [togglePose, toggleSit].forEach((toggle) => {
+      expect(toggle(waiting('gait'))).not.toBeNull();
+    });
   });
 });

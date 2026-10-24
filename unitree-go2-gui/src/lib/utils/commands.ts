@@ -1,4 +1,6 @@
 import { reduce } from 'remeda';
+import { displayed } from './confirmable';
+import type { Confirmable } from './confirmable';
 import { ACTIONS, MODES } from '../data/sportCommands';
 import type { Action, Gait, Mode, Posture } from '../data/sportCommands';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
@@ -82,7 +84,7 @@ const isMode = (_name: string): _name is Mode => _name in MODES;
 const isGaitMode = (_mode: Mode): _mode is Extract<Mode, Gait> => MODES[_mode].kind === 'gait';
 
 /// True for a gait the app can command. The robot reports gaits, such as Stairs, that have no command.
-export const isEnterable = (_gait: Gait): _gait is Extract<Mode, Gait> => isMode(_gait) && isGaitMode(_gait);
+const isEnterable = (_gait: Gait): _gait is Extract<Mode, Gait> => isMode(_gait) && isGaitMode(_gait);
 
 /// The state once one command or wait has run, with `previousGait` not yet updated.
 function step(_cue: Exclude<Cue, Sequence>, _state: RobotState): RobotState {
@@ -164,3 +166,33 @@ export function switchTo(_target: Extract<Mode, Gait> | Posture) {
 
 /// What the mode buttons show: the posture when there is one, otherwise the gait.
 export const activeMode = (_state: Pick<RobotState, 'gait' | 'posture'>) => _state.posture ?? _state.gait;
+
+/// Whether any of these fields is waiting for the robot's verdict.
+const isWaiting =
+    (..._fields: (keyof RobotState)[]) =>
+    (_state: Confirmable<RobotState>) =>
+        _fields.some((_field) => _state.pending[_field] !== undefined);
+
+/// The toggle keys. Each asks for the opposite of what its control shows, so a refused command
+/// leaves the next press asking for the same thing again. Each returns null while the toggled fields
+/// wait for a verdict: the cue would read the pending value and queue the opposite command.
+export const togglePose = (_state: Confirmable<RobotState>) => {
+    if (isWaiting('posture')(_state)) return null;
+    const shown = displayed(_state);
+    return shown.posture === 'Pose' ? leavePosture('Pose') : switchTo('Pose')(shown);
+};
+
+export const toggleSit = (_state: Confirmable<RobotState>) => {
+    if (isWaiting('posture')(_state)) return null;
+    const shown = displayed(_state);
+    return shown.posture === 'Sitting' ? leavePosture('Sitting') : switchTo('Sitting')(shown);
+};
+
+/// Leaping toggles back to the gait the robot had before it. A gait the robot only reports has
+/// no command, so leaving Leaping then lets the robot pick its gait.
+export const toggleLeaping = (_state: Confirmable<RobotState>) => {
+    if (isWaiting('gait', 'posture')(_state)) return null;
+    const shown = displayed(_state);
+    if (shown.gait !== 'Leaping' || shown.posture !== null) return switchTo('Leaping')(shown);
+    return switchTo(isEnterable(shown.previousGait) ? shown.previousGait : 'FreeWalk')(shown);
+};

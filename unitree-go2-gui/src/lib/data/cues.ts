@@ -1,4 +1,4 @@
-import { dim, enter, leave, orient, perform, sequence, set, wait } from '../utils/commands';
+import { dim, enter, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 
 const DANSE_DU_SABBAT = sequence(
@@ -18,9 +18,6 @@ const DANSE_DU_SABBAT = sequence(
 
 /// Cues the operator fires from a key or a button rather than from the cue sheet.
 export const presets = {
-    stopAndCrouch: sequence('', perform('StopMove'), perform('StandDown')),
-    stopAndStand: sequence('', perform('StopMove'), perform('StandUp')),
-    holdAim: sequence('', orient(0, -1, 0)),
     contentRed: sequence(
         '',
         set({ name: 'headlight', value: 'red' }),
@@ -29,21 +26,7 @@ export const presets = {
         wait(0.5),
         enter('FreeWalk'),
     ),
-    standContent: sequence(
-        '',
-        wait(0.1),
-        perform('BalanceStand'),
-        wait(0.1),
-        enter('FreeWalk'),
-        wait(0.1),
-        perform('Content'),
-        wait(0.1),
-        enter('FreeWalk'),
-        wait(0.1),
-    ),
     exitSit: sequence('', perform('RiseSit'), enter('FreeWalk')),
-    exitPose: sequence('Exit Pose', leave('Pose'), wait(0.1), enter('FreeWalk')),
-    enterPose: sequence('Enter Pose', perform('StopMove'), enter('Pose')),
     dance: sequence('Dance', perform('Dance2'), wait(0.1), enter('FreeWalk')),
 };
 

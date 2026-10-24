@@ -5,7 +5,14 @@ import { cueLabel } from './commands';
 import type { Cue, RobotState } from './commands';
 import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
+import {
+    lidarOn,
+    monitoringOn,
+    robotConnected,
+    robotReport,
+    videoFrame,
+    webSocketConnected,
+} from '../stores/connection';
 import type * as connection from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
@@ -152,7 +159,7 @@ function parseRelayMessage(_raw: string) {
 /// The stores a client writes. The app passes its own; a test passes fresh ones.
 type ClientStores = Pick<
     typeof connection,
-    'webSocketConnected' | 'robotConnected' | 'videoFrame' | 'robotReport'
+    'webSocketConnected' | 'robotConnected' | 'videoFrame' | 'robotReport' | 'lidarOn' | 'monitoringOn'
 > & { outcomeLog: typeof outcomeLog };
 
 export class WebSocketClient {
@@ -289,6 +296,18 @@ export class WebSocketClient {
         }
     }
 
+    /// Tells the relay to start or stop streaming the lidar, and records what it was told once the
+    /// message has left the browser.
+    setLidar(_next: boolean) {
+        if (this.send({ command_name: 'lidar', switch: _next })) this.stores.lidarOn.set(_next);
+    }
+
+    /// Tells the relay to subscribe to or leave the robot's state stream, and records what it was
+    /// told once the message has left the browser.
+    setMonitoring(_next: boolean) {
+        if (this.send({ command_name: 'subscribe', switch: _next })) this.stores.monitoringOn.set(_next);
+    }
+
     private settle(outcome: Outcome) {
         const request = this.awaiting.get(outcome.reqId);
         if (!request) return;
@@ -327,5 +346,7 @@ export const websocket = new WebSocketClient({
     robotConnected,
     videoFrame,
     robotReport,
+    lidarOn,
+    monitoringOn,
     outcomeLog,
 });

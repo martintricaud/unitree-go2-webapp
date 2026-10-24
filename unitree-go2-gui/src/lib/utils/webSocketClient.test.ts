@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { WebSocketClient, encode } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import { robotConnected, robotReport, videoFrame, webSocketConnected } from '../stores/connection';
+import {
+    lidarOn,
+    monitoringOn,
+    robotConnected,
+    robotReport,
+    videoFrame,
+    webSocketConnected,
+} from '../stores/connection';
 import { lastOutcome, outcomeCounts, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
 import { createRobotState } from '../stores/robotState';
@@ -48,11 +55,21 @@ const freshStores = (): Stores => ({
     robotConnected: writable(false),
     videoFrame: writable(null),
     robotReport: writable({}),
+    lidarOn: writable(false),
+    monitoringOn: writable(false),
     outcomeLog: writable<Outcome[]>([]),
 });
 
 /** The app's stores, for the tests that read what the app derives from them. */
-const appStores: Stores = { webSocketConnected, robotConnected, videoFrame, robotReport, outcomeLog };
+const appStores: Stores = {
+    webSocketConnected,
+    robotConnected,
+    videoFrame,
+    robotReport,
+    lidarOn,
+    monitoringOn,
+    outcomeLog,
+};
 
 /** A client attached to a fresh open socket, with the outcome log cleared as on connect. */
 const openClient = (_stores: Stores = freshStores()) => {
@@ -93,6 +110,29 @@ describe('send', () => {
         const { client, socket } = openClient();
         socket.throwOnSend = true;
         expect(client.send(HELLO)).toBe(false);
+    });
+});
+
+describe.each([
+    ['setLidar', 'lidar', 'lidarOn'],
+    ['setMonitoring', 'subscribe', 'monitoringOn'],
+] as const)('%s', (_method, _commandName, _flag) => {
+    it('sends the switch and records it once the message has left the browser', () => {
+        const { client, socket, stores } = openClient();
+        client[_method](true);
+        expect(socket.written).toEqual([{ command_name: _commandName, switch: true }]);
+        expect(get(stores[_flag])).toBe(true);
+        client[_method](false);
+        expect(socket.written[1]).toEqual({ command_name: _commandName, switch: false });
+        expect(get(stores[_flag])).toBe(false);
+    });
+
+    it('keeps the flag when the channel is closed', () => {
+        const { client, socket, stores } = openClient();
+        socket.readyState = CLOSED;
+        client[_method](true);
+        expect(socket.frames).toEqual([]);
+        expect(get(stores[_flag])).toBe(false);
     });
 });
 
