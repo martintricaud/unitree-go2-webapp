@@ -8,6 +8,11 @@ import { robotState } from './robotState';
 export const createCueSheet = (_cues: typeof CONDUITE, _robotState: Pick<typeof robotState, 'subscribe' | 'send'>) => {
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
+    /// Every key starts on its binding in `KEY_BINDINGS`; writing this store rebinds a key while
+    /// the app runs, to any binding the table holds.
+    const bindings = writable<{ [_key in keyof typeof KEY_BINDINGS]: (typeof KEY_BINDINGS)[keyof typeof KEY_BINDINGS] }>(
+        KEY_BINDINGS,
+    );
 
     /// Sends the cue at `_index`, and leaves the pointer and the pressed cue as they are.
     const send = (_index: number) => void _robotState.send(_cues[_index]);
@@ -29,14 +34,16 @@ export const createCueSheet = (_cues: typeof CONDUITE, _robotState: Pick<typeof 
         pointer: readonly(pointer),
         /// The cue a held key is executing, drawn pressed until the key is released.
         pressed: readonly(pressed),
+        bindings,
         send,
         move,
         fire,
         release: () => pressed.set(null),
-        /// Runs the binding of `_key` in `KEY_BINDINGS`. An unbound key does nothing.
+        /// Runs the binding of `_key` in `bindings`. An unbound key does nothing.
         press: (_key: string) => {
-            if (!isIncludedIn(_key, keys(KEY_BINDINGS))) return;
-            const binding = KEY_BINDINGS[_key];
+            const current = get(bindings);
+            if (!isIncludedIn(_key, keys(current))) return;
+            const binding = current[_key];
             switch (binding.kind) {
                 case 'fire':
                     fire(binding.steps);

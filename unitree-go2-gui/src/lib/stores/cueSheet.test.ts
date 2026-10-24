@@ -118,6 +118,13 @@ describe('cueSheet', () => {
     expect(pressOnce('toString')).toEqual({ sent: [], pointer: 0, pressed: null });
   });
 
+  it('runs the binding a key was rebound to', () => {
+    const { cueSheet, sent } = setup();
+    cueSheet.bindings.update((_bindings) => ({ ..._bindings, a: _bindings.y }));
+    cueSheet.press('a');
+    expect(sent).toEqual([presets.dance]);
+  });
+
   it('sends nothing for a toggle whose fields wait for a verdict, and still sends a preset', () => {
     const { cueSheet, robotState, sent } = setup();
     cueSheet.press('a');
