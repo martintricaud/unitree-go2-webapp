@@ -19,37 +19,33 @@ type PostureRequests = readonly [PostureRequest, ...PostureRequest[]];
 /// The ways the robot walks. In a gait the robot can walk, and standing still is part of the gait.
 /// `enter` is the request that enters the gait; a gait without one is reported by the robot but
 /// not commandable.
-/// `codes` are the codes the robot reports in `error_code` under the motion-control mode "mcf"
-/// while in the gait. They are transcribed from the official app by legion1581/unitree_ui; Unitree
-/// does not document them. ClassicWalk and ContinuousGait have no known code.
 export const GAITS = {
-    FreeWalk: { enter: 'FreeWalk', codes: [0, 100] },
-    StaticWalk: { enter: 'StaticWalk', codes: [1015] },
-    Trotting: { enter: 'TrotRun', codes: [1016] },
-    EconomicGait: { enter: 'EconomicGait', codes: [1017] },
-    ClassicWalk: { enter: 'ClassicWalk', codes: [] },
-    ContinuousGait: { enter: 'ContinuousGait', codes: [] },
-    Leaping: { enter: 'FreeBound', codes: [2008] },
-    Jumping: { enter: 'FreeJump', codes: [2009] },
-    FreeAvoid: { enter: 'FreeAvoid', codes: [2007] },
-    Handstand: { enter: 'HandStand', codes: [2011] },
-    Backstand: { enter: 'WalkUpright', codes: [2017] },
-    CrossStep: { enter: 'CrossStep', codes: [2016] },
-    Stairs: { codes: [2010] },
-    LeadFollow: { codes: [2019] },
-    Rage: { codes: [2021] },
-} as const satisfies Record<string, { enter?: SportRequest; codes: readonly number[] }>;
+    FreeWalk: { enter: 'FreeWalk' },
+    StaticWalk: { enter: 'StaticWalk' },
+    Trotting: { enter: 'TrotRun' },
+    EconomicGait: { enter: 'EconomicGait' },
+    ClassicWalk: { enter: 'ClassicWalk' },
+    ContinuousGait: { enter: 'ContinuousGait' },
+    Leaping: { enter: 'FreeBound' },
+    Jumping: { enter: 'FreeJump' },
+    FreeAvoid: { enter: 'FreeAvoid' },
+    Handstand: { enter: 'HandStand' },
+    Backstand: { enter: 'WalkUpright' },
+    CrossStep: { enter: 'CrossStep' },
+    Stairs: {},
+    LeadFollow: {},
+    Rage: {},
+} as const satisfies Record<string, { enter?: SportRequest }>;
 
 /// The states in which the robot cannot walk. `enter` brings the robot into the posture from its
-/// gait, `exit` brings it back into the gait it had. Pose needs the robot to stop first. `codes`
-/// are the "mcf" codes the robot reports in the posture.
+/// gait, `exit` brings it back into the gait it had. Pose needs the robot to stop first.
 export const POSTURES = {
-    Pose: { enter: ['StopMove', ['Pose', true]], exit: [['Pose', false]], codes: [1091] },
-    Sitting: { enter: ['Sit'], exit: ['RiseSit'], codes: [1007] },
-    Lying: { enter: ['StandDown'], exit: ['StandUp', 'BalanceStand'], codes: [1004] },
-    JointLock: { enter: ['StandUp'], exit: ['BalanceStand'], codes: [1002] },
-    Damp: { enter: ['Damp'], exit: ['RecoveryStand'], codes: [1001] },
-} as const satisfies Record<string, { enter: PostureRequests; exit: PostureRequests; codes: readonly number[] }>;
+    Pose: { enter: ['StopMove', ['Pose', true]], exit: [['Pose', false]] },
+    Sitting: { enter: ['Sit'], exit: ['RiseSit'] },
+    Lying: { enter: ['StandDown'], exit: ['StandUp', 'BalanceStand'] },
+    JointLock: { enter: ['StandUp'], exit: ['BalanceStand'] },
+    Damp: { enter: ['Damp'], exit: ['RecoveryStand'] },
+} as const satisfies Record<string, { enter: PostureRequests; exit: PostureRequests }>;
 
 /// The one-shot movements. Each changes neither the gait nor the posture.
 export const ACTIONS = [
@@ -68,13 +64,6 @@ export const ACTIONS = [
     'RightFlip',
     'BackFlip',
 ] as const satisfies readonly SportRequest[];
-
-/// The code of balanceStand: the robot stands still in its gait, so it is in no posture. Unitree's
-/// ROS 2 documentation separates balanceStand (standing) from locomotion (moving).
-export const BALANCE_STAND_CODE = 1013;
-
-/// The codes of "move" and "hello", which are transient and state nothing.
-export const TRANSIENT_CODES = [1005, 1006] as const;
 
 export type Gait = keyof typeof GAITS;
 export type Posture = keyof typeof POSTURES;

@@ -1,6 +1,5 @@
-import { entries, isEmpty, isIncludedIn, values } from 'remeda';
+import { isEmpty, isIncludedIn, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { BALANCE_STAND_CODE, GAITS, POSTURES, TRANSIENT_CODES } from './commands';
 import type { Cue, RobotState } from './commands';
 import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
@@ -66,25 +65,43 @@ function RELAY_SILENT(_reqId: number, _label: string, _at: number): Outcome {
     };
 }
 
-type Fields = Partial<Pick<RobotState, 'gait' | 'posture'>>;
-
-/// The fields each "mcf" code states. A gait code also states that the robot is in no posture.
-const FIELDS_BY_CODE = new Map<number, Fields>([
-    ...entries(GAITS).flatMap(([_gait, { codes }]) =>
-        codes.map((_code): [number, Fields] => [_code, { gait: _gait, posture: null }]),
-    ),
-    ...entries(POSTURES).flatMap(([_posture, { codes }]) =>
-        codes.map((_code): [number, Fields] => [_code, { posture: _posture }]),
-    ),
-    [BALANCE_STAND_CODE, { posture: null }],
-    ...TRANSIENT_CODES.map((_code): [number, Fields] => [_code, {}]),
-]);
+/// The fields stated by each code the robot reports in `error_code` under the motion-control mode
+/// "mcf". The table is transcribed from the official app by legion1581/unitree_ui; Unitree does not
+/// document these values. A gait code also states that the robot is in no posture. ClassicWalk and
+/// ContinuousGait have no known code.
+const REPORTED: Partial<Record<number, Partial<RobotState>>> = {
+    0: { gait: 'FreeWalk', posture: null },
+    100: { gait: 'FreeWalk', posture: null },
+    1015: { gait: 'StaticWalk', posture: null },
+    1016: { gait: 'Trotting', posture: null },
+    1017: { gait: 'EconomicGait', posture: null },
+    2007: { gait: 'FreeAvoid', posture: null },
+    2008: { gait: 'Leaping', posture: null },
+    2009: { gait: 'Jumping', posture: null },
+    2010: { gait: 'Stairs', posture: null },
+    2011: { gait: 'Handstand', posture: null },
+    2016: { gait: 'CrossStep', posture: null },
+    2017: { gait: 'Backstand', posture: null },
+    2019: { gait: 'LeadFollow', posture: null },
+    2021: { gait: 'Rage', posture: null },
+    1001: { posture: 'Damp' },
+    1002: { posture: 'JointLock' },
+    1004: { posture: 'Lying' },
+    1007: { posture: 'Sitting' },
+    1091: { posture: 'Pose' },
+    /// balanceStand: the robot stands still in its gait, so it is in no posture and keeps its gait.
+    /// Unitree's ROS 2 documentation separates balanceStand (standing) from locomotion (moving).
+    1013: { posture: null },
+    /// "move" and "hello", which are transient and state nothing.
+    1005: {},
+    1006: {},
+};
 
 /// The fields a report states, or the code when the table does not cover it. A report outside
-/// "mcf", whose codes the table does not cover, states nothing.
+/// "mcf" states nothing, because the table covers only "mcf".
 function decodeSportState(_motionMode: string | null, _errorCode: number | null) {
     if (_motionMode !== 'mcf' || _errorCode === null) return { report: {} };
-    const fields = FIELDS_BY_CODE.get(_errorCode);
+    const fields = REPORTED[_errorCode];
     return fields === undefined ? { unknownCode: _errorCode } : { report: fields };
 }
 
@@ -118,7 +135,7 @@ export class WebSocketClient {
         { resolve: (outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }
     >();
     private lastRequestId = 0;
-    /// The unknown sport_state codes already logged, so each is logged once.
+    /// Holds each unknown sport_state code already logged, so each is logged once.
     private warnedCodes = new Set<number>();
 
     private readonly stores: ClientStores;
@@ -269,11 +286,11 @@ export class WebSocketClient {
         if (!isEmpty(_report)) this.stores.robotReport.set(_report);
     }
 
-    /// An unknown code states nothing and is logged once, so the missing codes can be collected.
+    /// An unknown code states nothing and is logged once, so each missing code can be collected.
     private warnUnknownCode(_code: number) {
         if (this.warnedCodes.has(_code)) return;
         this.warnedCodes.add(_code);
-        console.warn('Ignoring a sport_state code that no gait or posture lists:', _code);
+        console.warn('Ignoring a sport_state code that REPORTED does not list:', _code);
     }
 
     private async showFrame(blob: Blob) {
