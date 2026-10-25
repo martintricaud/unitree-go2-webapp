@@ -10,9 +10,8 @@ import {
   sequence,
   set,
   switchTo,
-  toggleLeaping,
-  togglePose,
-  toggleSit,
+  toggleGait,
+  togglePosture,
   transition,
   wait,
 } from './commands';
@@ -237,39 +236,39 @@ const run = (state: RobotState, presses: ((_state: Confirmable<RobotState>) => C
 
 describe('the toggle keys', () => {
   it('b from FreeWalk sends Leaping, then FreeWalk, then Leaping again', () => {
-    const { sent, state } = run(INITIAL_ROBOT_STATE, [toggleLeaping, toggleLeaping, toggleLeaping]);
+    const { sent, state } = run(INITIAL_ROBOT_STATE, [toggleGait('Leaping'), toggleGait('Leaping'), toggleGait('Leaping')]);
     expect(sent).toEqual([enter('Leaping'), enter('FreeWalk'), enter('Leaping')]);
     expect(state).toMatchObject({ gait: 'Leaping', previousGait: 'FreeWalk' });
   });
 
   it('b from StaticWalk, then b again, returns to StaticWalk', () => {
-    const { sent, state } = run(at('StaticWalk', null), [toggleLeaping, toggleLeaping]);
+    const { sent, state } = run(at('StaticWalk', null), [toggleGait('Leaping'), toggleGait('Leaping')]);
     expect(sent).toEqual([enter('Leaping'), enter('StaticWalk')]);
     expect(state).toMatchObject({ gait: 'StaticWalk', previousGait: 'Leaping' });
   });
 
   it('b from Leaping after a gait the app cannot command switches to FreeWalk, and keeps toggling', () => {
     const { sent, state } = run({ ...at('Leaping', null), previousGait: 'Stairs' }, [
-      toggleLeaping,
-      toggleLeaping,
-      toggleLeaping,
+      toggleGait('Leaping'),
+      toggleGait('Leaping'),
+      toggleGait('Leaping'),
     ]);
     expect(sent).toEqual([enter('FreeWalk'), enter('Leaping'), enter('FreeWalk')]);
     expect(state).toMatchObject({ gait: 'FreeWalk', previousGait: 'Leaping' });
   });
 
   it('a from a gait sends StopMove and Pose on, then only Pose off', () => {
-    const { sent, state } = run(at('Trotting', null), [togglePose, togglePose]);
+    const { sent, state } = run(at('Trotting', null), [togglePosture('Pose'), togglePosture('Pose')]);
     expect(sent).toEqual([sequence('Enter Pose', perform('StopMove'), enter('Pose')), leave('Pose')]);
     expect(state).toMatchObject({ gait: 'Trotting', posture: null, previousGait: 'FreeWalk' });
   });
 
   it('a out of Pose sends only Pose off when the gait is unknown', () => {
-    expect(togglePose(settled(at(null, 'Pose')))).toEqual(leave('Pose'));
+    expect(togglePosture('Pose')(settled(at(null, 'Pose')))).toEqual(leave('Pose'));
   });
 
   it('x sits from a gait, then rises', () => {
-    const { sent } = run(at('FreeWalk', null), [toggleSit, toggleSit]);
+    const { sent } = run(at('FreeWalk', null), [togglePosture('Sitting'), togglePosture('Sitting')]);
     expect(sent).toEqual([perform('Sit'), perform('RiseSit')]);
   });
 
@@ -278,12 +277,12 @@ describe('the toggle keys', () => {
       settled: INITIAL_ROBOT_STATE,
       pending: { [field]: { value: INITIAL_ROBOT_STATE[field], reqId: 1 } },
     });
-    [togglePose, toggleSit, toggleLeaping].forEach((toggle) => {
+    [togglePosture('Pose'), togglePosture('Sitting'), toggleGait('Leaping')].forEach((toggle) => {
       expect(toggle(waiting('posture'))).toBeNull();
       expect(toggle(waiting('headlight'))).not.toBeNull();
     });
-    expect(toggleLeaping(waiting('gait'))).toBeNull();
-    [togglePose, toggleSit].forEach((toggle) => {
+    expect(toggleGait('Leaping')(waiting('gait'))).toBeNull();
+    [togglePosture('Pose'), togglePosture('Sitting')].forEach((toggle) => {
       expect(toggle(waiting('gait'))).not.toBeNull();
     });
   });
