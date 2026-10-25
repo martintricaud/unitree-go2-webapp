@@ -42,28 +42,21 @@ const CLOSED = 3;
 /// The relay bounds a single command at 5s, so this fires only once the relay has stopped answering.
 const REPLY_BACKSTOP_MS = 20_000;
 
-/// A command that never left the browser did not run: a failure, not a silence.
-function CHANNEL_CLOSED(_reqId: number, _label: string, _at: number): Outcome {
-    return {
-        outcome: 'failed',
-        code: null,
-        detail: 'the control channel is closed, so the command never left the browser',
-        reqId: _reqId,
-        label: _label,
-        at: _at,
-    };
-}
+/// The part of an outcome that says what happened, without saying to which request or when.
+type Verdict = Pick<Outcome, 'outcome' | 'code' | 'detail'>;
 
-function RELAY_SILENT(_reqId: number, _label: string, _at: number): Outcome {
-    return {
-        outcome: 'unknown',
-        code: null,
-        detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
-        reqId: _reqId,
-        label: _label,
-        at: _at,
-    };
-}
+/// A command that never left the browser did not run: a failure, not a silence.
+const CHANNEL_CLOSED: Verdict = {
+    outcome: 'failed',
+    code: null,
+    detail: 'the control channel is closed, so the command never left the browser',
+};
+
+const RELAY_SILENT: Verdict = {
+    outcome: 'unknown',
+    code: null,
+    detail: `the relay sent no verdict within ${REPLY_BACKSTOP_MS / 1000}s`,
+};
 
 /// The fields stated by each code the robot reports in `error_code` under the motion-control mode
 /// "mcf". The table is transcribed from the official app by legion1581/unitree_ui; Unitree does not
@@ -170,7 +163,7 @@ export class WebSocketClient {
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.awaiting]) {
-            this.settle(CHANNEL_CLOSED(reqId, label, Date.now()));
+            this.settle(this.stamp(reqId, label, CHANNEL_CLOSED));
         }
     }
 
@@ -211,14 +204,11 @@ export class WebSocketClient {
                 }
                 // No awaiting request: the verdict arrived after the backstop.
                 const request = this.awaiting.get(msg.reqId);
-                const outcome = {
+                const outcome = this.stamp(msg.reqId, request?.label ?? msg.command_name ?? 'command', {
                     outcome: msg.outcome,
                     code: msg.code,
                     detail: msg.detail ?? '',
-                    reqId: msg.reqId,
-                    label: request?.label ?? msg.command_name ?? 'command',
-                    at: Date.now(),
-                };
+                });
                 if (request) this.settle(outcome);
                 else this.stores.outcomeLog.update(recorded(outcome));
                 return;
@@ -237,12 +227,12 @@ export class WebSocketClient {
         const reqId = (this.lastRequestId += 1);
         const { label } = cue;
         if (!this.send({ kind: 'sequence', command_name: label, sequence: cue.steps, reqId })) {
-            const outcome = CHANNEL_CLOSED(reqId, label, Date.now());
+            const outcome = this.stamp(reqId, label, CHANNEL_CLOSED);
             this.stores.outcomeLog.update(recorded(outcome));
             return { reqId, verdict: Promise.resolve(outcome) };
         }
         const verdict = new Promise<Outcome>((resolve) => {
-            const timer = setTimeout(() => this.settle(RELAY_SILENT(reqId, label, Date.now())), REPLY_BACKSTOP_MS);
+            const timer = setTimeout(() => this.settle(this.stamp(reqId, label, RELAY_SILENT)), REPLY_BACKSTOP_MS);
             this.awaiting.set(reqId, { resolve, timer, label });
         });
         return { reqId, verdict };
@@ -270,6 +260,11 @@ export class WebSocketClient {
     /// told once the message has left the browser.
     setMonitoring(_next: boolean) {
         if (this.send({ command_name: 'subscribe', switch: _next })) this.stores.monitoringOn.set(_next);
+    }
+
+    /// The outcome of request `_reqId`, named `_label`, recorded now.
+    private stamp(_reqId: number, _label: string, _verdict: Verdict): Outcome {
+        return { ..._verdict, reqId: _reqId, label: _label, at: Date.now() };
     }
 
     private settle(outcome: Outcome) {
