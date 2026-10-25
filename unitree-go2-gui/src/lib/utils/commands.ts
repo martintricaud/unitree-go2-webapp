@@ -17,27 +17,28 @@ export type Step = Exclude<SportRequest, FlagRequest> | readonly [FlagRequest, b
 type Steps = readonly [Step, ...Step[]];
 
 /// The ways the robot walks. In a gait the robot can walk, and standing still is part of the gait.
-/// `request` enters the gait; a gait without one is reported by the robot but not commandable.
+/// `enter` is the request that enters the gait; a gait without one is reported by the robot but
+/// not commandable.
 /// `codes` are the codes the robot reports in `error_code` under the motion-control mode "mcf"
 /// while in the gait. They are transcribed from the official app by legion1581/unitree_ui; Unitree
 /// does not document them. ClassicWalk and ContinuousGait have no known code.
 export const GAITS = {
-    FreeWalk: { request: 'FreeWalk', codes: [0, 100] },
-    StaticWalk: { request: 'StaticWalk', codes: [1015] },
-    Trotting: { request: 'TrotRun', codes: [1016] },
-    EconomicGait: { request: 'EconomicGait', codes: [1017] },
-    ClassicWalk: { request: 'ClassicWalk', codes: [] },
-    ContinuousGait: { request: 'ContinuousGait', codes: [] },
-    Leaping: { request: 'FreeBound', codes: [2008] },
-    Jumping: { request: 'FreeJump', codes: [2009] },
-    FreeAvoid: { request: 'FreeAvoid', codes: [2007] },
-    Handstand: { request: 'HandStand', codes: [2011] },
-    Backstand: { request: 'WalkUpright', codes: [2017] },
-    CrossStep: { request: 'CrossStep', codes: [2016] },
+    FreeWalk: { enter: 'FreeWalk', codes: [0, 100] },
+    StaticWalk: { enter: 'StaticWalk', codes: [1015] },
+    Trotting: { enter: 'TrotRun', codes: [1016] },
+    EconomicGait: { enter: 'EconomicGait', codes: [1017] },
+    ClassicWalk: { enter: 'ClassicWalk', codes: [] },
+    ContinuousGait: { enter: 'ContinuousGait', codes: [] },
+    Leaping: { enter: 'FreeBound', codes: [2008] },
+    Jumping: { enter: 'FreeJump', codes: [2009] },
+    FreeAvoid: { enter: 'FreeAvoid', codes: [2007] },
+    Handstand: { enter: 'HandStand', codes: [2011] },
+    Backstand: { enter: 'WalkUpright', codes: [2017] },
+    CrossStep: { enter: 'CrossStep', codes: [2016] },
     Stairs: { codes: [2010] },
     LeadFollow: { codes: [2019] },
     Rage: { codes: [2021] },
-} as const satisfies Record<string, { request?: SportRequest; codes: readonly number[] }>;
+} as const satisfies Record<string, { enter?: SportRequest; codes: readonly number[] }>;
 
 /// The states in which the robot cannot walk. `enter` brings the robot into the posture from its
 /// gait, `exit` brings it back into the gait it had. Pose needs the robot to stop first. `codes`
@@ -80,11 +81,11 @@ export type Posture = keyof typeof POSTURES;
 export type Action = (typeof ACTIONS)[number];
 
 type CommandableGait = {
-    [G in Gait]: (typeof GAITS)[G] extends { request: SportRequest } ? G : never;
+    [G in Gait]: (typeof GAITS)[G] extends { enter: SportRequest } ? G : never;
 }[Gait];
 
 /// True for a gait the app can command.
-export const isCommandable = (_gait: Gait): _gait is CommandableGait => 'request' in GAITS[_gait];
+export const isCommandable = (_gait: Gait): _gait is CommandableGait => 'enter' in GAITS[_gait];
 
 /// True for a target that is a posture; the other targets are gaits.
 export const isPosture = (_target: CommandableGait | Posture): _target is Posture => _target in POSTURES;

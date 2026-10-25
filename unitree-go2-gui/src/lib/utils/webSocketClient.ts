@@ -67,7 +67,7 @@ function row(_cue: Cue): Wire[] {
         case 'enter':
             return isPosture(_cue.target)
                 ? POSTURES[_cue.target].enter.map(stepCommand)
-                : [sportCommand(GAITS[_cue.target].request)];
+                : [sportCommand(GAITS[_cue.target].enter)];
         case 'leave':
             return POSTURES[_cue.posture].exit.map(stepCommand);
         default:
