@@ -54,6 +54,6 @@ export const resolve =
 
 /// A robot report is a value the robot itself states, so it needs no verdict and may bypass
 /// `propose` and `resolve`. It replaces `settled` only: a pending proposal stays displayed.
-export const observe =
+export const settle =
     <T extends Record<string, unknown>>(_fields: Partial<T>) =>
     (_state: Confirmable<T>): Confirmable<T> => ({ ..._state, settled: { ..._state.settled, ..._fields } });

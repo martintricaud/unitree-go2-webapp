@@ -1,6 +1,5 @@
 <script lang="ts">
-    import { mirror } from '../lib/stores/mirror';
-    import { websocket } from '../lib/utils/webSocketClient';
+    import { robot } from '../lib/stores/robot';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
     import type { Outcome } from '../lib/stores/outcomes';
 
@@ -9,14 +8,6 @@
     /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
     export let drawerOpen: boolean;
     export let callback: (next: boolean) => void;
-
-    function connectRobot() {
-        websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
-    }
-
-    function disconnectRobot() {
-        websocket.send({ command_name: 'disconnect' });
-    }
 </script>
 
 {#snippet summary(entry: Outcome)}
@@ -27,16 +18,16 @@
     <div class="line">
         <button
             class="toggle"
-            disabled={!$mirror.channelOpen}
-            on:click={() => ($mirror.robotConnected ? disconnectRobot() : connectRobot())}
+            disabled={!$robot.channelOpen}
+            on:click={() => ($robot.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
         >
-            {$mirror.robotConnected ? 'Disconnect' : 'Connect'}
+            {$robot.robotConnected ? 'Disconnect' : 'Connect'}
         </button>
         <button class="toggle" on:click={() => callback(!drawerOpen)}>
             {drawerOpen ? 'Hide' : 'Show'} controller
         </button>
-        <span>Websocket {$mirror.channelOpen ? '✅' : '❌'}</span>
-        <span>Robot {$mirror.robotConnected ? '✅' : '❌'}</span>
+        <span>Websocket {$robot.channelOpen ? '✅' : '❌'}</span>
+        <span>Robot {$robot.robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={$lastOutcome?.detail ?? ''}>
             {#if $lastOutcome === null}no command sent yet{:else}{@render summary($lastOutcome)}{/if}
         </span>

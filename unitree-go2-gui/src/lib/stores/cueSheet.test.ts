@@ -3,28 +3,28 @@ import { get, writable } from 'svelte/store';
 import { presets } from '../data/cues';
 import { enter, perform, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { WebSocketClient } from '../utils/webSocketClient';
 import { createCueSheet } from './cueSheet';
-import { createMirror } from './mirror';
 import type { Outcome } from './outcomes';
+import { createRobot } from './robot';
 
 const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 
-/** A cue sheet of its own, on a fresh mirror and a client whose open socket the relay never
- * answers, so every cue sent stays pending. `sent` records each cue the sheet requests. */
+/** A cue sheet of its own, on a fresh robot whose open socket the relay never answers, so every
+ * cue sent stays pending. `sent` records each cue the sheet requests. */
 const setup = () => {
   const sent: Cue[] = [];
-  const mirror = createMirror();
-  const client = new WebSocketClient({ mirror, outcomeLog: writable<Outcome[]>([]) });
-  client.attach({ readyState: 1, send: () => {} });
+  const socket = { readyState: 1, send: () => {}, onopen: null, onclose: null, onmessage: null };
+  const robot = createRobot({ openSocket: () => socket, outcomeLog: writable<Outcome[]>([]) });
+  robot.connect();
   const recorder = {
+    subscribe: robot.subscribe,
     request: (_cue: Cue) => {
       sent.push(_cue);
-      return client.request(_cue);
+      return robot.request(_cue);
     },
   };
-  const cueSheet = createCueSheet(CUES, recorder, mirror);
-  return { cueSheet, mirror, sent };
+  const cueSheet = createCueSheet(CUES, recorder);
+  return { cueSheet, robot, sent };
 };
 
 /** What one press of `_key` does from the first cue and the robot's boot state. */
@@ -126,9 +126,9 @@ describe('cueSheet', () => {
   });
 
   it('sends nothing for a toggle whose fields wait for a verdict, and still sends a preset', () => {
-    const { cueSheet, mirror, sent } = setup();
+    const { cueSheet, robot, sent } = setup();
     cueSheet.press('a');
-    expect(get(mirror).robot.pending.posture).toBeDefined();
+    expect(get(robot).state.pending.posture).toBeDefined();
     // Pose, Sit and Leaping all toggle the posture, which waits.
     cueSheet.press('a');
     cueSheet.press('x');

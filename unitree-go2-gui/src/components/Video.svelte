@@ -9,7 +9,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { writable, derived } from 'svelte/store';
     import type { Writable } from 'svelte/store';
-    import { websocket } from '../lib/utils/webSocketClient';
+    import { robot } from '../lib/stores/robot';
     import type {
         NormalizedLandmark,
         Detection,
@@ -33,7 +33,7 @@
 
     const cameraFrame = writable<ImageBitmap | null>(null);
 
-    const aggregateFrameStore = derived([websocket.videoFrame, cameraFrame], ([videoFrame, cameraFrame]) => {
+    const aggregateFrameStore = derived([robot.videoFrame, cameraFrame], ([videoFrame, cameraFrame]) => {
         return webcamOn ? cameraFrame : videoFrame;
     });
 

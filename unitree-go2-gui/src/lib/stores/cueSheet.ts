@@ -2,17 +2,10 @@ import { clamp, isIncludedIn, keys } from 'remeda';
 import { get, readonly, writable } from 'svelte/store';
 import { CONDUITE } from '../data/cues';
 import { KEY_BINDINGS } from '../data/keyBindings';
-import { websocket } from '../utils/webSocketClient';
-import type { WebSocketClient } from '../utils/webSocketClient';
-import { mirror } from './mirror';
+import { robot } from './robot';
 
-/// Creates the cue sheet the operator steps through, sending each cue it fires through `_client`.
-/// A toggle reads the robot's state from `_mirror`.
-export const createCueSheet = (
-    _cues: typeof CONDUITE,
-    _client: Pick<WebSocketClient, 'request'>,
-    _mirror: Pick<typeof mirror, 'subscribe'>,
-) => {
+/// Creates the cue sheet the operator steps through. It sends cues to `_robot` and reads toggles from it.
+export const createCueSheet = (_cues: typeof CONDUITE, _robot: Pick<typeof robot, 'subscribe' | 'request'>) => {
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
     /// Every key starts on its binding in `KEY_BINDINGS`; writing this store rebinds a key while
@@ -22,7 +15,7 @@ export const createCueSheet = (
     );
 
     /// Sends the cue at `_index`, and leaves the pointer and the pressed cue as they are.
-    const send = (_index: number) => void _client.request(_cues[_index]);
+    const send = (_index: number) => void _robot.request(_cues[_index]);
 
     /// The pointer stays on a cue of the sheet.
     const move = (_steps: number) =>
@@ -59,12 +52,12 @@ export const createCueSheet = (
                     move(binding.steps);
                     return;
                 case 'toggle': {
-                    const cue = binding.toggle(get(_mirror).robot);
-                    if (cue !== null) void _client.request(cue);
+                    const cue = binding.toggle(get(_robot).state);
+                    if (cue !== null) void _robot.request(cue);
                     return;
                 }
                 case 'send':
-                    void _client.request(binding.cue);
+                    void _robot.request(binding.cue);
                     return;
                 default:
                     // A binding whose kind this switch does not handle fails type-checking here.
@@ -74,5 +67,5 @@ export const createCueSheet = (
     };
 };
 
-/// The app's cue sheet, the show's running order, sent through the app's client.
-export const cueSheet = createCueSheet(CONDUITE, websocket, mirror);
+/// The app's cue sheet, the show's running order, sent to the app's robot.
+export const cueSheet = createCueSheet(CONDUITE, robot);

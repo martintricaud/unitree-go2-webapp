@@ -24,7 +24,7 @@ const INITIAL: Confirmable<typeof START> = { settled: START, pending: {} };
 // Fixed to START's fields, so each step in a `pipe` keeps every field's type.
 const propose = confirmable.propose<typeof START>;
 const resolve = confirmable.resolve<typeof START>;
-const observe = confirmable.observe<typeof START>;
+const settle = confirmable.settle<typeof START>;
 
 describe('what the control shows', () => {
     it('shows the settled value while nothing has been asked for', () => {
@@ -39,7 +39,7 @@ describe('what the control shows', () => {
     });
 
     it('offers no way to write the value directly, so no caller can route around a verdict', () => {
-        expect(Object.keys(confirmable).sort()).toEqual(['displayed', 'observe', 'propose', 'resolve']);
+        expect(Object.keys(confirmable).sort()).toEqual(['displayed', 'propose', 'resolve', 'settle']);
     });
 });
 
@@ -155,13 +155,13 @@ describe('each step', () => {
 
 describe('a value the robot reports', () => {
     it('replaces the reported fields of the settled value and keeps the others', () => {
-        expect(observe({ speed: 1 })(INITIAL)).toEqual({ settled: { ...START, speed: 1 }, pending: {} });
+        expect(settle({ speed: 1 })(INITIAL)).toEqual({ settled: { ...START, speed: 1 }, pending: {} });
     });
 
     it('leaves pending entries unchanged, so a pending value stays displayed', () => {
         const proposed = propose({ speed: 1, mode: 'Pose' }, 1)(INITIAL);
 
-        const state = observe({ speed: -1, mode: 'Damp' })(proposed);
+        const state = settle({ speed: -1, mode: 'Damp' })(proposed);
 
         expect(state.pending).toBe(proposed.pending);
         expect(state.settled).toEqual({ ...START, speed: -1, mode: 'Damp' });
@@ -169,7 +169,7 @@ describe('a value the robot reports', () => {
     });
 
     it('is what a refused proposal falls back to', () => {
-        const state = pipe(INITIAL, propose({ speed: 1 }, 1), observe({ speed: -1 }), resolve(1, FAILED));
+        const state = pipe(INITIAL, propose({ speed: 1 }, 1), settle({ speed: -1 }), resolve(1, FAILED));
         expect(displayed(state).speed).toBe(-1);
     });
 });
