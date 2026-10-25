@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { entries, mapValues } from 'remeda';
-import { ACTIONS, MODES } from '../data/sportCommands';
+import { fromKeys, keys, mapValues } from 'remeda';
 import { CONDUITE, presets } from '../data/cues';
 import { COLOURS, SPEED_LEVELS } from '../data/settings';
-import { enter, leave, perform, set } from './commands';
+import { ACTIONS, GAITS, enter, isCommandable, leave, perform, recover, sequence, set } from './commands';
 import { encode } from './webSocketClient';
 import WIRE from './encode.fixture.json';
+
+const COMMANDABLE_GAITS = keys(GAITS).filter(isCommandable);
 
 // The fixture holds what the browser sent before cues were typed by their effect.
 describe('encode', () => {
@@ -18,9 +19,20 @@ describe('encode', () => {
   });
 
   it('sends every mode, action, colour, speed and obstacle-avoidance control as before', () => {
-    expect(mapValues(MODES, (_entry, _mode) => encode(enter(_mode)))).toEqual(WIRE.modesOn);
-    expect(encode(leave('Leaping'))).toEqual(WIRE.leapingOff);
-    expect(mapValues(ACTIONS, (_entry, _action) => encode(perform(_action)))).toEqual(WIRE.actions);
+    expect({
+      ...fromKeys(COMMANDABLE_GAITS, (_gait) => encode(enter(_gait))),
+      Damp: encode(enter('Damp')),
+      Pose: encode(enter('Pose')),
+    }).toEqual(WIRE.modesOn);
+    expect({
+      ...fromKeys(ACTIONS, (_action) => encode(perform(_action))),
+      Sit: encode(enter('Sitting')),
+      RiseSit: encode(leave('Sitting')),
+      StandDown: encode(enter('Lying')),
+      StandUp: encode(enter('JointLock')),
+      BalanceStand: encode(leave('JointLock')),
+      RecoveryStand: encode(recover()),
+    }).toEqual(WIRE.actions);
     expect(
       mapValues(WIRE.headlight, (_wire, _colour) => encode(set({ name: 'headlight', value: _colour }))),
     ).toEqual(WIRE.headlight);
@@ -39,9 +51,26 @@ describe('encode', () => {
     });
   });
 
-  it('sends a mode under its own argument name', () => {
-    entries(MODES).forEach(([_mode, _entry]) => {
-      expect(encode(enter(_mode))).toMatchObject({ parameter: { [_entry.argument]: true } });
+  it('sends a gait as its request with the flag on', () => {
+    COMMANDABLE_GAITS.forEach((_gait) => {
+      expect(encode(enter(_gait))).toMatchObject({ parameter: { data: true } });
     });
+  });
+
+  it("sends a posture's several steps as one sequence, and splices them into a named sequence", () => {
+    expect(encode(leave('Lying'))).toEqual({
+      kind: 'sequence',
+      displayName: 'Exit Lying',
+      sequence: [encode(enter('JointLock')), encode(leave('JointLock'))],
+    });
+    expect(encode(sequence('Named', enter('Pose')))).toEqual({
+      kind: 'sequence',
+      displayName: 'Named',
+      sequence: [
+        encode(perform('StopMove')),
+        { kind: 'command', topic: 'SPORT_MOD', api_id: 1028, command_name: 'Pose', parameter: { data: true } },
+      ],
+    });
+    expect(encode(leave('Pose'))).toMatchObject({ command_name: 'Pose', parameter: { data: false } });
   });
 });

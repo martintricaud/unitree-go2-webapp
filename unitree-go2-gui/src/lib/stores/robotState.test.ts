@@ -159,19 +159,11 @@ describe('robotState', () => {
     expect(get(robotState).settled.obstacleAvoidance).toBe(false);
   });
 
-  it('settles no gait once a gait was left', async () => {
-    const { robotState, reply } = setup();
-    const done = robotState.send(leave('Trotting'));
-    reply('confirmed');
-    await done;
-    expect(get(robotState).settled.gait).toBeNull();
-  });
-
   it('keeps two cues on different fields pending side by side, each settled by its own verdict', async () => {
     const { robotState, reply } = setup();
     const gait = get(robotState).settled.gait;
     const first = robotState.send(enter('Trotting'));
-    const second = robotState.send(perform('Sit'));
+    const second = robotState.send(enter('Sitting'));
     expect(displayed(get(robotState))).toMatchObject({ gait: 'Trotting', posture: 'Sitting' });
 
     reply('failed', 0);
@@ -219,11 +211,11 @@ describe('robotState', () => {
     const enteredGait = robotState.send(enter('EconomicGait'));
     reply('confirmed');
     await enteredGait;
-    const sat = robotState.send(perform('Sit'));
+    const sat = robotState.send(enter('Sitting'));
     reply('confirmed');
     await sat;
     expect(get(robotState).settled).toMatchObject({ gait: 'EconomicGait', posture: 'Sitting' });
-    const rose = robotState.send(perform('RiseSit'));
+    const rose = robotState.send(leave('Sitting'));
     expect(get(robotState).pending).toEqual({ posture: { value: null, reqId: expect.any(Number) } });
     reply('confirmed');
     await rose;
@@ -248,7 +240,7 @@ describe('robotState', () => {
   it('keeps previousGait on entering and leaving a posture', async () => {
     const { robotState, reply } = setup();
     const { previousGait } = get(robotState).settled;
-    for (const cue of [enter('Pose'), leave('Pose'), perform('Sit'), perform('RiseSit')]) {
+    for (const cue of [enter('Pose'), leave('Pose'), enter('Sitting'), leave('Sitting')]) {
       const done = robotState.send(cue);
       expect(get(robotState).pending.previousGait).toBeUndefined();
       reply('confirmed');
@@ -331,15 +323,6 @@ describe("the robot's report", () => {
     robotReport.set({ posture: 'Sitting' });
     robotReport.set({ posture: null });
     expect(get(robotState).settled).toMatchObject({ gait: 'Trotting', previousGait });
-  });
-
-  it('keeps previousGait when a report states a gait after the gait was unknown', async () => {
-    const { robotState, robotReport, confirm } = setup();
-    await confirm(enter('Jumping'));
-    await confirm(leave('Jumping'));
-    expect(get(robotState).settled).toMatchObject({ gait: null, previousGait: 'Jumping' });
-    robotReport.set({ gait: 'CrossStep' });
-    expect(get(robotState).settled).toMatchObject({ gait: 'CrossStep', previousGait: 'Jumping' });
   });
 
   it('leaves a pending gait proposal pending', async () => {

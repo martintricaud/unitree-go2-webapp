@@ -1,4 +1,4 @@
-import { dim, enter, perform, sequence, set, wait } from '../utils/commands';
+import { dim, enter, leave, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 
 const DANSE_DU_SABBAT = sequence(
@@ -26,7 +26,7 @@ export const presets = {
         wait(0.5),
         enter('FreeWalk'),
     ),
-    exitSit: sequence('', perform('RiseSit'), enter('FreeWalk')),
+    exitSit: sequence('', leave('Sitting'), enter('FreeWalk')),
     dance: sequence('Dance', perform('Dance2'), wait(0.1), enter('FreeWalk')),
 };
 
@@ -45,29 +45,29 @@ const STRETCH_HELLO_JUMP = sequence(
 );
 
 const MONOLOGUE = [
-    perform('Sit'),
+    enter('Sitting'),
     sequence('FreeWalk', ...presets.exitSit.items),
     sequence('Chien', enter('Leaping')),
     enter('FreeWalk'),
     presets.dance,
     // perform('Content'),
-    // sequence('Visée Public 1', perform('StopMove'), enter('Pose')),
+    // sequence('Visée Public 1', enter('Pose')),
     // enter('FreeWalk'),
-    // sequence('Visée Public 2', perform('StopMove'), enter('Pose')),
+    // sequence('Visée Public 2', enter('Pose')),
     // enter('FreeWalk'),
-    // sequence('Visée Public 3', perform('StopMove'), enter('Pose')),
+    // sequence('Visée Public 3', enter('Pose')),
     // enter('FreeWalk'),
     sequence('Ahahah Redlight', ...presets.contentRed.items),
     sequence(
         'Assis Whitelight',
-        perform('StandUp'),
+        enter('JointLock'),
         wait(0.1),
-        perform('Sit'),
+        enter('Sitting'),
         wait(0.1),
         set({ name: 'headlight', value: 'white' }),
         dim(4),
     ),
-    perform('StandDown'),
+    enter('Lying'),
 ];
 
 /// The performance cue sheet, which the operator steps through with the arrow keys.
@@ -75,10 +75,10 @@ export const CONDUITE: [Cue, ...Cue[]] = [
     ...DANSE_DU_SABBAT.items,
     STRETCH_HELLO_JUMP,
     sequence('Content', perform('Content'), wait(0.05), enter('FreeWalk')),
-    sequence('Picture me...', perform('StopMove'), enter('Pose')),
+    sequence('Picture me...', enter('Pose')),
     enter('Handstand'),
     enter('ClassicWalk'),
-    perform('FingerHeart'),
+    perform('Heart'),
     sequence('Salto', perform('LeftFlip'), enter('FreeWalk')),
     ...MONOLOGUE,
 ];

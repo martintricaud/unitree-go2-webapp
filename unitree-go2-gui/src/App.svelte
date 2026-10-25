@@ -9,8 +9,18 @@
     import StatusStrip from './components/StatusStrip.svelte';
     import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import { activeMode, cueLabel, enter, perform, set } from './lib/utils/commands';
-    import { ACTIONS, MODES } from './lib/data/sportCommands';
+    import {
+        ACTIONS,
+        GAITS,
+        POSTURES,
+        activeMode,
+        cueLabel,
+        enter,
+        isCommandable,
+        perform,
+        recover,
+        set,
+    } from './lib/utils/commands';
     import { CONDUITE } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { robotState } from './lib/stores/robotState';
@@ -113,20 +123,21 @@
         />
     </div>
     <div class="button-grid">
-        {#each keys(ACTIONS) as action}
+        {#each ACTIONS as action}
             <button disabled={!$robotConnected} on:click={() => sendToRobot(perform(action))}>
                 {action}
             </button>
         {/each}
+        <button disabled={!$robotConnected} on:click={() => sendToRobot(recover())}>RecoveryStand</button>
     </div>
     <div class="button-grid">
-        {#each keys(MODES) as modeName}
+        {#each [...keys(GAITS).filter(isCommandable), ...keys(POSTURES)] as target}
             <Radio
-                optionName={modeName}
-                selected={activeMode($robotState.settled) === modeName}
-                spinning={activeMode(shown) === modeName && activeMode(shown) !== activeMode($robotState.settled)}
+                optionName={target}
+                selected={activeMode($robotState.settled) === target}
+                spinning={activeMode(shown) === target && activeMode(shown) !== activeMode($robotState.settled)}
                 disabled={!$robotConnected || !($reported.gait || $reported.posture)}
-                callback={() => sendToRobot(enter(modeName))}
+                callback={() => sendToRobot(enter(target))}
             />
         {/each}
     </div>

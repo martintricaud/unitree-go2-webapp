@@ -10,13 +10,25 @@
       "command_name": "FreeWalk"
     },
     {
-      "parameter": {
-        "data": true
-      },
-      "kind": "command",
-      "api_id": 1028,
-      "topic": "SPORT_MOD",
-      "command_name": "Pose"
+      "kind": "sequence",
+      "displayName": "Pose",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 1028,
+          "topic": "SPORT_MOD",
+          "command_name": "Pose"
+        }
+      ]
     },
     {
       "kind": "sequence",
@@ -42,7 +54,7 @@
           "kind": "command",
           "api_id": 2050,
           "topic": "SPORT_MOD",
-          "command_name": "Backstand"
+          "command_name": "WalkUpright"
         },
         {
           "kind": "wait",
@@ -201,7 +213,7 @@
       "kind": "command",
       "api_id": 2044,
       "topic": "SPORT_MOD",
-      "command_name": "Handstand"
+      "command_name": "HandStand"
     },
     {
       "parameter": {
@@ -216,7 +228,7 @@
       "kind": "command",
       "api_id": 1036,
       "topic": "SPORT_MOD",
-      "command_name": "FingerHeart"
+      "command_name": "Heart"
     },
     {
       "kind": "sequence",
@@ -277,7 +289,7 @@
           "kind": "command",
           "api_id": 2046,
           "topic": "SPORT_MOD",
-          "command_name": "Leaping"
+          "command_name": "FreeBound"
         }
       ]
     },
@@ -453,9 +465,6 @@
   },
   "modesOn": {
     "Damp": {
-      "parameter": {
-        "enabled": true
-      },
       "kind": "command",
       "api_id": 1001,
       "topic": "SPORT_MOD",
@@ -471,13 +480,25 @@
       "command_name": "ContinuousGait"
     },
     "Pose": {
-      "parameter": {
-        "data": true
-      },
-      "kind": "command",
-      "api_id": 1028,
-      "topic": "SPORT_MOD",
-      "command_name": "Pose"
+      "kind": "sequence",
+      "displayName": "Pose",
+      "sequence": [
+        {
+          "kind": "command",
+          "api_id": 1003,
+          "topic": "SPORT_MOD",
+          "command_name": "StopMove"
+        },
+        {
+          "parameter": {
+            "data": true
+          },
+          "kind": "command",
+          "api_id": 1028,
+          "topic": "SPORT_MOD",
+          "command_name": "Pose"
+        }
+      ]
     },
     "StaticWalk": {
       "parameter": {
@@ -495,7 +516,7 @@
       "kind": "command",
       "api_id": 1062,
       "topic": "SPORT_MOD",
-      "command_name": "Trotting"
+      "command_name": "TrotRun"
     },
     "EconomicGait": {
       "parameter": {
@@ -513,7 +534,7 @@
       "kind": "command",
       "api_id": 2044,
       "topic": "SPORT_MOD",
-      "command_name": "Handstand"
+      "command_name": "HandStand"
     },
     "FreeWalk": {
       "parameter": {
@@ -531,7 +552,7 @@
       "kind": "command",
       "api_id": 2046,
       "topic": "SPORT_MOD",
-      "command_name": "Leaping"
+      "command_name": "FreeBound"
     },
     "Jumping": {
       "parameter": {
@@ -540,7 +561,7 @@
       "kind": "command",
       "api_id": 2047,
       "topic": "SPORT_MOD",
-      "command_name": "Jumping"
+      "command_name": "FreeJump"
     },
     "FreeAvoid": {
       "parameter": {
@@ -567,7 +588,7 @@
       "kind": "command",
       "api_id": 2050,
       "topic": "SPORT_MOD",
-      "command_name": "Backstand"
+      "command_name": "WalkUpright"
     },
     "CrossStep": {
       "parameter": {
@@ -578,15 +599,6 @@
       "topic": "SPORT_MOD",
       "command_name": "CrossStep"
     }
-  },
-  "leapingOff": {
-    "parameter": {
-      "data": false
-    },
-    "kind": "command",
-    "api_id": 2046,
-    "topic": "SPORT_MOD",
-    "command_name": "Leaping"
   },
   "actions": {
     "BalanceStand": {
@@ -685,11 +697,11 @@
       "topic": "SPORT_MOD",
       "command_name": "FrontPounce"
     },
-    "FingerHeart": {
+    "Heart": {
       "kind": "command",
       "api_id": 1036,
       "topic": "SPORT_MOD",
-      "command_name": "FingerHeart"
+      "command_name": "Heart"
     },
     "LeftFlip": {
       "kind": "command",

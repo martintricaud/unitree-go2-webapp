@@ -1,9 +1,93 @@
 import { reduce } from 'remeda';
 import { displayed } from './confirmable';
 import type { Confirmable } from './confirmable';
-import { ACTIONS, MODES } from '../data/sportCommands';
-import type { Action, Gait, Mode, Posture } from '../data/sportCommands';
+import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
+
+export type SportRequest = keyof typeof SPORT_API;
+
+type FlagRequest = {
+    [R in SportRequest]: (typeof SPORT_API)[R] extends { flag: true } ? R : never;
+}[SportRequest];
+
+/// One request a posture's entry or exit sends: a request without argument, or a flag request
+/// with the flag it sends.
+export type Step = Exclude<SportRequest, FlagRequest> | readonly [FlagRequest, boolean];
+
+type Steps = readonly [Step, ...Step[]];
+
+/// The ways the robot walks. In a gait the robot can walk, and standing still is part of the gait.
+/// `request` enters the gait; a gait without one is reported by the robot but not commandable.
+/// `codes` are the codes the robot reports in `error_code` under the motion-control mode "mcf"
+/// while in the gait. They are transcribed from the official app by legion1581/unitree_ui; Unitree
+/// does not document them. ClassicWalk and ContinuousGait have no known code.
+export const GAITS = {
+    FreeWalk: { request: 'FreeWalk', codes: [0, 100] },
+    StaticWalk: { request: 'StaticWalk', codes: [1015] },
+    Trotting: { request: 'TrotRun', codes: [1016] },
+    EconomicGait: { request: 'EconomicGait', codes: [1017] },
+    ClassicWalk: { request: 'ClassicWalk', codes: [] },
+    ContinuousGait: { request: 'ContinuousGait', codes: [] },
+    Leaping: { request: 'FreeBound', codes: [2008] },
+    Jumping: { request: 'FreeJump', codes: [2009] },
+    FreeAvoid: { request: 'FreeAvoid', codes: [2007] },
+    Handstand: { request: 'HandStand', codes: [2011] },
+    Backstand: { request: 'WalkUpright', codes: [2017] },
+    CrossStep: { request: 'CrossStep', codes: [2016] },
+    Stairs: { codes: [2010] },
+    LeadFollow: { codes: [2019] },
+    Rage: { codes: [2021] },
+} as const satisfies Record<string, { request?: SportRequest; codes: readonly number[] }>;
+
+/// The states in which the robot cannot walk. `enter` brings the robot into the posture from its
+/// gait, `exit` brings it back into the gait it had. Pose needs the robot to stop first. `codes`
+/// are the "mcf" codes the robot reports in the posture.
+export const POSTURES = {
+    Pose: { enter: ['StopMove', ['Pose', true]], exit: [['Pose', false]], codes: [1091] },
+    Sitting: { enter: ['Sit'], exit: ['RiseSit'], codes: [1007] },
+    Lying: { enter: ['StandDown'], exit: ['StandUp', 'BalanceStand'], codes: [1004] },
+    JointLock: { enter: ['StandUp'], exit: ['BalanceStand'], codes: [1002] },
+    Damp: { enter: ['Damp'], exit: ['RecoveryStand'], codes: [1001] },
+} as const satisfies Record<string, { enter: Steps; exit: Steps; codes: readonly number[] }>;
+
+/// The one-shot movements. Each changes neither the gait nor the posture.
+export const ACTIONS = [
+    'StopMove',
+    'Hello',
+    'Stretch',
+    'Content',
+    'Dance1',
+    'Dance2',
+    'Scrape',
+    'FrontFlip',
+    'FrontJump',
+    'FrontPounce',
+    'Heart',
+    'LeftFlip',
+    'RightFlip',
+    'BackFlip',
+] as const satisfies readonly SportRequest[];
+
+/// The code of balanceStand: the robot stands still in its gait, so it is in no posture. Unitree's
+/// ROS 2 documentation separates balanceStand (standing) from locomotion (moving).
+export const BALANCE_STAND_CODE = 1013;
+
+/// The codes of "move" and "hello", which are transient and state nothing.
+export const TRANSIENT_CODES = [1005, 1006] as const;
+
+export type Gait = keyof typeof GAITS;
+export type Posture = keyof typeof POSTURES;
+export type Action = (typeof ACTIONS)[number];
+
+type CommandableGait = {
+    [G in Gait]: (typeof GAITS)[G] extends { request: SportRequest } ? G : never;
+}[Gait];
+
+/// True for a gait the app can command.
+export const isCommandable = (_gait: Gait): _gait is CommandableGait => 'request' in GAITS[_gait];
+
+/// True for a target that is a posture; the other targets are gaits.
+export const isPosture = (_target: CommandableGait | Posture): _target is Posture => _target in POSTURES;
 
 type Setting = {
     [K in keyof typeof SETTINGS]: { name: K; value: RobotState[K] };
@@ -11,9 +95,10 @@ type Setting = {
 
 /// One request to the robot. `orient` and `dim` change nothing the interface tracks.
 export type Command =
-    | { kind: 'enter'; mode: Mode }
-    | { kind: 'leave'; mode: Mode }
+    | { kind: 'enter'; target: CommandableGait | Posture }
+    | { kind: 'leave'; posture: Posture }
     | { kind: 'perform'; action: Action }
+    | { kind: 'recover' }
     | { kind: 'set'; setting: Setting }
     | { kind: 'orient'; x: number; y: number; z: number }
     | { kind: 'dim'; brightness: number };
@@ -22,9 +107,11 @@ type Sequence = { kind: 'sequence'; label?: string; items: [Cue, ...Cue[]] };
 
 export type Cue = Command | { kind: 'wait'; seconds: number } | Sequence;
 
-export const enter = (_mode: Mode): Command => ({ kind: 'enter', mode: _mode });
-export const leave = (_mode: Mode): Command => ({ kind: 'leave', mode: _mode });
+export const enter = (_target: CommandableGait | Posture): Command => ({ kind: 'enter', target: _target });
+export const leave = (_posture: Posture): Command => ({ kind: 'leave', posture: _posture });
 export const perform = (_action: Action): Command => ({ kind: 'perform', action: _action });
+/// RecoveryStand: from any state, the robot stands in its gait, in no posture.
+export const recover = (): Command => ({ kind: 'recover' });
 export const set = (_setting: Setting): Command => ({ kind: 'set', setting: _setting });
 export const orient = (_x: number, _y: number, _z: number): Command => ({
     kind: 'orient',
@@ -46,10 +133,13 @@ export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Sequence =
 export function cueLabel(_cue: Cue) {
     switch (_cue.kind) {
         case 'enter':
+            return _cue.target;
         case 'leave':
-            return _cue.mode;
+            return `Exit ${_cue.posture}`;
         case 'perform':
             return _cue.action;
+        case 'recover':
+            return 'RecoveryStand';
         case 'set':
             return SETTINGS[_cue.setting.name].command_name;
         case 'orient':
@@ -64,8 +154,8 @@ export function cueLabel(_cue: Cue) {
 }
 
 export type RobotState = {
-    /// Null when the gait is unknown, as after a gait was left: the API does not say which gait
-    /// follows. While the robot is in a posture, this keeps the gait it returns to on standing up.
+    /// Null when the gait is unknown. While the robot is in a posture, this keeps the gait it
+    /// returns to on leaving the posture.
     gait: Gait | null;
     /// Null when the robot is in its gait.
     posture: Posture | null;
@@ -77,30 +167,19 @@ export type RobotState = {
     obstacleAvoidance: boolean;
 };
 
-/// True for a name that is a mode, so `enter` and `leave` accept it.
-const isMode = (_name: string): _name is Mode => _name in MODES;
-
-/// True for a mode whose `kind` is a gait; the other modes are postures.
-const isGaitMode = (_mode: Mode): _mode is Extract<Mode, Gait> => MODES[_mode].kind === 'gait';
-
-/// True for a gait the app can command. The robot reports gaits, such as Stairs, that have no command.
-const isEnterable = (_gait: Gait): _gait is Extract<Mode, Gait> => isMode(_gait) && isGaitMode(_gait);
-
 /// The state once one command or wait has run, with `previousGait` not yet updated.
 function step(_cue: Exclude<Cue, Sequence>, _state: RobotState): RobotState {
     switch (_cue.kind) {
         case 'enter':
-            return isGaitMode(_cue.mode)
-                ? { ..._state, gait: _cue.mode, posture: null }
-                : { ..._state, posture: _cue.mode };
+            return isPosture(_cue.target)
+                ? { ..._state, posture: _cue.target }
+                : { ..._state, gait: _cue.target, posture: null };
         case 'leave':
-            return isGaitMode(_cue.mode) ? { ..._state, gait: null } : { ..._state, posture: null };
-        case 'perform': {
-            const action = ACTIONS[_cue.action];
-            return 'posture' in action ? { ..._state, posture: action.posture } : _state;
-        }
+        case 'recover':
+            return { ..._state, posture: null };
         case 'set':
             return { ..._state, [_cue.setting.name]: _cue.setting.value };
+        case 'perform':
         case 'orient':
         case 'dim':
         case 'wait':
@@ -121,49 +200,6 @@ export function transition(_cue: Cue): (_state: RobotState) => RobotState {
     };
 }
 
-type Steps = [Cue, ...Cue[]];
-
-/// The commands that bring the robot from its gait into each posture. Pose needs the robot to stop
-/// first. JointLock is the posture StandUp ends in.
-const POSTURE_ENTRY: Record<Posture, Steps> = {
-    Pose: [perform('StopMove'), enter('Pose')],
-    Sitting: [perform('Sit')],
-    Lying: [perform('StandDown')],
-    JointLock: [perform('StandUp')],
-    Damp: [enter('Damp')],
-};
-
-/// The commands that bring the robot from each posture back into its gait.
-const POSTURE_EXIT: Record<Posture, Steps> = {
-    Pose: [leave('Pose')],
-    Sitting: [perform('RiseSit')],
-    Lying: [perform('StandUp'), perform('BalanceStand')],
-    JointLock: [perform('BalanceStand')],
-    Damp: [perform('RecoveryStand')],
-};
-
-/// One step is sent as it is; several are sent as a sequence named `_label`.
-const chain = (_label: string, [_first, ..._rest]: Steps): Cue =>
-    _rest.length === 0 ? _first : sequence(_label, _first, ..._rest);
-
-/// The cue that brings the robot from `_posture` back into its gait, whichever gait that is.
-export const leavePosture = (_posture: Posture): Cue => chain(`Exit ${_posture}`, POSTURE_EXIT[_posture]);
-
-/// The cue that brings the robot from `_state` into `_target` by the smooth route: a posture is
-/// left before a gait is entered, and Pose is entered only once the robot stops. From one posture
-/// to another, this is the target's entry, which the robot refuses.
-export function switchTo(_target: Extract<Mode, Gait> | Posture) {
-    return function (_state: Pick<RobotState, 'gait' | 'posture'>): Cue {
-        if (!(isMode(_target) && isGaitMode(_target)))
-            return chain(`Enter ${_target}`, POSTURE_ENTRY[_target]);
-        if (_state.posture === null) return enter(_target);
-        const exit = POSTURE_EXIT[_state.posture];
-        return _target === _state.gait
-            ? leavePosture(_state.posture)
-            : chain(`${_state.posture} → ${_target}`, [...exit, enter(_target)]);
-    };
-}
-
 /// What the mode buttons show: the posture when there is one, otherwise the gait.
 export const activeMode = (_state: Pick<RobotState, 'gait' | 'posture'>) => _state.posture ?? _state.gait;
 
@@ -178,15 +214,14 @@ const isWaiting =
 /// wait for a verdict: the cue would read the pending value and queue the opposite command.
 export const togglePosture = (_posture: Posture) => (_state: Confirmable<RobotState>) => {
     if (isWaiting('posture')(_state)) return null;
-    const shown = displayed(_state);
-    return shown.posture === _posture ? leavePosture(_posture) : switchTo(_posture)(shown);
+    return displayed(_state).posture === _posture ? leave(_posture) : enter(_posture);
 };
 
-/// A gait toggles back to the gait the robot had before it. A gait the robot only reports has
-/// no command, so leaving the toggled gait then lets the robot pick its gait.
-export const toggleGait = (_gait: Extract<Mode, Gait>) => (_state: Confirmable<RobotState>) => {
+/// A gait toggles back to the gait the robot had before it, or to FreeWalk when that gait is not
+/// commandable.
+export const toggleGait = (_gait: CommandableGait) => (_state: Confirmable<RobotState>) => {
     if (isWaiting('gait', 'posture')(_state)) return null;
     const shown = displayed(_state);
-    if (shown.gait !== _gait || shown.posture !== null) return switchTo(_gait)(shown);
-    return switchTo(isEnterable(shown.previousGait) ? shown.previousGait : 'FreeWalk')(shown);
+    if (shown.gait !== _gait || shown.posture !== null) return enter(_gait);
+    return enter(isCommandable(shown.previousGait) ? shown.previousGait : 'FreeWalk');
 };

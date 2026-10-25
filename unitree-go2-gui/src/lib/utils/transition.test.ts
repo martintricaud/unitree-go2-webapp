@@ -4,18 +4,17 @@ import {
   dim,
   enter,
   leave,
-  leavePosture,
   orient,
   perform,
+  recover,
   sequence,
   set,
-  switchTo,
   toggleGait,
   togglePosture,
   transition,
   wait,
 } from './commands';
-import type { Cue, RobotState } from './commands';
+import type { Cue, RobotState, Step } from './commands';
 import type { Confirmable } from './confirmable';
 import { presets } from '../data/cues';
 
@@ -44,9 +43,8 @@ describe('transition', () => {
     });
   });
 
-  it('enters a gait, and leaving a gait sets the gait to null', () => {
+  it('enters a gait', () => {
     expect(transition(enter('Handstand'))(INITIAL_ROBOT_STATE).gait).toBe('Handstand');
-    expect(transition(leave('Trotting'))(STATES[2])).toEqual({ ...STATES[2], gait: null, previousGait: 'Trotting' });
   });
 
   it('clears the posture on entering a gait from a posture', () => {
@@ -58,24 +56,26 @@ describe('transition', () => {
     });
   });
 
-  it('keeps the gait on entering or leaving a posture mode', () => {
+  it('keeps the gait on entering or leaving a posture', () => {
     expect(transition(enter('Pose'))(STATES[2])).toEqual({ ...STATES[2], posture: 'Pose' });
     expect(transition(enter('Damp'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, posture: 'Damp' });
-    expect(transition(leave('Pose'))(STATES[2])).toEqual({ ...STATES[2], posture: null });
-  });
-
-  it('sets the posture an action leaves the robot in, and keeps the gait', () => {
-    expect(transition(perform('Sit'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, posture: 'Sitting' });
-    expect(transition(perform('StandDown'))(INITIAL_ROBOT_STATE).posture).toBe('Lying');
-    expect(transition(perform('StandUp'))(STATES[2])).toEqual({ ...STATES[2], posture: 'JointLock' });
-    (['RiseSit', 'RecoveryStand', 'BalanceStand'] as const).forEach((action) => {
-      expect(transition(perform(action))(STATES[2])).toEqual({ ...STATES[2], posture: null });
+    expect(transition(enter('Sitting'))(INITIAL_ROBOT_STATE)).toEqual({ ...INITIAL_ROBOT_STATE, posture: 'Sitting' });
+    expect(transition(enter('Lying'))(INITIAL_ROBOT_STATE).posture).toBe('Lying');
+    expect(transition(enter('JointLock'))(STATES[2])).toEqual({ ...STATES[2], posture: 'JointLock' });
+    (['Pose', 'Sitting', 'Lying', 'JointLock', 'Damp'] as const).forEach((posture) => {
+      expect(transition(leave(posture))(STATES[2])).toEqual({ ...STATES[2], posture: null });
     });
   });
 
-  it('leaves the gait as it was before Sit, and no posture, after Sit then RiseSit', () => {
+  it('clears the posture and keeps the gait on recovering, from any state', () => {
     STATES.forEach((state) => {
-      expect(transition(sequence('', perform('Sit'), perform('RiseSit')))(state)).toEqual({ ...state, posture: null });
+      expect(transition(recover())(state)).toEqual({ ...state, posture: null });
+    });
+  });
+
+  it('leaves the gait as it was before sitting, and no posture, after sitting then rising', () => {
+    STATES.forEach((state) => {
+      expect(transition(sequence('', enter('Sitting'), leave('Sitting')))(state)).toEqual({ ...state, posture: null });
     });
   });
 
@@ -107,10 +107,17 @@ describe('transition', () => {
   });
 
   it('refuses commands that do not exist, at compile time', () => {
-    // @ts-expect-error 'Sit' is an action, not a mode.
+    // @ts-expect-error 'Sit' is a request, not a gait or a posture.
     enter('Sit');
-    // @ts-expect-error 'Pose' is a mode, not an action.
+    // @ts-expect-error 'Stairs' is a gait the robot reports but the app cannot command.
+    enter('Stairs');
+    // @ts-expect-error 'Pose' is a posture, not an action.
     perform('Pose');
+    // @ts-expect-error 'Leaping' is a gait, not a posture, so it cannot be left.
+    leave('Leaping');
+    // @ts-expect-error 'Sit' takes no flag.
+    const flagged: Step = ['Sit', true];
+    expect(flagged).toBeDefined();
     // @ts-expect-error 'pink' is not a headlight colour.
     set({ name: 'headlight', value: 'pink' });
   });
@@ -130,7 +137,7 @@ describe('previousGait', () => {
   });
 
   it('is unchanged on entering or leaving a posture', () => {
-    [enter('Pose'), leave('Pose'), enter('Damp'), perform('Sit'), perform('RiseSit'), perform('StandDown')].forEach((cue) => {
+    [enter('Pose'), leave('Pose'), enter('Damp'), enter('Sitting'), leave('Sitting'), enter('Lying'), recover()].forEach((cue) => {
       STATES.forEach((state) => {
         expect(transition(cue)(state).previousGait).toBe(state.previousGait);
       });
@@ -138,7 +145,7 @@ describe('previousGait', () => {
   });
 
   it('follows each gait change inside a sequence in turn', () => {
-    const cue = sequence('', enter('Trotting'), perform('Sit'), enter('Backstand'));
+    const cue = sequence('', enter('Trotting'), enter('Sitting'), enter('Backstand'));
     expect(transition(cue)(INITIAL_ROBOT_STATE)).toMatchObject({ gait: 'Backstand', previousGait: 'Trotting' });
   });
 });
@@ -148,76 +155,6 @@ const at = (gait: RobotState['gait'], posture: RobotState['posture']): RobotStat
   ...INITIAL_ROBOT_STATE,
   gait,
   posture,
-});
-
-describe('switchTo', () => {
-  it('enters a gait from a gait', () => {
-    expect(switchTo('Leaping')(at('FreeWalk', null))).toEqual(enter('Leaping'));
-    expect(switchTo('FreeWalk')(at('FreeWalk', null))).toEqual(enter('FreeWalk'));
-  });
-
-  it('stops before entering Pose from a gait', () => {
-    expect(switchTo('Pose')(at('FreeWalk', null))).toEqual(sequence('Enter Pose', perform('StopMove'), enter('Pose')));
-  });
-
-  it('sits, lies down and enters Damp from a gait', () => {
-    expect(switchTo('Sitting')(at('FreeWalk', null))).toEqual(perform('Sit'));
-    expect(switchTo('Lying')(at('FreeWalk', null))).toEqual(perform('StandDown'));
-    expect(switchTo('Damp')(at('FreeWalk', null))).toEqual(enter('Damp'));
-  });
-
-  it('leaves Pose, then enters the target gait only if it is not the current gait', () => {
-    expect(switchTo('FreeWalk')(at('FreeWalk', 'Pose'))).toEqual(leave('Pose'));
-    expect(switchTo('Leaping')(at('FreeWalk', 'Pose'))).toEqual(
-      sequence('Pose → Leaping', leave('Pose'), enter('Leaping')),
-    );
-  });
-
-  it('rises from Sitting, then enters the target gait if needed', () => {
-    expect(switchTo('Trotting')(at('Trotting', 'Sitting'))).toEqual(perform('RiseSit'));
-    expect(switchTo('Leaping')(at('Trotting', 'Sitting'))).toEqual(
-      sequence('Sitting → Leaping', perform('RiseSit'), enter('Leaping')),
-    );
-  });
-
-  it('stands up and balances from Lying, then enters the target gait if needed', () => {
-    expect(switchTo('FreeWalk')(at('FreeWalk', 'Lying'))).toEqual(
-      sequence('Exit Lying', perform('StandUp'), perform('BalanceStand')),
-    );
-    expect(switchTo('Leaping')(at('FreeWalk', 'Lying'))).toEqual(
-      sequence('Lying → Leaping', perform('StandUp'), perform('BalanceStand'), enter('Leaping')),
-    );
-  });
-
-  it('balances from JointLock, then enters the target gait if needed', () => {
-    expect(switchTo('FreeWalk')(at('FreeWalk', 'JointLock'))).toEqual(perform('BalanceStand'));
-    expect(switchTo('Leaping')(at('FreeWalk', 'JointLock'))).toEqual(
-      sequence('JointLock → Leaping', perform('BalanceStand'), enter('Leaping')),
-    );
-  });
-
-  it('recovers from Damp, then enters the target gait if needed', () => {
-    expect(switchTo('FreeWalk')(at('FreeWalk', 'Damp'))).toEqual(perform('RecoveryStand'));
-    expect(switchTo('Leaping')(at('FreeWalk', 'Damp'))).toEqual(
-      sequence('Damp → Leaping', perform('RecoveryStand'), enter('Leaping')),
-    );
-  });
-
-  it('enters the target gait after leaving a posture when the gait is unknown', () => {
-    expect(switchTo('Leaping')(at(null, 'Sitting'))).toEqual(
-      sequence('Sitting → Leaping', perform('RiseSit'), enter('Leaping')),
-    );
-  });
-
-  it("returns the target's entry from another posture", () => {
-    expect(switchTo('Pose')(at('FreeWalk', 'Sitting'))).toEqual(switchTo('Pose')(at('FreeWalk', null)));
-  });
-
-  it("equals the posture's exit when the target is the current gait", () => {
-    (['Pose', 'Sitting', 'Lying', 'JointLock', 'Damp'] as const).forEach((posture) => {
-      expect(switchTo('Trotting')(at('Trotting', posture))).toEqual(leavePosture(posture));
-    });
-  });
 });
 
 /** `state` with nothing waiting for a verdict. */
@@ -259,7 +196,7 @@ describe('the toggle keys', () => {
 
   it('a from a gait sends StopMove and Pose on, then only Pose off', () => {
     const { sent, state } = run(at('Trotting', null), [togglePosture('Pose'), togglePosture('Pose')]);
-    expect(sent).toEqual([sequence('Enter Pose', perform('StopMove'), enter('Pose')), leave('Pose')]);
+    expect(sent).toEqual([enter('Pose'), leave('Pose')]);
     expect(state).toMatchObject({ gait: 'Trotting', posture: null, previousGait: 'FreeWalk' });
   });
 
@@ -267,9 +204,14 @@ describe('the toggle keys', () => {
     expect(togglePosture('Pose')(settled(at(null, 'Pose')))).toEqual(leave('Pose'));
   });
 
+  it("sends the target's own entry from a posture, without leaving the posture first", () => {
+    expect(toggleGait('Leaping')(settled(at('FreeWalk', 'Sitting')))).toEqual(enter('Leaping'));
+    expect(togglePosture('Pose')(settled(at('FreeWalk', 'Sitting')))).toEqual(enter('Pose'));
+  });
+
   it('x sits from a gait, then rises', () => {
     const { sent } = run(at('FreeWalk', null), [togglePosture('Sitting'), togglePosture('Sitting')]);
-    expect(sent).toEqual([perform('Sit'), perform('RiseSit')]);
+    expect(sent).toEqual([enter('Sitting'), leave('Sitting')]);
   });
 
   it('returns no cue while a toggled field waits for a verdict, and a cue once another field waits', () => {

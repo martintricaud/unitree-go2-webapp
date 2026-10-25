@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { presets } from '../data/cues';
-import { enter, perform, sequence, wait } from '../utils/commands';
+import { enter, perform, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { createCueSheet } from './cueSheet';
 import type { Outcome } from './outcomes';
@@ -34,7 +34,7 @@ const pressOnce = (_key: string) => {
   return { sent, pointer: get(cueSheet.pointer), pressed: get(cueSheet.pressed) };
 };
 
-const ENTER_POSE = sequence('Enter Pose', perform('StopMove'), enter('Pose'));
+const ENTER_POSE = enter('Pose');
 
 describe('cueSheet', () => {
   it('starts on the first cue, with no cue pressed', () => {
@@ -107,7 +107,7 @@ describe('cueSheet', () => {
   it.each([
     ['a', ENTER_POSE],
     ['b', enter('Leaping')],
-    ['x', perform('Sit')],
+    ['x', enter('Sitting')],
     ['y', presets.dance],
   ] as const)('sends the cue of %s, and leaves the pointer', (_key, _cue) => {
     expect(pressOnce(_key)).toEqual({ sent: [_cue], pointer: 0, pressed: null });

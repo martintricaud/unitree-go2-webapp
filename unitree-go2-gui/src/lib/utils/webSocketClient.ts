@@ -1,8 +1,8 @@
-import { isEmpty, isIncludedIn, values } from 'remeda';
-import { ACTIONS, MCF_CODES, MODES } from '../data/sportCommands';
+import { entries, isEmpty, isIncludedIn, values } from 'remeda';
+import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
-import { cueLabel } from './commands';
-import type { Cue, RobotState } from './commands';
+import { BALANCE_STAND_CODE, GAITS, POSTURES, TRANSIENT_CODES, cueLabel, isPosture } from './commands';
+import type { Cue, RobotState, SportRequest, Step } from './commands';
 import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
 import {
@@ -47,24 +47,45 @@ type Wire =
     | { kind: 'wait'; wait: number }
     | { kind: 'sequence'; displayName?: string; sequence: Wire[] };
 
+/// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
+const sportCommand = (_request: SportRequest, _flag = true): Wire => ({
+    kind: 'command',
+    topic: 'SPORT_MOD',
+    api_id: SPORT_API[_request].api_id,
+    command_name: _request,
+    ...('flag' in SPORT_API[_request] ? { parameter: { data: _flag } } : {}),
+});
+
+const stepCommand = (_step: Step) =>
+    typeof _step === 'string' ? sportCommand(_step) : sportCommand(_step[0], _step[1]);
+
+/// The wire cues a cue sends in a row. A posture's entry or exit sends each of its steps; any other
+/// cue is one wire cue. A sequence splices its items' rows, so the steps of a posture inside a named
+/// sequence run under that name.
+function row(_cue: Cue): Wire[] {
+    switch (_cue.kind) {
+        case 'enter':
+            return isPosture(_cue.target)
+                ? POSTURES[_cue.target].enter.map(stepCommand)
+                : [sportCommand(GAITS[_cue.target].request)];
+        case 'leave':
+            return POSTURES[_cue.posture].exit.map(stepCommand);
+        default:
+            return [encode(_cue)];
+    }
+}
+
 export function encode(_cue: Cue): Wire {
     switch (_cue.kind) {
         case 'enter':
-        case 'leave':
-            return {
-                kind: 'command',
-                topic: 'SPORT_MOD',
-                api_id: MODES[_cue.mode].api_id,
-                command_name: _cue.mode,
-                parameter: { [MODES[_cue.mode].argument]: _cue.kind === 'enter' },
-            };
+        case 'leave': {
+            const [first, ...rest] = row(_cue);
+            return rest.length === 0 ? first : { kind: 'sequence', displayName: cueLabel(_cue), sequence: [first, ...rest] };
+        }
         case 'perform':
-            return {
-                kind: 'command',
-                topic: 'SPORT_MOD',
-                api_id: ACTIONS[_cue.action].api_id,
-                command_name: _cue.action,
-            };
+            return sportCommand(_cue.action);
+        case 'recover':
+            return sportCommand('RecoveryStand');
         case 'set': {
             const { topic, api_id, command_name, argument } = SETTINGS[_cue.setting.name];
             return {
@@ -94,7 +115,7 @@ export function encode(_cue: Cue): Wire {
         case 'wait':
             return { kind: 'wait', wait: _cue.seconds };
         case 'sequence':
-            return { kind: 'sequence', displayName: _cue.label, sequence: _cue.items.map(encode) };
+            return { kind: 'sequence', displayName: _cue.label, sequence: _cue.items.flatMap(row) };
     }
 }
 
@@ -130,14 +151,25 @@ function RELAY_SILENT(_reqId: number, _label: string, _at: number): Outcome {
     };
 }
 
-/// Widened to every number, so any reported code can be looked up; an absent code reads as undefined.
-const FIELDS_BY_CODE: Partial<Record<number, Partial<Pick<RobotState, 'gait' | 'posture'>>>> = MCF_CODES;
+type Fields = Partial<Pick<RobotState, 'gait' | 'posture'>>;
+
+/// The fields each "mcf" code states. A gait code also states that the robot is in no posture.
+const FIELDS_BY_CODE = new Map<number, Fields>([
+    ...entries(GAITS).flatMap(([_gait, { codes }]) =>
+        codes.map((_code): [number, Fields] => [_code, { gait: _gait, posture: null }]),
+    ),
+    ...entries(POSTURES).flatMap(([_posture, { codes }]) =>
+        codes.map((_code): [number, Fields] => [_code, { posture: _posture }]),
+    ),
+    [BALANCE_STAND_CODE, { posture: null }],
+    ...TRANSIENT_CODES.map((_code): [number, Fields] => [_code, {}]),
+]);
 
 /// The fields a report states, or the code when the table does not cover it. A report outside
 /// "mcf", whose codes the table does not cover, states nothing.
 function decodeSportState(_motionMode: string | null, _errorCode: number | null) {
     if (_motionMode !== 'mcf' || _errorCode === null) return { report: {} };
-    const fields = FIELDS_BY_CODE[_errorCode];
+    const fields = FIELDS_BY_CODE.get(_errorCode);
     return fields === undefined ? { unknownCode: _errorCode } : { report: fields };
 }
 
@@ -326,7 +358,7 @@ export class WebSocketClient {
     private warnUnknownCode(_code: number) {
         if (this.warnedCodes.has(_code)) return;
         this.warnedCodes.add(_code);
-        console.warn('Ignoring a sport_state code missing from MCF_CODES:', _code);
+        console.warn('Ignoring a sport_state code that no gait or posture lists:', _code);
     }
 
     private async showFrame(blob: Blob) {
