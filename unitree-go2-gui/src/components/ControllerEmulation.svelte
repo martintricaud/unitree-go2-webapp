@@ -9,7 +9,7 @@
         { name: 'right', key: 'ArrowRight', label: '▶', area: '2 / 3' },
         { name: 'down', key: 'ArrowDown', label: '▼', area: '3 / 2' },
     ] as const;
-    const ACTIONS = [
+    const FACE_BUTTONS = [
         { name: 'Y', key: 'y', label: 'Y', area: '1 / 2' },
         { name: 'X', key: 'x', label: 'X', area: '2 / 1' },
         { name: 'B', key: 'b', label: 'B', area: '2 / 3' },
@@ -18,7 +18,7 @@
 
     /// Called with the button's key, and with `true` when the button is pressed and `false` when it
     /// is released.
-    export let callback: (key: (typeof DIRECTIONS | typeof ACTIONS)[number]['key'], pressed: boolean) => void;
+    export let callback: (key: (typeof DIRECTIONS | typeof FACE_BUTTONS)[number]['key'], pressed: boolean) => void;
     export let disabled: boolean = false;
 
     /// A top-level binding, so the markup can subscribe to it with `$bindings`.
@@ -27,7 +27,7 @@
 
 
 <div class="controller">
-    {#each [{ kind: 'dpad', buttons: DIRECTIONS }, { kind: 'actions', buttons: ACTIONS }] as block}
+    {#each [{ kind: 'dpad', buttons: DIRECTIONS }, { kind: 'actions', buttons: FACE_BUTTONS }] as block}
         <div class="block {block.kind}">
             {#each block.buttons as button}
                 <button
