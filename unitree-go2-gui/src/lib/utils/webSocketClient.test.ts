@@ -2,19 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { WebSocketClient } from './webSocketClient';
 import type { Sink } from './webSocketClient';
-import {
-    lidarOn,
-    monitoringOn,
-    robotConnected,
-    robotReport,
-    videoFrame,
-    webSocketConnected,
-} from '../stores/connection';
+import { createMirror, mirror } from '../stores/mirror';
 import { lastOutcome, outcomeCounts, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import { createRobotState } from '../stores/robotState';
-import { enter, perform, sequence, set } from './commands';
+import { enter, leave, perform, sequence, set, wait } from './commands';
 import type { Cue } from './commands';
+import { displayed } from './confirmable';
 
 // The relay bounds every command at 5s.
 const RELAY_WORST_CASE_MS = 5_000;
@@ -50,26 +43,10 @@ const resultFor = (reqId: number, outcome: string, code: number | null, detail =
 type Stores = ConstructorParameters<typeof WebSocketClient>[0];
 
 /** Stores no other test writes, so a test that reads them depends on no earlier test. */
-const freshStores = (): Stores => ({
-    webSocketConnected: writable(false),
-    robotConnected: writable(false),
-    videoFrame: writable(null),
-    robotReport: writable({}),
-    lidarOn: writable(false),
-    monitoringOn: writable(false),
-    outcomeLog: writable<Outcome[]>([]),
-});
+const freshStores = (): Stores => ({ mirror: createMirror(), outcomeLog: writable<Outcome[]>([]) });
 
 /** The app's stores, for the tests that read what the app derives from them. */
-const appStores: Stores = {
-    webSocketConnected,
-    robotConnected,
-    videoFrame,
-    robotReport,
-    lidarOn,
-    monitoringOn,
-    outcomeLog,
-};
+const appStores: Stores = { mirror, outcomeLog };
 
 /** A client attached to a fresh open socket, with the outcome log cleared as on connect. */
 const openClient = (_stores: Stores = freshStores()) => {
@@ -121,10 +98,10 @@ describe.each([
         const { client, socket, stores } = openClient();
         client[_method](true);
         expect(socket.written).toEqual([{ command_name: _commandName, switch: true }]);
-        expect(get(stores[_flag])).toBe(true);
+        expect(get(stores.mirror)[_flag]).toBe(true);
         client[_method](false);
         expect(socket.written[1]).toEqual({ command_name: _commandName, switch: false });
-        expect(get(stores[_flag])).toBe(false);
+        expect(get(stores.mirror)[_flag]).toBe(false);
     });
 
     it('keeps the flag when the channel is closed', () => {
@@ -132,7 +109,7 @@ describe.each([
         socket.readyState = CLOSED;
         client[_method](true);
         expect(socket.frames).toEqual([]);
-        expect(get(stores[_flag])).toBe(false);
+        expect(get(stores.mirror)[_flag]).toBe(false);
     });
 });
 
@@ -254,7 +231,7 @@ describe('request', () => {
         const reqId = reqIdOf(socket);
         client.closed();
         expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
-        expect(get(stores.robotConnected)).toBe(false);
+        expect(get(stores.mirror).robotConnected).toBe(false);
     });
 
     it('ignores a verdict that arrives after its request already settled', async () => {
@@ -349,20 +326,20 @@ describe('robot state', () => {
     it('follows every robot_state the relay sends, not only the first', async () => {
         const { client, stores } = openClient();
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(stores.robotConnected)).toBe(false);
+        expect(get(stores.mirror).robotConnected).toBe(false);
 
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
-        expect(get(stores.robotConnected)).toBe(true);
+        expect(get(stores.mirror).robotConnected).toBe(true);
 
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(stores.robotConnected)).toBe(false);
+        expect(get(stores.mirror).robotConnected).toBe(false);
     });
 
     it('drops a frame it cannot read without disturbing what it already knows', async () => {
         const { client, stores } = openClient();
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         await client.received('{ this is not json');
-        expect(get(stores.robotConnected)).toBe(true);
+        expect(get(stores.mirror).robotConnected).toBe(true);
     });
 
     it('ignores JSON that is not a relay message', async () => {
@@ -371,7 +348,7 @@ describe('robot state', () => {
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
         await client.received('null');
         await client.received(JSON.stringify({ type: 'pirouette', connected: false }));
-        expect(get(stores.robotConnected)).toBe(true);
+        expect(get(stores.mirror).robotConnected).toBe(true);
         expect(get(stores.outcomeLog)).toEqual([]);
         expect(warn).toHaveBeenCalledTimes(2);
         warn.mockRestore();
@@ -384,117 +361,110 @@ const settings = (speedLevel: unknown, obstacleAvoidance: unknown) =>
 const sportState = (errorCode: number | null, motionMode: string | null = 'mcf') =>
     JSON.stringify({ type: 'sport_state', motionMode, mode: 0, errorCode });
 
-/** A client whose robot is up, on fresh stores, with a robot state of its own that follows them and
- * sends through the client. Nothing the robot stated before counts as reported. */
+/** A client whose robot is up, on fresh stores. Nothing the robot stated before counts as reported. */
 const connectedClient = async () => {
     const opened = openClient();
     const { client, socket, stores } = opened;
-    const robotState = createRobotState({
-        client,
-        robotReport: stores.robotReport,
-        robotConnected: stores.robotConnected,
-    });
     await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
     await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
-    /** Settles `_cue` by answering its request with a confirmation, as the relay would. */
+    /** Answers request `_index`, by default the latest, with `_outcome`, as the relay would. */
+    const reply = (_outcome: Outcome['outcome'], _index = socket.frames.length - 1) =>
+        client.received(resultFor(reqIdOf(socket, _index), _outcome, null));
+    /** Settles `_cue` by answering its request with a confirmation. */
     const confirm = async (_cue: Cue) => {
-        const done = robotState.send(_cue);
-        await client.received(resultFor(reqIdOf(socket, socket.frames.length - 1), 'confirmed', 0));
-        return done;
+        const { verdict } = client.request(_cue);
+        await reply('confirmed');
+        return verdict;
     };
-    return { ...opened, robotState, reported: robotState.reported, confirm };
+    return { ...opened, mirror: stores.mirror, reply, confirm };
 };
 
 describe('robot settings', () => {
     it.each([-1, 0, 1])('reports speed level %i, and only the speed', async (level) => {
-        const { client, stores, robotState, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(level, null));
-        expect(get(stores.robotReport)).toEqual({ speed: level });
-        expect(get(robotState).settled.speed).toBe(level);
-        expect(get(reported)).toEqual({ speed: true });
+        expect(get(mirror).robot.settled.speed).toBe(level);
+        expect(get(mirror).reported).toEqual({ speed: true });
     });
 
     it.each([2, null])('states no speed for level %s, and warns', async (level) => {
-        const { client, stores, robotState, reported } = await connectedClient();
-        const speed = get(robotState).settled.speed;
+        const { client, mirror } = await connectedClient();
+        const speed = get(mirror).robot.settled.speed;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         await client.received(settings(level, true));
 
-        expect(get(stores.robotReport)).toEqual({ obstacleAvoidance: true });
-        expect(get(robotState).settled.speed).toBe(speed);
-        expect(get(reported)).toEqual({ obstacleAvoidance: true });
+        expect(get(mirror).robot.settled.speed).toBe(speed);
+        expect(get(mirror).reported).toEqual({ obstacleAvoidance: true });
         expect(warn).toHaveBeenCalledOnce();
         warn.mockRestore();
     });
 
     it.each([null, 'yes', 1])('states no obstacle avoidance for %s', async (value) => {
-        const { client, stores, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(0, value));
-        expect(get(stores.robotReport)).toEqual({ speed: 0 });
-        expect(get(reported)).toEqual({ speed: true });
+        expect(get(mirror).reported).toEqual({ speed: true });
     });
 
     it('reports obstacle avoidance', async () => {
-        const { client, robotState, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(0, false));
-        expect(get(robotState).settled.obstacleAvoidance).toBe(false);
-        expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
+        expect(get(mirror).robot.settled.obstacleAvoidance).toBe(false);
+        expect(get(mirror).reported).toEqual({ speed: true, obstacleAvoidance: true });
 
         await client.received(settings(0, true));
-        expect(get(robotState).settled.obstacleAvoidance).toBe(true);
+        expect(get(mirror).robot.settled.obstacleAvoidance).toBe(true);
     });
 
-    it('leaves robotReport unchanged on a frame that states nothing', async () => {
-        const { client, stores, robotState, reported } = await connectedClient();
+    it('leaves the mirror unchanged on a frame that states nothing', async () => {
+        const { client, mirror } = await connectedClient();
         await client.received(settings(-1, null));
-        const before = get(stores.robotReport);
+        const before = get(mirror);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(settings(2, 'yes'));
         await client.received(sportState(4242));
-        expect(get(stores.robotReport)).toBe(before);
-        expect(get(robotState).settled.speed).toBe(-1);
-        expect(get(reported)).toEqual({ speed: true });
+        expect(get(mirror)).toBe(before);
+        expect(get(mirror).robot.settled.speed).toBe(-1);
+        expect(get(mirror).reported).toEqual({ speed: true });
         warn.mockRestore();
     });
 
     it('does not re-apply an earlier gait report on a speed report', async () => {
-        const { client, robotState, confirm } = await connectedClient();
+        const { client, mirror, confirm } = await connectedClient();
         await client.received(sportState(2017));
         await confirm(enter('Trotting'));
         await client.received(settings(1, null));
-        expect(get(robotState).settled).toMatchObject({ gait: 'Trotting', speed: 1 });
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Trotting', speed: 1 });
     });
 
     it('clears reported when the robot is lost', async () => {
-        const { client, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: false }));
-        expect(get(reported)).toEqual({});
+        expect(get(mirror).reported).toEqual({});
     });
 
     it('keeps reported while the robot stays connected', async () => {
-        const { client, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(0, true));
         await client.received(JSON.stringify({ type: 'robot_state', connected: true }));
-        expect(get(reported)).toEqual({ speed: true, obstacleAvoidance: true });
+        expect(get(mirror).reported).toEqual({ speed: true, obstacleAvoidance: true });
     });
 
     it('clears reported when the control channel closes', async () => {
-        const { client, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(settings(0, true));
         client.closed();
-        expect(get(reported)).toEqual({});
+        expect(get(mirror).reported).toEqual({});
     });
 });
 
 describe('sport_state report', () => {
     it('reports Leaping on code 2008 under mcf, and no posture', async () => {
-        const { client, stores, robotState, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(sportState(2008));
-        expect(get(stores.robotReport)).toEqual({ gait: 'Leaping', posture: null });
-        expect(get(robotState).settled).toMatchObject({ gait: 'Leaping', posture: null });
-        expect(get(reported)).toEqual({ gait: true, posture: true });
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Leaping', posture: null });
+        expect(get(mirror).reported).toEqual({ gait: true, posture: true });
     });
 
     it.each([
@@ -504,21 +474,19 @@ describe('sport_state report', () => {
         [1007, 'Sitting'],
         [1091, 'Pose'],
     ])('reports code %i as the posture %s, and keeps the gait', async (_code, _posture) => {
-        const { client, stores, robotState, reported } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(sportState(2017));
         await client.received(sportState(_code));
-        expect(get(stores.robotReport)).toEqual({ posture: _posture });
-        expect(get(robotState).settled).toMatchObject({ gait: 'Backstand', posture: _posture });
-        expect(get(reported)).toEqual({ gait: true, posture: true });
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Backstand', posture: _posture });
+        expect(get(mirror).reported).toEqual({ gait: true, posture: true });
     });
 
     it('keeps the gait and clears the posture on code 1013', async () => {
-        const { client, stores, robotState } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(sportState(1015));
         await client.received(sportState(1007));
         await client.received(sportState(1013));
-        expect(get(stores.robotReport)).toEqual({ posture: null });
-        expect(get(robotState).settled).toMatchObject({ gait: 'StaticWalk', posture: null });
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'StaticWalk', posture: null });
     });
 
     it.each([
@@ -528,28 +496,26 @@ describe('sport_state report', () => {
         ['a motion-control mode other than mcf', 2008, 'normal'],
         ['an unread motion-control mode', 2008, null],
     ])('states nothing on %s, and warns of nothing', async (_case, _code, _motionMode) => {
-        const { client, stores, robotState } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(sportState(1016));
         await client.received(sportState(1004));
-        const before = get(stores.robotReport);
+        const before = get(mirror);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(sportState(_code, _motionMode));
-        expect(get(stores.robotReport)).toBe(before);
-        expect(get(robotState).settled).toMatchObject({ gait: 'Trotting', posture: 'Lying' });
+        expect(get(mirror)).toBe(before);
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Trotting', posture: 'Lying' });
         expect(warn).not.toHaveBeenCalled();
         warn.mockRestore();
     });
 
     it('changes nothing on an unknown code, and warns once per code', async () => {
-        const { client, stores, robotState } = await connectedClient();
+        const { client, mirror } = await connectedClient();
         await client.received(sportState(1016));
-        const before = get(stores.robotReport);
-        const { settled } = get(robotState);
+        const before = get(mirror);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await client.received(sportState(9001));
         await client.received(sportState(9001));
-        expect(get(stores.robotReport)).toBe(before);
-        expect(get(robotState).settled).toEqual(settled);
+        expect(get(mirror)).toBe(before);
         expect(warn).toHaveBeenCalledOnce();
 
         await client.received(sportState(9002));
@@ -558,34 +524,222 @@ describe('sport_state report', () => {
     });
 
     it('applies each of two reports stating the same gait', async () => {
-        const { client, robotState, confirm } = await connectedClient();
+        const { client, mirror, confirm } = await connectedClient();
         await client.received(sportState(2017));
-        expect(get(robotState).settled.gait).toBe('Backstand');
+        expect(get(mirror).robot.settled.gait).toBe('Backstand');
 
         await confirm(enter('Trotting'));
-        expect(get(robotState).settled.gait).toBe('Trotting');
+        expect(get(mirror).robot.settled.gait).toBe('Trotting');
 
         await client.received(sportState(2017));
-        expect(get(robotState).settled.gait).toBe('Backstand');
+        expect(get(mirror).robot.settled.gait).toBe('Backstand');
     });
 
     it('does not re-apply an earlier speed report on a gait report', async () => {
-        const { client, robotState, confirm } = await connectedClient();
+        const { client, mirror, confirm } = await connectedClient();
         await client.received(settings(-1, null));
         await confirm(set({ name: 'speed', value: 1 }));
         await client.received(sportState(2008));
-        expect(get(robotState).settled).toMatchObject({ gait: 'Leaping', speed: 1 });
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Leaping', speed: 1 });
     });
 
     it('leaves a pending gait proposal pending', async () => {
-        const { client, socket, robotState } = await connectedClient();
-        const done = robotState.send(enter('Jumping'));
+        const { client, socket, mirror } = await connectedClient();
+        const done = client.request(enter('Jumping')).verdict;
         await client.received(sportState(2011));
-        expect(get(robotState).settled.gait).toBe('Handstand');
-        expect(get(robotState).pending.gait).toEqual({ value: 'Jumping', reqId: reqIdOf(socket) });
+        expect(get(mirror).robot.settled.gait).toBe('Handstand');
+        expect(get(mirror).robot.pending.gait).toEqual({ value: 'Jumping', reqId: reqIdOf(socket) });
 
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await done;
-        expect(get(robotState).settled.gait).toBe('Jumping');
+        expect(get(mirror).robot.settled.gait).toBe('Jumping');
+    });
+});
+
+const SABOTS = sequence(
+    'Sabots',
+    enter('FreeWalk'),
+    wait(0.1),
+    enter('Backstand'),
+    wait(0.1),
+    set({ name: 'headlight', value: 'blue' }),
+);
+
+describe('request and the mirror', () => {
+    it('proposes under the request id the client sent to the relay', async () => {
+        const { client, socket, mirror, reply } = await connectedClient();
+        const { verdict } = client.request(set({ name: 'headlight', value: 'red' }));
+        expect(get(mirror).robot.pending.headlight?.reqId).toBe(reqIdOf(socket));
+
+        await reply('confirmed');
+        await verdict;
+        expect(get(mirror).robot.pending).toEqual({});
+    });
+
+    it('proposes each field a cue changes, and a confirmation settles them', async () => {
+        const { client, socket, mirror, reply } = await connectedClient();
+        const { verdict } = client.request(SABOTS);
+
+        expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Sabots', sequence: SABOTS.steps })]);
+        // previousGait goes from FreeWalk to FreeWalk, so it is not proposed.
+        expect(get(mirror).robot.pending).toEqual({
+            gait: { value: 'Backstand', reqId: expect.any(Number) },
+            headlight: { value: 'blue', reqId: expect.any(Number) },
+        });
+
+        await reply('confirmed');
+        expect((await verdict).outcome).toBe('confirmed');
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Backstand', headlight: 'blue' });
+        expect(get(mirror).robot.pending).toEqual({});
+    });
+
+    it('proposes only the fields whose value differs from the displayed one', async () => {
+        const { client, mirror, reply, confirm } = await connectedClient();
+        await confirm(set({ name: 'headlight', value: 'blue' }));
+        // The headlight is already blue, so only the gait is proposed.
+        const { verdict } = client.request(sequence('', enter('Trotting'), set({ name: 'headlight', value: 'blue' })));
+        expect(get(mirror).robot.pending.gait).toBeDefined();
+        expect(get(mirror).robot.pending.headlight).toBeUndefined();
+        await reply('confirmed');
+        await verdict;
+    });
+
+    it.each(['failed', 'rejected', 'unknown'] as const)('keeps the settled state on %s', async (_outcome) => {
+        const { client, mirror, reply } = await connectedClient();
+        const before = get(mirror).robot.settled;
+        const { verdict } = client.request(
+            sequence('', enter('ClassicWalk'), set({ name: 'headlight', value: 'green' })),
+        );
+        expect(displayed(get(mirror).robot)).toMatchObject({ gait: 'ClassicWalk', headlight: 'green' });
+
+        await reply(_outcome);
+        await verdict;
+        expect(get(mirror).robot.settled).toEqual(before);
+        expect(displayed(get(mirror).robot)).toEqual(before);
+        expect(get(mirror).robot.pending).toEqual({});
+    });
+
+    it('proposes nothing for a cue that changes no tracked field, and still sends it', async () => {
+        const { client, socket, mirror, reply } = await connectedClient();
+        const before = get(mirror).robot;
+        const { verdict } = client.request(HELLO);
+        expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Hello' })]);
+        expect(get(mirror).robot).toBe(before);
+        await reply('failed');
+        await verdict;
+        expect(get(mirror).robot).toBe(before);
+    });
+
+    it('proposes nothing for a click on the value already displayed, and still sends it', async () => {
+        const { client, socket, mirror, reply } = await connectedClient();
+        const cue = set({ name: 'headlight', value: displayed(get(mirror).robot).headlight });
+        const before = get(mirror).robot;
+        const { verdict } = client.request(cue);
+        expect(socket.written).toEqual([expect.objectContaining({ command_name: cue.label, sequence: cue.steps })]);
+        expect(get(mirror).robot).toBe(before);
+        await reply('confirmed');
+        expect((await verdict).outcome).toBe('confirmed');
+        expect(get(mirror).robot).toBe(before);
+    });
+
+    it('proposes nothing when the channel is closed, and resolves failed', async () => {
+        const { client, socket, mirror } = await connectedClient();
+        socket.readyState = CLOSED;
+        const before = get(mirror).robot;
+        const { verdict } = client.request(enter('Trotting'));
+        expect(get(mirror).robot).toBe(before);
+        expect((await verdict).outcome).toBe('failed');
+        expect(get(mirror).robot).toBe(before);
+    });
+
+    it('sets obstacle avoidance and settles it on confirmation', async () => {
+        const { client, mirror, reply } = await connectedClient();
+        const { verdict } = client.request(set({ name: 'obstacleAvoidance', value: false }));
+        expect(get(mirror).robot.pending.obstacleAvoidance?.value).toBe(false);
+        await reply('confirmed');
+        await verdict;
+        expect(get(mirror).robot.settled.obstacleAvoidance).toBe(false);
+    });
+
+    it('keeps two cues on different fields pending side by side, each settled by its own verdict', async () => {
+        const { client, mirror, reply } = await connectedClient();
+        const { gait } = get(mirror).robot.settled;
+        const first = client.request(enter('Trotting')).verdict;
+        const second = client.request(enter('Sitting')).verdict;
+        expect(displayed(get(mirror).robot)).toMatchObject({ gait: 'Trotting', posture: 'Sitting' });
+
+        await reply('failed', 0);
+        await first;
+        expect(get(mirror).robot.settled.gait).toBe(gait);
+        expect(get(mirror).robot.pending.gait).toBeUndefined();
+        expect(get(mirror).robot.pending.posture).toBeDefined();
+
+        await reply('confirmed', 1);
+        await second;
+        expect(get(mirror).robot.settled).toMatchObject({ gait, posture: 'Sitting' });
+    });
+
+    it('lets a second cue on the same field replace the first, whose verdict then changes nothing', async () => {
+        const { client, mirror, reply } = await connectedClient();
+        const { gait } = get(mirror).robot.settled;
+        const first = client.request(enter('Pose')).verdict;
+        const second = client.request(enter('Jumping')).verdict;
+        expect(displayed(get(mirror).robot)).toMatchObject({ gait: 'Jumping', posture: null });
+
+        const before = get(mirror).robot;
+        await reply('confirmed', 0);
+        await first;
+        expect(get(mirror).robot).toBe(before);
+
+        await reply('failed', 1);
+        await second;
+        expect(get(mirror).robot.settled.gait).toBe(gait);
+    });
+
+    it('keeps the gait on entering Pose', async () => {
+        const { client, mirror, reply, confirm } = await connectedClient();
+        await confirm(enter('Backstand'));
+        const { verdict } = client.request(enter('Pose'));
+        expect(get(mirror).robot.pending).toEqual({ posture: { value: 'Pose', reqId: expect.any(Number) } });
+        await reply('confirmed');
+        await verdict;
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Backstand', posture: 'Pose' });
+    });
+
+    it('leaves the gait as it was before Sit, and no posture, after Sit then RiseSit', async () => {
+        const { client, mirror, reply, confirm } = await connectedClient();
+        await confirm(enter('EconomicGait'));
+        await confirm(enter('Sitting'));
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'EconomicGait', posture: 'Sitting' });
+        const { verdict } = client.request(leave('Sitting'));
+        expect(get(mirror).robot.pending).toEqual({ posture: { value: null, reqId: expect.any(Number) } });
+        await reply('confirmed');
+        await verdict;
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'EconomicGait', posture: null });
+    });
+
+    it('proposes the old gait as previousGait when a cue changes the gait', async () => {
+        const { client, mirror, reply, confirm } = await connectedClient();
+        await confirm(enter('StaticWalk'));
+        const { verdict } = client.request(enter('Leaping'));
+        expect(get(mirror).robot.pending).toEqual({
+            gait: { value: 'Leaping', reqId: expect.any(Number) },
+            previousGait: { value: 'StaticWalk', reqId: expect.any(Number) },
+        });
+        await reply('confirmed');
+        await verdict;
+        expect(get(mirror).robot.settled).toMatchObject({ gait: 'Leaping', previousGait: 'StaticWalk' });
+    });
+
+    it('keeps previousGait on entering and leaving a posture', async () => {
+        const { client, mirror, reply } = await connectedClient();
+        const { previousGait } = get(mirror).robot.settled;
+        for (const cue of [enter('Pose'), leave('Pose'), enter('Sitting'), leave('Sitting')]) {
+            const { verdict } = client.request(cue);
+            expect(get(mirror).robot.pending.previousGait).toBeUndefined();
+            await reply('confirmed');
+            await verdict;
+            expect(get(mirror).robot.settled.previousGait).toBe(previousGait);
+        }
     });
 });

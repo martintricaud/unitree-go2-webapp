@@ -1,17 +1,12 @@
-import { isEmpty, isIncludedIn, values } from 'remeda';
+import { isDeepEqual, isEmpty, isIncludedIn, pickBy, values } from 'remeda';
+import { get, readonly, writable } from 'svelte/store';
 import { SPEED_LEVELS } from '../data/settings';
+import { transition } from './commands';
 import type { Cue, RobotState } from './commands';
+import { displayed } from './confirmable';
+import { createMirror, mirror } from '../stores/mirror';
 import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
-import {
-    lidarOn,
-    monitoringOn,
-    robotConnected,
-    robotReport,
-    videoFrame,
-    webSocketConnected,
-} from '../stores/connection';
-import type * as connection from '../stores/connection';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -113,12 +108,6 @@ function parseRelayMessage(_raw: string) {
     }
 }
 
-/// The stores a client writes. The app passes its own; a test passes fresh ones.
-type ClientStores = Pick<
-    typeof connection,
-    'webSocketConnected' | 'robotConnected' | 'videoFrame' | 'robotReport' | 'lidarOn' | 'monitoringOn'
-> & { outcomeLog: typeof outcomeLog };
-
 export class WebSocketClient {
     private socket: Sink | null = null;
     private previousBitmap: ImageBitmap | null = null;
@@ -131,11 +120,12 @@ export class WebSocketClient {
     /// Holds each unknown sport_state code already logged, so each is logged once.
     private warnedCodes = new Set<number>();
 
-    private readonly stores: ClientStores;
+    private readonly frame = writable<ImageBitmap | null>(null);
+    /// The latest decoded frame of the robot's camera, or null before the first one arrives.
+    readonly videoFrame = readonly(this.frame);
 
-    constructor(_stores: ClientStores) {
-        this.stores = _stores;
-    }
+    /// `stores` holds the stores this client writes. The app passes its own; a test passes fresh ones.
+    constructor(private readonly stores: { mirror: ReturnType<typeof createMirror>; outcomeLog: typeof outcomeLog }) {}
 
     connect() {
         if (this.socket && this.socket.readyState < CLOSED) return;
@@ -153,13 +143,13 @@ export class WebSocketClient {
     }
 
     opened() {
-        this.stores.webSocketConnected.set(true);
+        this.stores.mirror.setChannelOpen(true);
         this.stores.outcomeLog.set([]);
     }
 
     closed() {
-        this.stores.webSocketConnected.set(false);
-        this.stores.robotConnected.set(false);
+        this.stores.mirror.setChannelOpen(false);
+        this.stores.mirror.setRobotConnected(false);
         this.previousBitmap?.close();
         this.previousBitmap = null;
         for (const [reqId, { label }] of [...this.awaiting]) {
@@ -179,13 +169,13 @@ export class WebSocketClient {
         }
         switch (msg.type) {
             case 'robot_state':
-                this.stores.robotConnected.set(msg.connected);
+                this.stores.mirror.setRobotConnected(msg.connected);
                 return;
             case 'robot_settings': {
                 const { speedLevel, obstacleAvoidance } = msg;
                 const isLevel = isIncludedIn(speedLevel, values(SPEED_LEVELS));
                 if (!isLevel) console.warn('Ignoring a speed level outside SPEED_LEVELS:', speedLevel);
-                this.publish({
+                this.stores.mirror.observe({
                     ...(isLevel ? { speed: speedLevel } : {}),
                     ...(typeof obstacleAvoidance === 'boolean' ? { obstacleAvoidance } : {}),
                 });
@@ -194,7 +184,7 @@ export class WebSocketClient {
             case 'sport_state': {
                 const decoded = decodeSportState(msg.motionMode, msg.errorCode);
                 if (decoded.unknownCode !== undefined) this.warnUnknownCode(decoded.unknownCode);
-                else this.publish(decoded.report);
+                else this.stores.mirror.observe(decoded.report);
                 return;
             }
             case 'command_result': {
@@ -221,8 +211,9 @@ export class WebSocketClient {
         }
     }
 
-    /// Send a cue as one sequence of its steps, named by its label. Returns at once with the id the relay sees and a promise of the relay's verdict,
-    /// so the caller can attach its own bookkeeping to the same id.
+    /// Sends a cue as one sequence of its steps, named by its label, and shows each field the cue
+    /// changes as pending until the relay's verdict settles or drops it. Returns at once with the id
+    /// the relay sees and a promise of the verdict, which resolves once the mirror holds it.
     request(cue: Cue): { reqId: number; verdict: Promise<Outcome> } {
         const reqId = (this.lastRequestId += 1);
         const { label } = cue;
@@ -231,6 +222,10 @@ export class WebSocketClient {
             this.stores.outcomeLog.update(recorded(outcome));
             return { reqId, verdict: Promise.resolve(outcome) };
         }
+        const shown = displayed(get(this.stores.mirror).robot);
+        const changed = pickBy(transition(cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
+        // Proposed before the verdict can arrive, which is never earlier than the next relay message.
+        if (!isEmpty(changed)) this.stores.mirror.propose(changed, reqId);
         const verdict = new Promise<Outcome>((resolve) => {
             const timer = setTimeout(() => this.settle(this.stamp(reqId, label, RELAY_SILENT)), REPLY_BACKSTOP_MS);
             this.awaiting.set(reqId, { resolve, timer, label });
@@ -253,13 +248,13 @@ export class WebSocketClient {
     /// Tells the relay to start or stop streaming the lidar, and records what it was told once the
     /// message has left the browser.
     setLidar(_next: boolean) {
-        if (this.send({ command_name: 'lidar', switch: _next })) this.stores.lidarOn.set(_next);
+        if (this.send({ command_name: 'lidar', switch: _next })) this.stores.mirror.setLidarOn(_next);
     }
 
     /// Tells the relay to subscribe to or leave the robot's state stream, and records what it was
     /// told once the message has left the browser.
     setMonitoring(_next: boolean) {
-        if (this.send({ command_name: 'subscribe', switch: _next })) this.stores.monitoringOn.set(_next);
+        if (this.send({ command_name: 'subscribe', switch: _next })) this.stores.mirror.setMonitoringOn(_next);
     }
 
     /// The outcome of request `_reqId`, named `_label`, recorded now.
@@ -273,12 +268,8 @@ export class WebSocketClient {
         clearTimeout(request.timer);
         this.awaiting.delete(outcome.reqId);
         this.stores.outcomeLog.update(recorded(outcome));
+        this.stores.mirror.resolve(outcome.reqId, outcome);
         request.resolve(outcome);
-    }
-
-    /// Publishes the fields a frame states as one new report; a frame that states none publishes nothing.
-    private publish(_report: Partial<RobotState>) {
-        if (!isEmpty(_report)) this.stores.robotReport.set(_report);
     }
 
     /// An unknown code states nothing and is logged once, so each missing code can be collected.
@@ -293,19 +284,12 @@ export class WebSocketClient {
             const bitmap = await createImageBitmap(blob);
             this.previousBitmap?.close();
             this.previousBitmap = bitmap;
-            this.stores.videoFrame.set(bitmap);
+            this.frame.set(bitmap);
         } catch (error) {
             console.error('Failed to decode video frame:', error);
         }
     }
 }
 
-export const websocket = new WebSocketClient({
-    webSocketConnected,
-    robotConnected,
-    videoFrame,
-    robotReport,
-    lidarOn,
-    monitoringOn,
-    outcomeLog,
-});
+/// The app's client, which writes the app's mirror and outcome log.
+export const websocket = new WebSocketClient({ mirror, outcomeLog });

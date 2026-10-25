@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { webSocketConnected, robotConnected } from '../lib/stores/connection';
+    import { mirror } from '../lib/stores/mirror';
     import { websocket } from '../lib/utils/webSocketClient';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
     import type { Outcome } from '../lib/stores/outcomes';
@@ -27,16 +27,16 @@
     <div class="line">
         <button
             class="toggle"
-            disabled={!$webSocketConnected}
-            on:click={() => ($robotConnected ? disconnectRobot() : connectRobot())}
+            disabled={!$mirror.channelOpen}
+            on:click={() => ($mirror.robotConnected ? disconnectRobot() : connectRobot())}
         >
-            {$robotConnected ? 'Disconnect' : 'Connect'}
+            {$mirror.robotConnected ? 'Disconnect' : 'Connect'}
         </button>
         <button class="toggle" on:click={() => callback(!drawerOpen)}>
             {drawerOpen ? 'Hide' : 'Show'} controller
         </button>
-        <span>Websocket {$webSocketConnected ? '✅' : '❌'}</span>
-        <span>Robot {$robotConnected ? '✅' : '❌'}</span>
+        <span>Websocket {$mirror.channelOpen ? '✅' : '❌'}</span>
+        <span>Robot {$mirror.robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={$lastOutcome?.detail ?? ''}>
             {#if $lastOutcome === null}no command sent yet{:else}{@render summary($lastOutcome)}{/if}
         </span>

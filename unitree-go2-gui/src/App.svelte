@@ -2,7 +2,6 @@
     import { entries, isIncludedIn, keys } from 'remeda';
     import { onMount } from 'svelte';
     import { websocket } from './lib/utils/webSocketClient';
-    import { webSocketConnected, robotConnected, lidarOn, monitoringOn } from './lib/stores/connection';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
@@ -20,9 +19,10 @@
         recover,
         set,
     } from './lib/utils/commands';
+    import type { Cue } from './lib/utils/commands';
     import { CONDUITE } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
-    import { robotState } from './lib/stores/robotState';
+    import { mirror } from './lib/stores/mirror';
     import { cueSheet } from './lib/stores/cueSheet';
     import { displayed } from './lib/utils/confirmable';
 
@@ -34,10 +34,7 @@
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
-    const sendToRobot = robotState.send;
-
-    /// A top-level binding, so the markup can subscribe to it with `$reported`.
-    const reported = robotState.reported;
+    const sendToRobot = (_cue: Cue) => void websocket.request(_cue);
 
     /// Top-level bindings, so the markup can subscribe to them with `$pointer`, `$pressed` and
     /// `$bindings`.
@@ -52,7 +49,7 @@
         if (isIncludedIn(_key, keys($bindings)) && $bindings[_key].kind === 'fire') cueSheet.release();
     };
 
-    $: shown = displayed($robotState);
+    $: shown = displayed($mirror.robot);
 
     onMount(() => {
         websocket.connect();
@@ -86,28 +83,28 @@
             Content + Red
         </button> -->
         <div class="double-col">
-            <p>Websocket: {$webSocketConnected ? '✅' : '❌'}</p>
-            <p>Robot: {$robotConnected ? '✅' : '❌'}</p>
+            <p>Websocket: {$mirror.channelOpen ? '✅' : '❌'}</p>
+            <p>Robot: {$mirror.robotConnected ? '✅' : '❌'}</p>
         </div>
 
         <Switch
             label={'Lidar'}
-            value={$lidarOn}
-            disabled={!$robotConnected}
+            value={$mirror.lidarOn}
+            disabled={!$mirror.robotConnected}
             callback={(next: boolean) => websocket.setLidar(next)}
         />
         <Switch
             label={'Monitor State'}
-            value={$monitoringOn}
-            disabled={!$robotConnected}
+            value={$mirror.monitoringOn}
+            disabled={!$mirror.robotConnected}
             callback={(next: boolean) => websocket.setMonitoring(next)}
         />
         <Switch
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
-            confirmed={$robotState.settled.obstacleAvoidance}
-            spinning={$robotState.pending.obstacleAvoidance !== undefined}
-            disabled={!$robotConnected || !$reported.obstacleAvoidance}
+            confirmed={$mirror.robot.settled.obstacleAvoidance}
+            spinning={$mirror.robot.pending.obstacleAvoidance !== undefined}
+            disabled={!$mirror.robotConnected || !$mirror.reported.obstacleAvoidance}
             callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />
         <Switch
@@ -123,19 +120,19 @@
     </div>
     <div class="button-grid">
         {#each ACTIONS as action}
-            <button disabled={!$robotConnected} on:click={() => sendToRobot(perform(action))}>
+            <button disabled={!$mirror.robotConnected} on:click={() => sendToRobot(perform(action))}>
                 {action}
             </button>
         {/each}
-        <button disabled={!$robotConnected} on:click={() => sendToRobot(recover())}>RecoveryStand</button>
+        <button disabled={!$mirror.robotConnected} on:click={() => sendToRobot(recover())}>RecoveryStand</button>
     </div>
     <div class="button-grid">
         {#each [...keys(GAITS).filter(isCommandable), ...keys(POSTURES)] as target}
             <Radio
                 optionName={target}
-                selected={activeMode($robotState.settled) === target}
-                spinning={activeMode(shown) === target && activeMode(shown) !== activeMode($robotState.settled)}
-                disabled={!$robotConnected || !($reported.gait || $reported.posture)}
+                selected={activeMode($mirror.robot.settled) === target}
+                spinning={activeMode(shown) === target && activeMode(shown) !== activeMode($mirror.robot.settled)}
+                disabled={!$mirror.robotConnected || !($mirror.reported.gait || $mirror.reported.posture)}
                 callback={() => sendToRobot(enter(target))}
             />
         {/each}
@@ -145,9 +142,9 @@
         {#each COLOURS as colour}
             <Radio
                 optionName={colour}
-                selected={$robotState.settled.headlight === colour}
-                spinning={$robotState.pending.headlight?.value === colour}
-                disabled={!$robotConnected}
+                selected={$mirror.robot.settled.headlight === colour}
+                spinning={$mirror.robot.pending.headlight?.value === colour}
+                disabled={!$mirror.robotConnected}
                 callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
             />
         {/each}
@@ -159,9 +156,9 @@
         {#each entries(SPEED_LEVELS) as [speedName, level]}
             <Radio
                 optionName={speedName}
-                selected={$robotState.settled.speed === level}
-                spinning={$robotState.pending.speed?.value === level}
-                disabled={!$robotConnected || !$reported.speed}
+                selected={$mirror.robot.settled.speed === level}
+                spinning={$mirror.robot.pending.speed?.value === level}
+                disabled={!$mirror.robotConnected || !$mirror.reported.speed}
                 callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />
         {/each}
