@@ -41,7 +41,6 @@
                     {button.label}
                 </button>
             {/each}
-            {#if block.kind === 'dpad'}<div class="center"></div>{/if}
         </div>
     {/each}
 </div>
@@ -103,7 +102,9 @@
         border-radius: 4px;
     }
 
-    .center {
+    /* The d-pad's centre cell, between its four buttons. */
+    .dpad::after {
+        content: '';
         grid-area: 2 / 2;
         background-color: rgb(230, 230, 230);
     }

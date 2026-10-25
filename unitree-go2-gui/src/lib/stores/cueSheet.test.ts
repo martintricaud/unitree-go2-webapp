@@ -77,10 +77,14 @@ describe('cueSheet', () => {
     expect(get(cueSheet.pointer)).toBe(CUES.length - 1);
   });
 
-  it('clears the pressed cue on release', () => {
+  it('clears the pressed cue on the release of a key that fires, and keeps it on any other', () => {
     const { cueSheet } = setup();
-    cueSheet.fire(1);
-    cueSheet.release();
+    cueSheet.press('ArrowRight');
+    cueSheet.release('ArrowDown');
+    cueSheet.release('a');
+    cueSheet.release('z');
+    expect(get(cueSheet.pressed)).toBe(0);
+    cueSheet.release('ArrowRight');
     expect(get(cueSheet.pressed)).toBeNull();
     expect(get(cueSheet.pointer)).toBe(1);
   });

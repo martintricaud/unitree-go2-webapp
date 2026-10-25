@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { entries, isIncludedIn, keys } from 'remeda';
+    import { entries, keys } from 'remeda';
     import { onMount } from 'svelte';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
@@ -35,18 +35,11 @@
     /// affects shows the change and the robot's verdict on it.
     const sendToRobot = (_cue: Cue) => void robot.request(_cue);
 
-    /// Top-level bindings, so the markup can subscribe to them with `$pointer`, `$pressed` and
-    /// `$bindings`.
-    const { pointer, pressed, bindings } = cueSheet;
+    /// Top-level bindings, so the markup can subscribe to them with `$pointer` and `$pressed`.
+    const { pointer, pressed } = cueSheet;
 
     /// Whether the left sidebar holding the controller emulator is open. It starts closed.
     let drawerOpen = false;
-
-    /// Releasing a key that fires a cue ends that cue's pressed drawing. The keyboard and the
-    /// emulator both release through here.
-    const release = (_key: string) => {
-        if (isIncludedIn(_key, keys($bindings)) && $bindings[_key].kind === 'fire') cueSheet.release();
-    };
 
     $: shown = displayed($robot.state);
 
@@ -62,10 +55,10 @@
 <!-- <Lidar /> -->
 <StatusStrip {drawerOpen} callback={(next) => (drawerOpen = next)} />
 <aside class="drawer" class:open={drawerOpen}>
-    <ControllerEmulation callback={(key, down) => (down ? cueSheet.press(key) : release(key))} />
+    <ControllerEmulation callback={(key, down) => (down ? cueSheet.press(key) : cueSheet.release(key))} />
 </aside>
 <svelte:window
-    on:keyup={(event) => release(event.key)}
+    on:keyup={(event) => cueSheet.release(event.key)}
     on:keydown|preventDefault={(event) => {
         // A held key repeats its keydown; every binding acts once per press.
         if (!event.repeat) cueSheet.press(event.key);
