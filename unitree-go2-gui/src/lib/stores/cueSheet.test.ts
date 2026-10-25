@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { pick } from 'remeda';
 import { get, writable } from 'svelte/store';
 import { presets } from '../data/cues';
 import { enter, perform, wait } from '../utils/commands';
@@ -9,21 +10,19 @@ import { createRobot } from './robot';
 
 const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 
+/** The label and steps of each cue, as the robot writes them to the relay. */
+const asSent = (..._cues: Cue[]) => _cues.map((_cue) => ({ command_name: _cue.label, sequence: _cue.steps }));
+
 /** A cue sheet of its own, on a fresh robot whose open socket the relay never answers, so every
- * cue sent stays pending. `sent` records each cue the sheet requests. */
+ * cue sent stays pending. `sent` reads each cue the robot wrote, as `asSent` shows it. */
 const setup = () => {
-  const sent: Cue[] = [];
-  const socket = { readyState: 1, send: () => {}, onopen: null, onclose: null, onmessage: null };
+  const frames: string[] = [];
+  const send = (_frame: string) => void frames.push(_frame);
+  const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null };
   const robot = createRobot({ openSocket: () => socket, outcomeLog: writable<Outcome[]>([]) });
   robot.connect();
-  const recorder = {
-    subscribe: robot.subscribe,
-    request: (_cue: Cue) => {
-      sent.push(_cue);
-      return robot.request(_cue);
-    },
-  };
-  const cueSheet = createCueSheet(CUES, recorder);
+  const cueSheet = createCueSheet(CUES, robot);
+  const sent = () => frames.map((_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
   return { cueSheet, robot, sent };
 };
 
@@ -31,7 +30,7 @@ const setup = () => {
 const pressOnce = (_key: string) => {
   const { cueSheet, sent } = setup();
   cueSheet.press(_key);
-  return { sent, pointer: get(cueSheet.pointer), pressed: get(cueSheet.pressed) };
+  return { sent: sent(), pointer: get(cueSheet.pointer), pressed: get(cueSheet.pressed) };
 };
 
 const ENTER_POSE = enter('Pose');
@@ -46,12 +45,12 @@ describe('cueSheet', () => {
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
     const { cueSheet, sent } = setup();
     cueSheet.fire(1);
-    expect(sent).toEqual([CUES[0]]);
+    expect(sent()).toEqual(asSent(CUES[0]));
     expect(get(cueSheet.pressed)).toBe(0);
     expect(get(cueSheet.pointer)).toBe(1);
 
     cueSheet.fire(0);
-    expect(sent).toEqual([CUES[0], CUES[1]]);
+    expect(sent()).toEqual(asSent(CUES[0], CUES[1]));
     expect(get(cueSheet.pressed)).toBe(1);
     expect(get(cueSheet.pointer)).toBe(1);
   });
@@ -62,7 +61,7 @@ describe('cueSheet', () => {
     expect(get(cueSheet.pointer)).toBe(2);
     cueSheet.move(-1);
     expect(get(cueSheet.pointer)).toBe(1);
-    expect(sent).toEqual([]);
+    expect(sent()).toEqual([]);
     expect(get(cueSheet.pressed)).toBeNull();
   });
 
@@ -89,15 +88,15 @@ describe('cueSheet', () => {
   it('sends the cue at an index, and keeps the pointer and the pressed cue', () => {
     const { cueSheet, sent } = setup();
     cueSheet.send(2);
-    expect(sent).toEqual([CUES[2]]);
+    expect(sent()).toEqual(asSent(CUES[2]));
     expect(get(cueSheet.pointer)).toBe(0);
     expect(get(cueSheet.pressed)).toBeNull();
   });
 
   it.each([
-    ['ArrowRight', { sent: [CUES[0]], pointer: 1, pressed: 0 }],
-    ['ArrowLeft', { sent: [CUES[0]], pointer: 0, pressed: 0 }],
-    ['Enter', { sent: [CUES[0]], pointer: 0, pressed: 0 }],
+    ['ArrowRight', { sent: asSent(CUES[0]), pointer: 1, pressed: 0 }],
+    ['ArrowLeft', { sent: asSent(CUES[0]), pointer: 0, pressed: 0 }],
+    ['Enter', { sent: asSent(CUES[0]), pointer: 0, pressed: 0 }],
     ['ArrowDown', { sent: [], pointer: 1, pressed: null }],
     ['ArrowUp', { sent: [], pointer: 0, pressed: null }],
   ] as const)('runs %s on the cue sheet', (_key, _result) => {
@@ -110,7 +109,7 @@ describe('cueSheet', () => {
     ['x', enter('Sitting')],
     ['y', presets.dance],
   ] as const)('sends the cue of %s, and leaves the pointer', (_key, _cue) => {
-    expect(pressOnce(_key)).toEqual({ sent: [_cue], pointer: 0, pressed: null });
+    expect(pressOnce(_key)).toEqual({ sent: asSent(_cue), pointer: 0, pressed: null });
   });
 
   it('does nothing on an unbound key', () => {
@@ -122,7 +121,7 @@ describe('cueSheet', () => {
     const { cueSheet, sent } = setup();
     cueSheet.bindings.update((_bindings) => ({ ..._bindings, a: _bindings.y }));
     cueSheet.press('a');
-    expect(sent).toEqual([presets.dance]);
+    expect(sent()).toEqual(asSent(presets.dance));
   });
 
   it('sends nothing for a toggle whose fields wait for a verdict, and still sends a preset', () => {
@@ -134,6 +133,6 @@ describe('cueSheet', () => {
     cueSheet.press('x');
     cueSheet.press('b');
     cueSheet.press('y');
-    expect(sent).toEqual([ENTER_POSE, presets.dance]);
+    expect(sent()).toEqual(asSent(ENTER_POSE, presets.dance));
   });
 });

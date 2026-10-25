@@ -4,8 +4,8 @@ import { CONDUITE } from '../data/cues';
 import { KEY_BINDINGS } from '../data/keyBindings';
 import { robot } from './robot';
 
-/// Creates the cue sheet the operator steps through. It sends cues to `_robot` and reads toggles from it.
-export const createCueSheet = (_cues: typeof CONDUITE, _robot: Pick<typeof robot, 'subscribe' | 'request'>) => {
+/// Creates the cue sheet the operator steps through. It sends cues and toggles to `_robot`.
+export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => {
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
     /// Every key starts on its binding in `KEY_BINDINGS`; writing this store rebinds a key while
@@ -51,11 +51,9 @@ export const createCueSheet = (_cues: typeof CONDUITE, _robot: Pick<typeof robot
                 case 'move':
                     move(binding.steps);
                     return;
-                case 'toggle': {
-                    const cue = binding.toggle(get(_robot).state);
-                    if (cue !== null) void _robot.request(cue);
+                case 'toggle':
+                    binding.toggle(_robot);
                     return;
-                }
                 case 'send':
                     void _robot.request(binding.cue);
                     return;

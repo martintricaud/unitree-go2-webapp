@@ -1,6 +1,4 @@
-import { reduce } from 'remeda';
-import { displayed } from './confirmable';
-import type { Confirmable } from './confirmable';
+import { mergeAll } from 'remeda';
 import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
 
@@ -69,7 +67,7 @@ export type Gait = keyof typeof GAITS;
 export type Posture = keyof typeof POSTURES;
 export type Action = (typeof ACTIONS)[number];
 
-type CommandableGait = {
+export type CommandableGait = {
     [G in Gait]: (typeof GAITS)[G] extends { enter: SportRequest } ? G : never;
 }[Gait];
 
@@ -182,58 +180,19 @@ export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Cue => ({
 });
 
 export type RobotState = {
-    /// Null when the gait is unknown. While the robot is in a posture, this keeps the gait it
-    /// returns to on leaving the posture.
-    gait: Gait | null;
+    /// While the robot is in a posture, this keeps the gait it returns to on leaving the posture.
+    gait: Gait;
     /// Null when the robot is in its gait.
     posture: Posture | null;
-    /// The last known gait before the current one, so a toggle can return to it. It changes only
-    /// when the gait changes from a known gait; entering or leaving a posture keeps it.
-    previousGait: Gait;
     headlight: (typeof COLOURS)[number];
     speed: (typeof SPEED_LEVELS)[keyof typeof SPEED_LEVELS];
     obstacleAvoidance: boolean;
 };
 
-/// The state the robot is in once the cue has run from `_state`. The changes apply one by one, so
-/// each gait change inside a sequence updates `previousGait` in turn.
-export function transition(_cue: Cue): (_state: RobotState) => RobotState {
-    return function (_state) {
-        return reduce(
-            _cue.changes,
-            (_before, _change) => {
-                const reached = { ..._before, ..._change };
-                return _before.gait !== null && reached.gait !== _before.gait
-                    ? { ...reached, previousGait: _before.gait }
-                    : reached;
-            },
-            _state,
-        );
-    };
-}
+/// The state the robot is in once the cue has run from `_state`: its changes merged in order.
+export const transition =
+    (_cue: Cue) =>
+    (_state: RobotState): RobotState => ({ ..._state, ...mergeAll(_cue.changes) });
 
 /// What the mode buttons show: the posture when there is one, otherwise the gait.
 export const activeMode = (_state: Pick<RobotState, 'gait' | 'posture'>) => _state.posture ?? _state.gait;
-
-/// Whether any of these fields is waiting for the robot's verdict.
-const isWaiting =
-    (..._fields: (keyof RobotState)[]) =>
-    (_state: Confirmable<RobotState>) =>
-        _fields.some((_field) => _state.pending[_field] !== undefined);
-
-/// The toggle keys. Each asks for the opposite of what its control shows, so a refused command
-/// leaves the next press asking for the same thing again. Each returns null while the toggled fields
-/// wait for a verdict: the cue would read the pending value and queue the opposite command.
-export const togglePosture = (_posture: Posture) => (_state: Confirmable<RobotState>) => {
-    if (isWaiting('posture')(_state)) return null;
-    return displayed(_state).posture === _posture ? leave(_posture) : enter(_posture);
-};
-
-/// A gait toggles back to the gait the robot had before it, or to FreeWalk when that gait is not
-/// commandable.
-export const toggleGait = (_gait: CommandableGait) => (_state: Confirmable<RobotState>) => {
-    if (isWaiting('gait', 'posture')(_state)) return null;
-    const shown = displayed(_state);
-    if (shown.gait !== _gait || shown.posture !== null) return enter(_gait);
-    return enter(isCommandable(shown.previousGait) ? shown.previousGait : 'FreeWalk');
-};

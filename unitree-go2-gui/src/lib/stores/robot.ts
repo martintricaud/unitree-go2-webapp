@@ -1,8 +1,8 @@
 import { isDeepEqual, isEmpty, isIncludedIn, mapValues, pickBy, values } from 'remeda';
 import { get, readonly, writable } from 'svelte/store';
 import { SPEED_LEVELS } from '../data/settings';
-import { transition } from '../utils/commands';
-import type { Cue, RobotState } from '../utils/commands';
+import { enter, isCommandable, leave, transition } from '../utils/commands';
+import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
 import { OUTCOMES, outcomeLog, recorded } from './outcomes';
@@ -83,18 +83,6 @@ const REPORTED: Partial<Record<number, Partial<RobotState>>> = {
     1006: {},
 };
 
-/// Null for a frame that is not JSON. An outcome this browser does not know reads as
-/// `unknown`, never as a confirmation.
-function parseRelayMessage(_raw: string): RelayMessage | null {
-    try {
-        const msg = JSON.parse(_raw);
-        const outcome = isIncludedIn(msg.outcome, OUTCOMES) ? msg.outcome : 'unknown';
-        return msg.type === 'command_result' ? { ...msg, outcome } : msg;
-    } catch {
-        return null;
-    }
-}
-
 /// The outcome of request `_reqId`, named `_label`, recorded now.
 const stamp = (_reqId: number, _label: string, _verdict: Verdict): Outcome => ({
     ..._verdict,
@@ -128,6 +116,9 @@ export const createRobot = ({
         state: Confirmable<RobotState>;
         /// The fields the robot has stated since the robot was last lost, each marked true.
         reported: Partial<Record<keyof RobotState, true>>;
+        /// The last settled gait before the current one that the app can enter, so a toggle can
+        /// return to it.
+        previousGait: CommandableGait;
     }>({
         channelOpen: false,
         robotConnected: false,
@@ -138,8 +129,6 @@ export const createRobot = ({
                 /// The robot boots in FreeWalk, in no posture.
                 gait: 'FreeWalk',
                 posture: null,
-                /// A toggle that leaves a gait before any other gait was known returns to the boot gait.
-                previousGait: 'FreeWalk',
                 /// The robot boots green, keeps a colour until the next one is set, and never reports it.
                 headlight: 'green',
                 speed: 0,
@@ -148,6 +137,8 @@ export const createRobot = ({
             pending: {},
         },
         reported: {},
+        /// A toggle that leaves a gait before any other gait was settled returns to the boot gait.
+        previousGait: 'FreeWalk',
     });
     /// The latest decoded frame of the robot's camera, or null before the first one arrives.
     const frame = writable<ImageBitmap | null>(null);
@@ -161,8 +152,22 @@ export const createRobot = ({
     /// Holds each unknown sport_state code already logged, so each is logged once.
     const warnedCodes = new Set<number>();
 
-    const changeState = (_change: (_state: Confirmable<RobotState>) => Confirmable<RobotState>) =>
-        store.update((_robot) => ({ ..._robot, state: _change(_robot.state) }));
+    /// Applies `_change` to the robot's state and marks the fields in `_reported`. A change of the
+    /// settled gait records the gait it left as `previousGait`, if the app can enter that gait.
+    const changeState = (
+        _change: (_state: Confirmable<RobotState>) => Confirmable<RobotState>,
+        _reported: Partial<Record<keyof RobotState, true>> = {},
+    ) =>
+        store.update((_robot) => {
+            const state = _change(_robot.state);
+            const left = _robot.state.settled.gait;
+            return {
+                ..._robot,
+                state,
+                reported: { ..._robot.reported, ..._reported },
+                previousGait: state.settled.gait !== left && isCommandable(left) ? left : _robot.previousGait,
+            };
+        });
 
     /// Never throws: a closed channel is an answer the caller must handle.
     const send = (_msg: unknown) => {
@@ -189,19 +194,9 @@ export const createRobot = ({
     };
 
     /// Settles exactly the fields a report states and marks them reported; a report that states
-    /// nothing changes nothing. A report that changes a known settled gait also settles the old
-    /// gait as `previousGait`, as a confirmed command would.
+    /// nothing changes nothing.
     const settleReport = (_report: Partial<RobotState>) => {
-        if (isEmpty(_report)) return;
-        store.update((_robot) => {
-            const { gait } = _robot.state.settled;
-            const changesGait = _report.gait !== undefined && gait !== null && _report.gait !== gait;
-            return {
-                ..._robot,
-                state: settle(changesGait ? { ..._report, previousGait: gait } : _report)(_robot.state),
-                reported: { ..._robot.reported, ...mapValues(_report, () => true as const) },
-            };
-        });
+        if (!isEmpty(_report)) changeState(settle(_report), mapValues(_report, () => true as const));
     };
 
     const received = (_data: Blob | string) => {
@@ -216,12 +211,15 @@ export const createRobot = ({
                 .catch((_error) => console.error('Failed to decode video frame:', _error));
             return;
         }
-        const msg = parseRelayMessage(_data);
-        if (msg === null) {
+        let msg: RelayMessage;
+        try {
+            msg = JSON.parse(_data);
+        } catch {
             console.warn('Dropping a relay frame that is not JSON:', _data);
             return;
         }
-        switch (msg.type) {
+        // JSON.parse reads "null" as null, which the default case drops.
+        switch (msg?.type) {
             case 'robot_state':
                 // Losing the robot clears `reported` and keeps the settled values.
                 store.update((_robot) => ({
@@ -260,7 +258,8 @@ export const createRobot = ({
                 // No awaiting request: the verdict arrived after the backstop.
                 const request = awaiting.get(msg.reqId);
                 const outcome = stamp(msg.reqId, request?.label ?? msg.command_name ?? 'command', {
-                    outcome: msg.outcome,
+                    // An outcome this browser does not know reads as `unknown`, never as a confirmation.
+                    outcome: isIncludedIn(msg.outcome, OUTCOMES) ? msg.outcome : 'unknown',
                     code: msg.code,
                     detail: msg.detail ?? '',
                 });
@@ -280,6 +279,27 @@ export const createRobot = ({
     /// the message has left the browser.
     const switchRelay = (_command: string, _flag: 'lidarOn' | 'monitoringOn') => (_on: boolean) => {
         if (send({ command_name: _command, switch: _on })) store.update((_robot) => ({ ..._robot, [_flag]: _on }));
+    };
+
+    /// Sends a cue as one sequence of its steps, named by its label, and shows each field the cue
+    /// changes as pending until the relay's verdict settles or drops it. Returns at once a promise
+    /// of the verdict, which resolves once the store holds it.
+    const request = (_cue: Cue): Promise<Outcome> => {
+        const reqId = (lastRequestId += 1);
+        const { label } = _cue;
+        if (!send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
+            const outcome = stamp(reqId, label, CHANNEL_CLOSED);
+            log.update(recorded(outcome));
+            return Promise.resolve(outcome);
+        }
+        const shown = displayed(get(store).state);
+        const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
+        // Proposed before the verdict can arrive, which is never earlier than the next relay message.
+        if (!isEmpty(changed)) changeState(propose(changed, reqId));
+        return new Promise<Outcome>((_resolve) => {
+            const timer = setTimeout(() => finish(stamp(reqId, label, RELAY_SILENT)), REPLY_BACKSTOP_MS);
+            awaiting.set(reqId, { resolve: _resolve, timer, label });
+        });
     };
 
     return {
@@ -304,25 +324,21 @@ export const createRobot = ({
         /// Asks the relay to start a WebRTC session with the robot at `_ip`.
         connectRobot: (_ip: string) => void send({ command_name: 'connect', ip: _ip }),
         disconnectRobot: () => void send({ command_name: 'disconnect' }),
-        /// Sends a cue as one sequence of its steps, named by its label, and shows each field the cue
-        /// changes as pending until the relay's verdict settles or drops it. Returns at once a promise
-        /// of the verdict, which resolves once the store holds it.
-        request: (_cue: Cue): Promise<Outcome> => {
-            const reqId = (lastRequestId += 1);
-            const { label } = _cue;
-            if (!send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
-                const outcome = stamp(reqId, label, CHANNEL_CLOSED);
-                log.update(recorded(outcome));
-                return Promise.resolve(outcome);
-            }
-            const shown = displayed(get(store).state);
-            const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
-            // Proposed before the verdict can arrive, which is never earlier than the next relay message.
-            if (!isEmpty(changed)) changeState(propose(changed, reqId));
-            return new Promise<Outcome>((_resolve) => {
-                const timer = setTimeout(() => finish(stamp(reqId, label, RELAY_SILENT)), REPLY_BACKSTOP_MS);
-                awaiting.set(reqId, { resolve: _resolve, timer, label });
-            });
+        request,
+        /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
+        /// next press asking for the same thing again. Each does nothing while a toggled field waits
+        /// for a verdict: the cue would read the pending value and queue the opposite command.
+        togglePosture: (_posture: Posture) => {
+            const { pending, settled } = get(store).state;
+            if (pending.posture !== undefined) return;
+            void request(settled.posture === _posture ? leave(_posture) : enter(_posture));
+        },
+        /// From `_gait` in no posture, the toggle returns to `previousGait`.
+        toggleGait: (_gait: CommandableGait) => {
+            const { state, previousGait } = get(store);
+            const { gait, posture } = state.settled;
+            if (state.pending.gait !== undefined || state.pending.posture !== undefined) return;
+            void request(enter(gait === _gait && posture === null ? previousGait : _gait));
         },
         setLidar: switchRelay('lidar', 'lidarOn'),
         setMonitoring: switchRelay('subscribe', 'monitoringOn'),

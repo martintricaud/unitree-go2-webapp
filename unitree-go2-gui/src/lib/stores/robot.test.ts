@@ -3,7 +3,7 @@ import { get, writable } from 'svelte/store';
 import { createRobot } from './robot';
 import { lastOutcome, outcomeCounts, outcomeLog, recorded } from './outcomes';
 import type { Outcome } from './outcomes';
-import { enter, leave, perform, sequence, set, wait } from '../utils/commands';
+import { enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { displayed } from '../utils/confirmable';
 
@@ -77,7 +77,6 @@ describe('the store', () => {
                 settled: {
                     gait: 'FreeWalk',
                     posture: null,
-                    previousGait: 'FreeWalk',
                     headlight: 'green',
                     speed: 0,
                     obstacleAvoidance: true,
@@ -85,6 +84,7 @@ describe('the store', () => {
                 pending: {},
             },
             reported: {},
+            previousGait: 'FreeWalk',
         });
     });
 
@@ -491,18 +491,18 @@ describe("the robot's report", () => {
         const { robot, socket, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
         socket.receive(sportState(2010));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Stairs', previousGait: 'Trotting' });
+        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Stairs' } }, previousGait: 'Trotting' });
         expect(get(robot).reported).toEqual({ gait: true, posture: true });
     });
 
     it('keeps previousGait when a report states the settled gait, or a posture', async () => {
         const { robot, socket, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
-        const { previousGait } = get(robot).state.settled;
+        const { previousGait } = get(robot);
         socket.receive(sportState(1016));
         socket.receive(sportState(1007));
         socket.receive(sportState(1013));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Trotting', previousGait });
+        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Trotting' } }, previousGait });
     });
 });
 
@@ -721,7 +721,6 @@ describe('request and the robot state', () => {
         const answer = robot.request(SABOTS);
 
         expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Sabots', sequence: SABOTS.steps })]);
-        // previousGait goes from FreeWalk to FreeWalk, so it is not proposed.
         expect(get(robot).state.pending).toEqual({
             gait: { value: 'Backstand', reqId: expect.any(Number) },
             headlight: { value: 'blue', reqId: expect.any(Number) },
@@ -856,28 +855,156 @@ describe('request and the robot state', () => {
         expect(get(robot).state.settled).toMatchObject({ gait: 'EconomicGait', posture: null });
     });
 
-    it('proposes the old gait as previousGait when a cue changes the gait', async () => {
+});
+
+describe('previousGait', () => {
+    it('becomes the old gait once a cue that changes the gait is confirmed, and not before', async () => {
         const { robot, reply, confirm } = connectedRobot();
         await confirm(enter('StaticWalk'));
         const answer = robot.request(enter('Leaping'));
-        expect(get(robot).state.pending).toEqual({
-            gait: { value: 'Leaping', reqId: expect.any(Number) },
-            previousGait: { value: 'StaticWalk', reqId: expect.any(Number) },
-        });
+        expect(get(robot).previousGait).toBe('FreeWalk');
         reply('confirmed');
         await answer;
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Leaping', previousGait: 'StaticWalk' });
+        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'StaticWalk' });
     });
 
-    it('keeps previousGait on entering and leaving a posture', async () => {
+    it('is unchanged when the old gait is one the app cannot command', async () => {
+        const { robot, socket, confirm } = connectedRobot();
+        await confirm(enter('Trotting'));
+        socket.receive(sportState(2010));
+        await confirm(enter('Leaping'));
+        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'Trotting' });
+    });
+
+    it('is unchanged on re-entering the current gait', async () => {
+        const { robot, confirm } = connectedRobot();
+        await confirm(enter('Trotting'));
+        await confirm(enter('Trotting'));
+        expect(get(robot).previousGait).toBe('FreeWalk');
+    });
+
+    it('is unchanged on a refused gait change', async () => {
         const { robot, reply } = connectedRobot();
-        const { previousGait } = get(robot).state.settled;
-        for (const cue of [enter('Pose'), leave('Pose'), enter('Sitting'), leave('Sitting')]) {
-            const answer = robot.request(cue);
-            expect(get(robot).state.pending.previousGait).toBeUndefined();
-            reply('confirmed');
-            await answer;
-            expect(get(robot).state.settled.previousGait).toBe(previousGait);
+        const answer = robot.request(enter('Trotting'));
+        reply('failed');
+        await answer;
+        expect(get(robot).previousGait).toBe('FreeWalk');
+    });
+
+    it('is unchanged on entering or leaving a posture', async () => {
+        const { robot, confirm } = connectedRobot();
+        await confirm(enter('Trotting'));
+        const { previousGait } = get(robot);
+        const cues = [enter('Pose'), leave('Pose'), enter('Damp'), enter('Sitting'), leave('Sitting'), enter('Lying')];
+        for (const cue of [...cues, recover()]) {
+            await confirm(cue);
+            expect(get(robot).previousGait).toBe(previousGait);
         }
+    });
+
+    it('becomes the settled gait a confirmed sequence left, whatever gaits the sequence passed through', async () => {
+        const { robot, confirm } = connectedRobot();
+        await confirm(enter('StaticWalk'));
+        await confirm(sequence('', enter('Trotting'), enter('Sitting'), enter('Backstand')));
+        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Backstand' } }, previousGait: 'StaticWalk' });
+    });
+});
+
+/** The cues `_cues` as the relay receives them. */
+const asSent = (..._cues: Cue[]) =>
+    _cues.map((_cue) => expect.objectContaining({ command_name: _cue.label, sequence: _cue.steps }));
+
+/** Runs each press on a connected robot and confirms what it sent, as the relay would. Returns
+ * every frame the presses wrote. */
+const pressAll = ({ socket, reply }: ReturnType<typeof connectedRobot>, _presses: (() => void)[]) => {
+    const from = socket.frames.length;
+    _presses.forEach((_press) => {
+        _press();
+        reply('confirmed');
+    });
+    return socket.written.slice(from);
+};
+
+describe('the toggles', () => {
+    it('b from FreeWalk sends Leaping, then FreeWalk, then Leaping again', () => {
+        const connected = connectedRobot();
+        const b = () => connected.robot.toggleGait('Leaping');
+        expect(pressAll(connected, [b, b, b])).toEqual(asSent(enter('Leaping'), enter('FreeWalk'), enter('Leaping')));
+        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'FreeWalk' });
+    });
+
+    it('b from StaticWalk, then b again, returns to StaticWalk', async () => {
+        const connected = connectedRobot();
+        await connected.confirm(enter('StaticWalk'));
+        const b = () => connected.robot.toggleGait('Leaping');
+        expect(pressAll(connected, [b, b])).toEqual(asSent(enter('Leaping'), enter('StaticWalk')));
+        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'StaticWalk' } }, previousGait: 'Leaping' });
+    });
+
+    it('b from Leaping after a gait the app cannot command returns to the gait before it, and keeps toggling', async () => {
+        const connected = connectedRobot();
+        connected.socket.receive(sportState(2010));
+        await connected.confirm(enter('Leaping'));
+        const b = () => connected.robot.toggleGait('Leaping');
+        expect(pressAll(connected, [b, b, b])).toEqual(asSent(enter('FreeWalk'), enter('Leaping'), enter('FreeWalk')));
+        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'FreeWalk' } }, previousGait: 'Leaping' });
+    });
+
+    it('a from a gait sends StopMove and Pose on, then only Pose off', async () => {
+        const connected = connectedRobot();
+        await connected.confirm(enter('Trotting'));
+        const a = () => connected.robot.togglePosture('Pose');
+        expect(pressAll(connected, [a, a])).toEqual(asSent(enter('Pose'), leave('Pose')));
+        expect(get(connected.robot)).toMatchObject({
+            state: { settled: { gait: 'Trotting', posture: null } },
+            previousGait: 'FreeWalk',
+        });
+    });
+
+    it('a out of Pose sends only Pose off from a gait the app cannot command', () => {
+        const connected = connectedRobot();
+        connected.socket.receive(sportState(2010));
+        connected.socket.receive(sportState(1091));
+        expect(pressAll(connected, [() => connected.robot.togglePosture('Pose')])).toEqual(asSent(leave('Pose')));
+    });
+
+    it("sends the target's own entry from a posture, without leaving the posture first", async () => {
+        const sitting = async () => {
+            const connected = connectedRobot();
+            await connected.confirm(enter('Sitting'));
+            return connected;
+        };
+        const b = await sitting();
+        expect(pressAll(b, [() => b.robot.toggleGait('Leaping')])).toEqual(asSent(enter('Leaping')));
+        const a = await sitting();
+        expect(pressAll(a, [() => a.robot.togglePosture('Pose')])).toEqual(asSent(enter('Pose')));
+    });
+
+    it('x sits from a gait, then rises', () => {
+        const connected = connectedRobot();
+        const x = () => connected.robot.togglePosture('Sitting');
+        expect(pressAll(connected, [x, x])).toEqual(asSent(enter('Sitting'), leave('Sitting')));
+    });
+
+    it('sends nothing while a toggled field waits for a verdict, and sends once another field waits', () => {
+        /** Whether `_toggle` sends a cue while `_waiting` waits for its verdict. */
+        const sends = (_waiting: Cue, _toggle: (_robot: ReturnType<typeof createRobot>) => void) => {
+            const { robot, socket } = connectedRobot();
+            void robot.request(_waiting);
+            _toggle(robot);
+            return socket.frames.length === 2;
+        };
+        const waitsPosture = enter('Sitting');
+        const waitsGait = enter('Trotting');
+        const waitsHeadlight = set({ name: 'headlight', value: 'red' });
+        const pose = (_robot: ReturnType<typeof createRobot>) => _robot.togglePosture('Pose');
+        const sit = (_robot: ReturnType<typeof createRobot>) => _robot.togglePosture('Sitting');
+        const leap = (_robot: ReturnType<typeof createRobot>) => _robot.toggleGait('Leaping');
+        [pose, sit, leap].forEach((_toggle) => {
+            expect(sends(waitsPosture, _toggle)).toBe(false);
+            expect(sends(waitsHeadlight, _toggle)).toBe(true);
+        });
+        expect(sends(waitsGait, leap)).toBe(false);
+        [pose, sit].forEach((_toggle) => expect(sends(waitsGait, _toggle)).toBe(true));
     });
 });
