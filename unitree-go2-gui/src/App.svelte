@@ -5,6 +5,7 @@
     import Switch from './components/Switch.svelte';
     import Radio from './components/Radio.svelte';
     import StatusStrip from './components/StatusStrip.svelte';
+    import CueStrip from './components/CueStrip.svelte';
     import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
     import {
@@ -19,7 +20,6 @@
         set,
     } from './lib/utils/commands';
     import type { Cue } from './lib/utils/commands';
-    import { CONDUITE } from './lib/data/cues';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot';
     import { cueSheet } from './lib/stores/cueSheet';
@@ -34,9 +34,6 @@
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
     const sendToRobot = (_cue: Cue) => void robot.request(_cue);
-
-    /// Top-level bindings, so the markup can subscribe to them with `$pointer` and `$pressed`.
-    const { pointer, pressed } = cueSheet;
 
     /// Whether the left sidebar holding the controller emulator is open. It starts closed.
     let drawerOpen = false;
@@ -151,17 +148,7 @@
         {/each}
     </div>
 </div>
-<div id="sidebar" class="actionsequence">
- {#each CONDUITE as action, i}
-            <button
-                class:active-step={i === $pointer}
-                class:pressed={i === $pressed}
-                on:click={() => cueSheet.send(i)}
-            >
-                {action.label}
-            </button>
-        {/each}
-</div>
+<CueStrip />
 
 <style>
     /* Floats over the top-left of the page. A fixed element shrinks to its content, and the
@@ -188,22 +175,5 @@
     .drawer.open {
         transform: none;
         visibility: visible;
-    }
-
-    .actionsequence {
-        display: flex;
-        flex-direction: column;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .active-step {
-        /* outline: 2px solid blue; */
-        font-weight: bold;
-        box-shadow: inset 0 0 10px rgb(0, 218, 163);
-        border-color: rgb(0, 218, 163);
-    }
-    .actionsequence button:active,
-    .pressed {
-        border-style: inset;
     }
 </style>
