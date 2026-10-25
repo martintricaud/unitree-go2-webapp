@@ -48,14 +48,6 @@
     onMount(() => {
         websocket.connect();
     });
-
-    function connectRobot() {
-        websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
-    }
-
-    function disconnectRobot() {
-        websocket.send({ command_name: 'disconnect' });
-    }
 </script>
 
 <Video
@@ -76,16 +68,6 @@
 />
 
 <div class="ui-pane">
-    <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
-        <button
-            disabled={!$webSocketConnected}
-            on:click={() => {
-                $robotConnected ? disconnectRobot() : connectRobot();
-            }}
-        >
-            {$robotConnected ? 'Disconnect' : 'Connect'}
-        </button>
-    </div>
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <!-- <button
             on:click={() => {

@@ -46,6 +46,7 @@ button {
   cursor: pointer;
   min-height: 3em;
   white-space: nowrap;
+  font-size: .9em;
 
 }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { webSocketConnected, robotConnected } from '../lib/stores/connection';
+    import { websocket } from '../lib/utils/webSocketClient';
     import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
     import type { Outcome } from '../lib/stores/outcomes';
 
@@ -8,6 +9,14 @@
     /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
     export let drawerOpen: boolean;
     export let callback: (next: boolean) => void;
+
+    function connectRobot() {
+        websocket.send({ command_name: 'connect', ip: '192.168.123.161' });
+    }
+
+    function disconnectRobot() {
+        websocket.send({ command_name: 'disconnect' });
+    }
 </script>
 
 {#snippet summary(entry: Outcome)}
@@ -16,6 +25,16 @@
 
 <div class="strip">
     <div class="line">
+        <button
+            class="toggle"
+            disabled={!$webSocketConnected}
+            on:click={() => ($robotConnected ? disconnectRobot() : connectRobot())}
+        >
+            {$robotConnected ? 'Disconnect' : 'Connect'}
+        </button>
+        <button class="toggle" on:click={() => callback(!drawerOpen)}>
+            {drawerOpen ? 'Hide' : 'Show'} controller
+        </button>
         <span>Websocket {$webSocketConnected ? '✅' : '❌'}</span>
         <span>Robot {$robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={$lastOutcome?.detail ?? ''}>
@@ -27,9 +46,6 @@
         </span>
         <button class="toggle" on:click={() => (showLog = !showLog)}>
             {showLog ? 'Hide' : 'Show'} log ({$outcomeLog.length})
-        </button>
-        <button class="toggle" on:click={() => callback(!drawerOpen)}>
-            {drawerOpen ? 'Hide' : 'Show'} controller
         </button>
     </div>
     {#if showLog}
