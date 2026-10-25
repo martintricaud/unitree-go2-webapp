@@ -1,4 +1,4 @@
-import { clamp, first, isIncludedIn, isPlainObject, isString, keys, mapValues, range, splice, unique } from 'remeda';
+import { clamp, first, isIncludedIn, isPlainObject, isString, keys, mapValues, range, sort, splice, unique } from 'remeda';
 import { derived, get, readonly, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
@@ -95,19 +95,39 @@ export const createCueSheet = (
     /// Ends any renaming and keeps the label.
     const stopRenaming = () => edit()((_draft) => ({ ..._draft, renaming: null }));
 
+    /// Replaces cell `_index` of a draft by its constituents, in order, selects them, and ends any
+    /// renaming. A draft whose cell `_index` has no constituents stays as it is.
+    const splitAt = (_index: number) => (_draft: Draft) => {
+        const { items } = _draft.cells[_index];
+        return items.length === 0
+            ? _draft
+            : {
+                  ..._draft,
+                  cells: splice(_draft.cells, _index, 1, items),
+                  pointer: _draft.pointer > _index ? _draft.pointer + items.length - 1 : _draft.pointer,
+                  selection: range(_index, _index + items.length),
+                  renaming: null,
+              };
+    };
+
     /// Replaces cell `_index` by its constituents, in order, and selects them. A cell without
     /// constituents stays as it is.
-    const split = (_index: number) =>
-        edit(_index)((_draft) => {
-            const { items } = _draft.cells[_index];
-            return items.length === 0
-                ? _draft
-                : {
-                      ..._draft,
-                      cells: splice(_draft.cells, _index, 1, items),
-                      pointer: _draft.pointer > _index ? _draft.pointer + items.length - 1 : _draft.pointer,
-                      selection: range(_index, _index + items.length),
-                  };
+    const split = (_index: number) => edit(_index)(splitAt(_index));
+
+    /// The selected cells that have constituents.
+    const groups = (_draft: Draft) => _draft.selection.filter((_index) => _draft.cells[_index].items.length > 0);
+
+    /// Splits every selected cell that has constituents, in one change of the draft, and selects the
+    /// run the selection covered, grown by the cells the splits added. The splits run from the
+    /// highest index to the lowest, so each one leaves the indices of the cells before it valid.
+    const ungroup = () =>
+        edit()((_draft) => {
+            const ungrouped = sort(groups(_draft), (_a, _b) => _b - _a).reduce(
+                (_split, _index) => splitAt(_index)(_split),
+                _draft,
+            );
+            const [lo, hi] = [Math.min(..._draft.selection), Math.max(..._draft.selection)];
+            return { ...ungrouped, selection: range(lo, hi + 1 + ungrouped.cells.length - _draft.cells.length) };
         });
 
     /// Replaces the cells from `_from` to `_to`, in either order, by one sequence of them labelled
@@ -127,6 +147,7 @@ export const createCueSheet = (
                       // moves up by the cells the sequence absorbed.
                       pointer: _draft.pointer - clamp(_draft.pointer - lo, { min: 0, max: hi - lo }),
                       selection: [lo],
+                      renaming: null,
                   };
         });
 
@@ -143,6 +164,7 @@ export const createCueSheet = (
                       ? _draft.pointer + Math.sign(_from - _to)
                       : _draft.pointer,
             selection: [_to],
+            renaming: null,
         }));
 
     /// Selects cell `_index` alone.
@@ -189,7 +211,6 @@ export const createCueSheet = (
                 actions: null,
                 transitions: { Edit: () => draft.set(begin(_sheet, _pointer)) },
             };
-        const grouped = _draft.selection.filter((_index) => _draft.cells[_index].items.length > 0);
         return {
             cells: _draft.cells,
             pointer: _draft.pointer,
@@ -207,7 +228,7 @@ export const createCueSheet = (
                     _draft.selection.length >= 2
                         ? () => merge(Math.min(..._draft.selection), Math.max(..._draft.selection))
                         : null,
-                ungroup: grouped.length === 1 ? () => split(grouped[0]) : null,
+                ungroup: groups(_draft).length > 0 ? ungroup : null,
             },
             transitions: {
                 Save: () => {
@@ -273,5 +294,9 @@ export const createCueSheet = (
 };
 
 /// The app's cue sheet, the show's running order or the sheet last saved in the browser, sent to
-/// the app's robot.
-export const cueSheet = createCueSheet(CONDUITE, robot, globalThis.localStorage);
+/// the app's robot. Storage is read only when called, inside `attempt`, because a browser that
+/// blocks site data throws on reading `localStorage`.
+export const cueSheet = createCueSheet(CONDUITE, robot, {
+    getItem: (_key) => globalThis.localStorage.getItem(_key),
+    setItem: (_key, _value) => globalThis.localStorage.setItem(_key, _value),
+});
