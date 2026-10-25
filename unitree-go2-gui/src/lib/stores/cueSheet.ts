@@ -1,5 +1,5 @@
-import { addProp, clamp, doNothing, entries, evolve, flatMap, isArray, isEmpty, isIncludedIn } from 'remeda';
-import { isPlainObject, isString, mapValues, range, set, splice } from 'remeda';
+import { addProp, clamp, doNothing, entries, evolve, first, flatMap, hasAtLeast, isArray, isEmpty } from 'remeda';
+import { isIncludedIn, isPlainObject, isString, last, mapValues, merge, range, set, splice } from 'remeda';
 import { derived, get, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
@@ -32,8 +32,20 @@ const attempt = <T>(_act: () => T, _fallback: T) => {
     }
 };
 
-/// `_act` while `_available` holds, and `null` otherwise, which the strip draws as a disabled action.
-const offer = (_available: boolean, _act: () => void) => (_available ? _act : null);
+/// The indices from `_from` to `_to`, both included, in either order.
+const span = (_from: number, _to: number) => range(Math.min(_from, _to), Math.max(_from, _to) + 1);
+
+/// A run of two or more cells as one sequence of them, labelled with its first and last labels.
+/// A run of one cell stays as it is.
+const group = (_run: Cue[]) =>
+    hasAtLeast(_run, 2) ? [sequence(`${first(_run).label} → ${last(_run).label}`, ..._run)] : _run;
+
+/// Every cell of `_run` replaced by its constituents; a cell without constituents stays as it is.
+const ungroup = (_run: Cue[]) => flatMap(_run, (_cell) => (isEmpty(_cell.items) ? [_cell] : _cell.items));
+
+/// The answers of an edit tool on which no gesture changes anything: cells are not draggable, and a
+/// click or a sweep does nothing and highlights nothing. Each tool overrides what it acts on.
+const noEffect = { draggable: false, click: doNothing(), sweep: doNothing(), run: () => [] };
 
 /// Creates the cue sheet the operator steps through. It sends cues and toggles to `_robot`.
 /// In play mode the sheet fires its saved cells; in edit mode the operator changes a draft of them,
@@ -50,27 +62,29 @@ export const createCueSheet = (
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
 
-    /// What a click on a cell does with each edit tool, and the cursor over the strip that shows it.
-    /// A Select click selects the cell; a shift-click also selects every cell from the selection to it.
+    /// What each edit tool makes of a gesture on the cells, and the cursor over the strip that shows
+    /// it. `click` takes the clicked cell; `sweep` takes the cell a press started on and the cell it
+    /// was released on, and `run` gives the cells a sweep between them covers. Only Move drags cells.
     const tools = {
-        Select: {
-            cursor: 'default',
-            click: (_index: number, _shift: boolean) =>
-                edit(_index)((_draft) => {
-                    const ends = [_index, ...(_shift ? _draft.selection : [])];
-                    return set(_draft, 'selection', range(Math.min(...ends), Math.max(...ends) + 1));
-                }),
-        },
-        Rename: { cursor: 'text', click: (_index: number) => edit(_index)(set('renaming', _index)) },
+        Move: merge(noEffect, { cursor: 'grab', draggable: true }),
+        Rename: merge(noEffect, { cursor: 'text', click: (_index: number) => edit(_index)(set('renaming', _index)) }),
+        Group: merge(noEffect, {
+            cursor: 'cell',
+            sweep: (_from: number, _to: number) => edit(_from, _to)(replace(_from, _to, group)),
+            run: span,
+        }),
+        Ungroup: merge(noEffect, {
+            cursor: 'pointer',
+            click: (_index: number) => edit(_index)(replace(_index, _index, ungroup)),
+        }),
     };
 
-    /// A draft of `_cells` with its pointer at `_pointer`, under the Select tool, with nothing
-    /// selected and no label being renamed.
+    /// A draft of `_cells` with its pointer at `_pointer`, under the Move tool, with no label being
+    /// renamed.
     const begin = (_cells: Cue[], _pointer: number) => ({
         cells: _cells,
         pointer: _pointer,
-        selection: [] as number[],
-        tool: 'Select' as keyof typeof tools,
+        tool: 'Move' as keyof typeof tools,
         renaming: null as number | null,
     });
     type Draft = ReturnType<typeof begin>;
@@ -83,24 +97,26 @@ export const createCueSheet = (
             _draft !== null && _indices.every(isIncludedIn(range(0, _draft.cells.length))) ? _change(_draft) : _draft,
         );
 
-    /// Replaces cells `_lo` to `_hi` by `_cells`, selects them, and ends any renaming. A pointer
-    /// on a replaced cell lands on the first new one; a pointer after them keeps its cell.
-    const replace = (_lo: number, _hi: number, _cells: Cue[]) => (_draft: Draft) =>
-        evolve(_draft, {
-            cells: splice(_lo, _hi - _lo + 1, _cells),
-            pointer: (_at) => (_at > _hi ? _at + _cells.length - (_hi - _lo + 1) : Math.min(_at, _lo)),
-            selection: () => range(_lo, _lo + _cells.length),
+    /// Replaces the cells from `_from` to `_to`, in either order, by `_change` of them, and ends any
+    /// renaming. A pointer on a replaced cell lands on the first new one; a pointer after them keeps
+    /// its cell.
+    const replace = (_from: number, _to: number, _change: (_cells: Cue[]) => Cue[]) => (_draft: Draft) => {
+        const [lo, hi] = [Math.min(_from, _to), Math.max(_from, _to)];
+        const cells = _change(_draft.cells.slice(lo, hi + 1));
+        return evolve(_draft, {
+            cells: splice(lo, hi - lo + 1, cells),
+            pointer: (_at) => (_at > hi ? _at + cells.length - (hi - lo + 1) : Math.min(_at, lo)),
             renaming: () => null,
         });
+    };
 
-    /// Moves cell `_from` to position `_to`, selects it there, and ends any renaming. The cells and
-    /// the pointer go through the same permutation, so the pointer keeps its cell.
+    /// Moves cell `_from` to position `_to`, and ends any renaming. The cells and the pointer go
+    /// through the same permutation, so the pointer keeps its cell.
     const reorder = (_from: number, _to: number) => (_draft: Draft) => {
         const order = splice(splice(range(0, _draft.cells.length), _from, 1, []), _to, 0, [_from]);
         return evolve(_draft, {
             cells: (_cells) => order.map((_index) => _cells[_index]),
             pointer: (_at) => order.indexOf(_at),
-            selection: () => [_to],
             renaming: () => null,
         });
     };
@@ -116,13 +132,13 @@ export const createCueSheet = (
                 cells: _sheet,
                 pointer: _pointer,
                 pressed: _pressed,
-                selection: [],
                 renaming: null,
                 click: send,
+                sweep: noEffect.sweep,
+                run: noEffect.run,
                 cursor: 'pointer',
                 draggable: false,
                 tools: null,
-                actions: null,
                 transitions: { Edit: start },
                 /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
                 fire: (_steps: number) => {
@@ -132,35 +148,23 @@ export const createCueSheet = (
                 },
                 move,
             };
-        const { cells, selection } = _draft;
-        const [lo, hi] = [Math.min(...selection), Math.max(...selection)];
-        const selected = cells.slice(lo, hi + 1);
+        const { cells } = _draft;
+        const tool = tools[_draft.tool];
         return {
             cells,
             pointer: _draft.pointer,
             pressed: null,
-            selection,
             renaming: _draft.renaming,
-            click: tools[_draft.tool].click,
-            cursor: tools[_draft.tool].cursor,
-            draggable: true,
+            click: tool.click,
+            sweep: tool.sweep,
+            run: tool.run,
+            cursor: tool.cursor,
+            draggable: tool.draggable,
             tools: addProp(
                 mapValues(tools, (_tool, _name) => () => edit()(evolve({ tool: () => _name, renaming: () => null }))),
                 'active',
                 _draft.tool,
             ),
-            /// Group replaces the selection by one sequence of it; Ungroup replaces each selected
-            /// group by its constituents.
-            actions: {
-                group: offer(selected.length >= 2, () => {
-                    const label = `${cells[lo].label} → ${cells[hi].label}`;
-                    edit()(replace(lo, hi, [sequence(label, cells[lo], ...selected.slice(1))]));
-                }),
-                ungroup: offer(selected.some((_cell) => !isEmpty(_cell.items)), () => {
-                    const parts = flatMap(selected, (_cell) => (isEmpty(_cell.items) ? [_cell] : _cell.items));
-                    edit()(replace(lo, hi, parts));
-                }),
-            },
             transitions: {
                 Save: () => {
                     sheet.set(cells);
@@ -208,10 +212,7 @@ export const createCueSheet = (
         bindings,
         /// Gives cell `_index` the label `_label`, and ends any renaming.
         rename: (_index: number, _label: string) =>
-            edit(_index)((_draft) => {
-                const renamed = set(_draft.cells[_index], 'label', _label);
-                return evolve(_draft, { cells: splice(_index, 1, [renamed]), renaming: () => null });
-            }),
+            edit(_index)(replace(_index, _index, (_cells) => _cells.map((_cell) => set(_cell, 'label', _label)))),
         /// Ends any renaming and keeps the label.
         stopRenaming: () => edit()(set('renaming', null)),
         reorder: (_from: number, _to: number) => edit(_from, _to)(reorder(_from, _to)),

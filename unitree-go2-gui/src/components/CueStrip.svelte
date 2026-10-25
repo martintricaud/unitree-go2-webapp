@@ -9,6 +9,11 @@
     /// so a drop that no drag in the strip started moves nothing.
     let dragged = -1;
 
+    /// The sweep in progress, as the cell the press started on and the cell under the pointer; empty
+    /// while no button is pressed on a cell. A release on a cell completes the sweep; a release
+    /// anywhere else only ends it.
+    let sweeps: [number, number][] = [];
+
     /// Makes `_span` the editable label of cell `_index`. It takes the focus with its text selected,
     /// so typing replaces the label, and no typed key reaches the window shortcuts. Moving the focus
     /// out commits the label; Enter does that without typing a newline. Escape restores the previous
@@ -37,13 +42,15 @@
     };
 </script>
 
+<svelte:window on:pointerup={() => (sweeps = [])} />
+
 <div id="sidebar" class="actionsequence" style:cursor={$strip.cursor}>
     {#if $strip.tools}
         <div class="bar top">
-            <button class:active={$strip.tools.active === 'Select'} on:click={$strip.tools.Select}>Select</button>
+            <button class:active={$strip.tools.active === 'Move'} on:click={$strip.tools.Move}>Move</button>
             <button class:active={$strip.tools.active === 'Rename'} on:click={$strip.tools.Rename}>Rename</button>
-            <button disabled={!$strip.actions?.group} on:click={$strip.actions?.group}>Group</button>
-            <button disabled={!$strip.actions?.ungroup} on:click={$strip.actions?.ungroup}>Ungroup</button>
+            <button class:active={$strip.tools.active === 'Group'} on:click={$strip.tools.Group}>Group</button>
+            <button class:active={$strip.tools.active === 'Ungroup'} on:click={$strip.tools.Ungroup}>Ungroup</button>
         </div>
     {/if}
     {#each $strip.cells as cell, i}
@@ -51,9 +58,12 @@
             class="cell"
             class:active-step={i === $strip.pointer}
             class:pressed={i === $strip.pressed}
-            class:selected={isIncludedIn(i, $strip.selection)}
-            draggable={$strip.draggable && $strip.renaming !== i}
-            on:click={(event) => $strip.click(i, event.shiftKey)}
+            class:swept={sweeps.some(([_from, _to]) => isIncludedIn(i, $strip.run(_from, _to)))}
+            draggable={$strip.draggable}
+            on:click={() => $strip.click(i)}
+            on:pointerdown={() => (sweeps = [[i, i]])}
+            on:pointerenter={() => (sweeps = sweeps.map(([_from]) => [_from, i]))}
+            on:pointerup={() => sweeps.forEach(([_from, _to]) => $strip.sweep(_from, _to))}
             on:dragstart={() => (dragged = i)}
             on:dragover|preventDefault
             on:drop={() => cueSheet.reorder(dragged, i)}
@@ -74,7 +84,10 @@
 </div>
 
 <style>
+    /* The width fits the four tool buttons of the top bar on one line, and does not change between
+       modes or with the labels. */
     .actionsequence {
+        width: 19rem;
         display: flex;
         flex-direction: column;
         max-height: 100%;
@@ -108,9 +121,11 @@
         font-weight: bold;
     }
 
-    /* A cell shows the strip's cursor, which is a text cursor under the Rename tool. */
+    /* A cell shows the strip's cursor, which depends on the tool. A long label wraps inside its cell. */
     .cell {
         cursor: inherit;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .active-step {
@@ -119,7 +134,7 @@
         border-color: rgb(0, 218, 163);
     }
 
-    .selected {
+    .swept {
         background: rgb(170, 200, 240);
     }
 
