@@ -87,8 +87,9 @@ export type Step =
     | { kind: 'wait'; wait: number };
 
 /// What the operator fires. `label` names it in the cue sheet and the outcome log; `steps` are the
-/// messages it sends, in order; `changes` are the fields it changes in `RobotState`, in order.
-export type Cue = { label: string; steps: Step[]; changes: Partial<RobotState>[] };
+/// messages it sends, in order; `changes` are the fields it changes in `RobotState`, in order;
+/// `items` holds the cues a sequence was built from, and is empty for any other cue.
+export type Cue = { label: string; steps: Step[]; changes: Partial<RobotState>[]; items: Cue[] };
 
 /// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
 const sportCommand = (_request: SportRequest, _flag = true): Step => ({
@@ -105,26 +106,39 @@ const stepCommand = (_request: PostureRequest) =>
 /// Entering a posture keeps the gait; entering a gait leaves any posture.
 export const enter = (_target: CommandableGait | Posture): Cue =>
     isPosture(_target)
-        ? { label: _target, steps: POSTURES[_target].enter.map(stepCommand), changes: [{ posture: _target }] }
+        ? {
+              label: _target,
+              steps: POSTURES[_target].enter.map(stepCommand),
+              changes: [{ posture: _target }],
+              items: [],
+          }
         : {
               label: _target,
               steps: [sportCommand(GAITS[_target].enter)],
               changes: [{ gait: _target, posture: null }],
+              items: [],
           };
 
 export const leave = (_posture: Posture): Cue => ({
     label: `Exit ${_posture}`,
     steps: POSTURES[_posture].exit.map(stepCommand),
     changes: [{ posture: null }],
+    items: [],
 });
 
-export const perform = (_action: Action): Cue => ({ label: _action, steps: [sportCommand(_action)], changes: [] });
+export const perform = (_action: Action): Cue => ({
+    label: _action,
+    steps: [sportCommand(_action)],
+    changes: [],
+    items: [],
+});
 
 /// RecoveryStand: from any state, the robot stands in its gait, in no posture.
 export const recover = (): Cue => ({
     label: 'RecoveryStand',
     steps: [sportCommand('RecoveryStand')],
     changes: [{ posture: null }],
+    items: [],
 });
 
 export const set = (_setting: Setting): Cue => {
@@ -133,6 +147,7 @@ export const set = (_setting: Setting): Cue => {
         label: command_name,
         steps: [{ kind: 'command', topic, api_id, command_name, parameter: { [argument]: _setting.value } }],
         changes: [{ [_setting.name]: _setting.value }],
+        items: [],
     };
 };
 
@@ -149,6 +164,7 @@ export const orient = (_x: number, _y: number, _z: number): Cue => ({
         },
     ],
     changes: [],
+    items: [],
 });
 
 /// Changes nothing the interface tracks.
@@ -164,12 +180,14 @@ export const dim = (_brightness: number): Cue => ({
         },
     ],
     changes: [],
+    items: [],
 });
 
 export const wait = (_seconds: number): Cue => ({
     label: `⏱ ${_seconds}s`,
     steps: [{ kind: 'wait', wait: _seconds }],
     changes: [],
+    items: [],
 });
 
 /// Runs its items one after the other, as one cue. An empty label leaves the sequence unnamed.
@@ -177,6 +195,7 @@ export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Cue => ({
     label: _label === '' ? 'unnamed sequence' : _label,
     steps: _items.flatMap((_item) => _item.steps),
     changes: _items.flatMap((_item) => _item.changes),
+    items: _items,
 });
 
 export type RobotState = {

@@ -147,3 +147,30 @@ describe('changes', () => {
     ]);
   });
 });
+
+describe('items', () => {
+  it('keeps the cues a sequence was built from, in order', () => {
+    expect(sequence('Named', enter('Pose'), wait(1)).items).toEqual([enter('Pose'), wait(1)]);
+  });
+
+  it('is empty for every cue not built by sequence', () => {
+    [
+      enter('Leaping'),
+      enter('Pose'),
+      leave('Lying'),
+      perform('Hello'),
+      recover(),
+      set({ name: 'headlight', value: 'red' }),
+      orient(0, -1, 0),
+      dim(4),
+      wait(0.5),
+    ].forEach((_cue) => {
+      expect(_cue.items).toEqual([]);
+    });
+  });
+
+  it('survives a JSON round trip, constituents included', () => {
+    const cues = [...CONDUITE, ...Object.values(presets)];
+    expect(JSON.parse(JSON.stringify(cues))).toStrictEqual(cues);
+  });
+});
