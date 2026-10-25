@@ -1,27 +1,192 @@
-import { clamp, isIncludedIn, keys } from 'remeda';
-import { get, readonly, writable } from 'svelte/store';
+import { clamp, first, isIncludedIn, keys, mapValues, range, splice, unique } from 'remeda';
+import { derived, get, readonly, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
+import { sequence } from '../utils/commands';
+import type { Cue } from '../utils/commands';
 import { robot } from './robot';
 
 /// Creates the cue sheet the operator steps through. It sends cues and toggles to `_robot`.
+/// In play mode the sheet fires its saved cells; in edit mode the operator changes a draft of them,
+/// which Save makes the saved sheet.
 export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => {
+    /// The cells play mode fires.
+    const sheet = writable<Cue[]>(_cues);
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
 
     /// Sends the cue at `_index`, and leaves the pointer and the pressed cue as they are.
-    const send = (_index: number) => void _robot.request(_cues[_index]);
+    const send = (_index: number) => void _robot.request(get(sheet)[_index]);
 
-    /// The pointer stays on a cue of the sheet.
-    const move = (_steps: number) =>
-        pointer.update((_at) => clamp(_at + _steps, { min: 0, max: _cues.length - 1 }));
+    /// What a click on a cell does with each edit tool, and the cursor over the strip that shows it.
+    const tools = {
+        Select: { cursor: 'default', click: (_index: number, _shift: boolean) => (_shift ? extend : select)(_index) },
+        Rename: {
+            cursor: 'text',
+            click: (_index: number) => edit(_index)((_draft) => ({ ..._draft, renaming: _index })),
+        },
+    };
+
+    /// A draft of `_cells` with its pointer at `_pointer`, under the Select tool, with nothing
+    /// selected and no label being renamed.
+    const begin = (_cells: Cue[], _pointer: number) => ({
+        cells: _cells,
+        pointer: _pointer,
+        selection: [] as number[],
+        tool: 'Select' as keyof typeof tools,
+        renaming: null as number | null,
+    });
+    type Draft = ReturnType<typeof begin>;
+    /// The cells edit mode changes; `null` in play mode.
+    const draft = writable<Draft | null>(null);
+
+    /// Replaces the draft by `_change` of it when every index in `_indices` names one of its cells.
+    /// Does nothing in play mode.
+    const edit =
+        (..._indices: number[]) =>
+        (_change: (_draft: Draft) => Draft) =>
+            draft.update((_draft) =>
+                _draft !== null && _indices.every(isIncludedIn(range(0, _draft.cells.length)))
+                    ? _change(_draft)
+                    : _draft,
+            );
+
+    /// Gives cell `_index` the label `_label`, and ends any renaming.
+    const rename = (_index: number, _label: string) =>
+        edit(_index)((_draft) => ({
+            ..._draft,
+            cells: splice(_draft.cells, _index, 1, [{ ..._draft.cells[_index], label: _label }]),
+            renaming: null,
+        }));
+
+    /// Ends any renaming and keeps the label.
+    const stopRenaming = () => edit()((_draft) => ({ ..._draft, renaming: null }));
+
+    /// Replaces cell `_index` by its constituents, in order, and selects them. A cell without
+    /// constituents stays as it is.
+    const split = (_index: number) =>
+        edit(_index)((_draft) => {
+            const { items } = _draft.cells[_index];
+            return items.length === 0
+                ? _draft
+                : {
+                      ..._draft,
+                      cells: splice(_draft.cells, _index, 1, items),
+                      pointer: _draft.pointer > _index ? _draft.pointer + items.length - 1 : _draft.pointer,
+                      selection: range(_index, _index + items.length),
+                  };
+        });
+
+    /// Replaces the cells from `_from` to `_to`, in either order, by one sequence of them labelled
+    /// with the first and the last label, and selects it.
+    const merge = (_from: number, _to: number) =>
+        edit(_from, _to)((_draft) => {
+            const [lo, hi] = [Math.min(_from, _to), Math.max(_from, _to)];
+            const label = `${_draft.cells[lo].label} → ${_draft.cells[hi].label}`;
+            return lo === hi
+                ? _draft
+                : {
+                      ..._draft,
+                      cells: splice(_draft.cells, lo, hi - lo + 1, [
+                          sequence(label, _draft.cells[lo], ..._draft.cells.slice(lo + 1, hi + 1)),
+                      ]),
+                      // A pointer inside the merged cells lands on the sequence; one after them
+                      // moves up by the cells the sequence absorbed.
+                      pointer: _draft.pointer - clamp(_draft.pointer - lo, { min: 0, max: hi - lo }),
+                      selection: [lo],
+                  };
+        });
+
+    /// Moves cell `_from` to position `_to`, and selects it there. The cells between the two
+    /// positions shift by one toward `_from`.
+    const reorder = (_from: number, _to: number) =>
+        edit(_from, _to)((_draft) => ({
+            ..._draft,
+            cells: splice(splice(_draft.cells, _from, 1, []), _to, 0, [_draft.cells[_from]]),
+            pointer:
+                _draft.pointer === _from
+                    ? _to
+                    : isIncludedIn(_draft.pointer, range(Math.min(_from, _to), Math.max(_from, _to) + 1))
+                      ? _draft.pointer + Math.sign(_from - _to)
+                      : _draft.pointer,
+            selection: [_to],
+        }));
+
+    /// Selects cell `_index` alone.
+    const select = (_index: number) => edit(_index)((_draft) => ({ ..._draft, selection: [_index] }));
+
+    /// Adds every cell from the first selected one to `_index`, both included. On an empty
+    /// selection, selects `_index` alone. The selection therefore stays a contiguous run of cells.
+    const extend = (_index: number) =>
+        edit(_index)((_draft) => {
+            const anchor = first(_draft.selection) ?? _index;
+            const run = range(Math.min(anchor, _index), Math.max(anchor, _index) + 1);
+            return { ..._draft, selection: unique([..._draft.selection, ...run]) };
+        });
+
+    /// The pointer stays on a cell of the saved sheet. Does nothing in edit mode.
+    const move = (_steps: number) => {
+        if (get(draft) !== null) return;
+        pointer.update((_at) => clamp(_at + _steps, { min: 0, max: get(sheet).length - 1 }));
+    };
 
     /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
+    /// Does nothing in edit mode.
     const fire = (_steps: number) => {
+        if (get(draft) !== null) return;
         const at = get(pointer);
         pressed.set(at);
         send(at);
         move(_steps);
     };
+
+    /// What the cue strip draws and what its controls call, in the current mode and tool.
+    const strip = derived([sheet, pointer, pressed, draft], ([_sheet, _pointer, _pressed, _draft]) => {
+        if (_draft === null)
+            return {
+                cells: _sheet,
+                pointer: _pointer,
+                pressed: _pressed,
+                selection: [],
+                renaming: null,
+                click: send,
+                cursor: 'default',
+                draggable: false,
+                tools: null,
+                actions: null,
+                transitions: { Edit: () => draft.set(begin(_sheet, _pointer)) },
+            };
+        const grouped = _draft.selection.filter((_index) => _draft.cells[_index].items.length > 0);
+        return {
+            cells: _draft.cells,
+            pointer: _draft.pointer,
+            pressed: null,
+            selection: _draft.selection,
+            renaming: _draft.renaming,
+            ...tools[_draft.tool],
+            draggable: true,
+            tools: {
+                ...mapValues(tools, (_tool, _name) => () => edit()((_d) => ({ ..._d, tool: _name, renaming: null }))),
+                active: _draft.tool,
+            },
+            actions: {
+                group:
+                    _draft.selection.length >= 2
+                        ? () => merge(Math.min(..._draft.selection), Math.max(..._draft.selection))
+                        : null,
+                ungroup: grouped.length === 1 ? () => split(grouped[0]) : null,
+            },
+            transitions: {
+                Save: () => {
+                    sheet.set(_draft.cells);
+                    pointer.set(_draft.pointer);
+                    pressed.set(null);
+                    draft.set(null);
+                },
+                Reset: () => draft.set(begin(_sheet, _pointer)),
+                Cancel: () => draft.set(null),
+            },
+        };
+    });
 
     /// Releasing a key that fires a cue ends that cue's pressed drawing; other keys do nothing.
     const unpress = () => pressed.set(null);
@@ -51,14 +216,22 @@ export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => 
     };
 
     return {
-        /// Where the operator stands in the cue sheet.
+        /// Where the operator stands in the saved sheet.
         pointer: readonly(pointer),
         /// The cue a held key is executing, drawn pressed until the key is released.
         pressed: readonly(pressed),
+        strip,
         bindings,
         send,
         move,
         fire,
+        rename,
+        stopRenaming,
+        split,
+        merge,
+        reorder,
+        select,
+        extend,
         press: run('press'),
         release: run('release'),
     };
