@@ -9,41 +9,31 @@
     /// so a drop that no drag in the strip started moves nothing.
     let dragged = -1;
 
-    /// The editable label of the cell being renamed, while that label exists.
-    let editor: HTMLSpanElement | null = null;
-
-    /// Focuses a label that has just become editable and selects its text, so typing replaces it.
-    const opened = (_span: HTMLSpanElement) => {
+    /// Makes `_span` the editable label of cell `_index`. It takes the focus with its text selected,
+    /// so typing replaces the label, and no typed key reaches the window shortcuts. Moving the focus
+    /// out commits the label; Enter does that without typing a newline. Escape restores the previous
+    /// label, and releasing Space types a space without clicking the cell.
+    const editor = (_span: HTMLSpanElement, _index: number) => {
+        const commit = () => cueSheet.rename(_index, _span.textContent ?? '');
+        _span.addEventListener('focusout', commit);
+        _span.addEventListener('keydown', (_event) => {
+            _event.stopPropagation();
+            if (_event.key === 'Enter') {
+                _event.preventDefault();
+                _span.blur();
+            }
+            if (_event.key === 'Escape') {
+                // Chrome fires focusout on a focused element it removes, which would commit.
+                _span.removeEventListener('focusout', commit);
+                cueSheet.stopRenaming();
+            }
+        });
+        _span.addEventListener('keyup', (_event) => {
+            _event.stopPropagation();
+            if (_event.key === ' ') _event.preventDefault();
+        });
         _span.focus();
         getSelection()?.selectAllChildren(_span);
-    };
-
-    /// Gives cell `_index` the label typed into the editor.
-    const commit = (_index: number) => cueSheet.rename(_index, editor?.textContent ?? '');
-
-    /// While cell `_index` is renamed, no key reaches the window shortcuts. Enter commits the label
-    /// without typing a newline; Escape restores the previous label.
-    const keydown = (_index: number) => (_event: KeyboardEvent) => {
-        if ($strip.renaming !== _index) return;
-        _event.stopPropagation();
-        if (_event.key === 'Enter') {
-            _event.preventDefault();
-            commit(_index);
-        }
-        if (_event.key === 'Escape') cueSheet.stopRenaming();
-    };
-
-    /// While cell `_index` is renamed, releasing Space types a space but does not click the cell.
-    const keyup = (_index: number) => (_event: KeyboardEvent) => {
-        if ($strip.renaming !== _index) return;
-        _event.stopPropagation();
-        if (_event.key === ' ') _event.preventDefault();
-    };
-
-    /// Moving the focus out of the label commits it. Focusing the label fires focusout on the cell
-    /// itself, which must not commit.
-    const focusout = (_index: number) => (_event: FocusEvent) => {
-        if ($strip.renaming === _index && _event.target === editor) commit(_index);
     };
 </script>
 
@@ -64,16 +54,13 @@
             class:selected={isIncludedIn(i, $strip.selection)}
             draggable={$strip.draggable && $strip.renaming !== i}
             on:click={(event) => $strip.click(i, event.shiftKey)}
-            on:keydown={keydown(i)}
-            on:keyup={keyup(i)}
-            on:focusout={focusout(i)}
             on:dragstart={() => (dragged = i)}
             on:dragover|preventDefault
             on:drop={() => cueSheet.reorder(dragged, i)}
             on:dragend={() => (dragged = -1)}
         >
             {#if $strip.renaming === i}
-                <span contenteditable="plaintext-only" bind:this={editor} use:opened>{cell.label}</span>
+                <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
             {:else}
                 <span>{cell.label}</span>
             {/if}

@@ -1,5 +1,6 @@
-import { clamp, first, isIncludedIn, isPlainObject, isString, keys, mapValues, range, sort, splice, unique } from 'remeda';
-import { derived, get, readonly, writable } from 'svelte/store';
+import { addProp, clamp, doNothing, entries, evolve, flatMap, isArray, isEmpty, isIncludedIn } from 'remeda';
+import { isPlainObject, isString, mapValues, range, set, splice } from 'remeda';
+import { derived, get, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
 import type { Cue } from '../utils/commands';
@@ -14,10 +15,12 @@ const KEY = 'cueSheet.v1';
 const isCue = (_value: unknown): _value is Cue =>
     isPlainObject(_value) &&
     isString(_value.label) &&
-    Array.isArray(_value.steps) &&
-    Array.isArray(_value.changes) &&
-    Array.isArray(_value.items) &&
+    [_value.steps, _value.changes].every(isArray) &&
+    isArray(_value.items) &&
     _value.items.every(isCue);
+
+/// A stored value is taken for a sheet when it is a non-empty list of cues.
+const isSheet = (_value: unknown): _value is Cue[] => isArray(_value) && !isEmpty(_value) && _value.every(isCue);
 
 /// Runs `_act`, or gives `_fallback` when it throws. Storage can be missing, full or forbidden,
 /// and the sheet must keep working in memory in every case.
@@ -29,6 +32,9 @@ const attempt = <T>(_act: () => T, _fallback: T) => {
     }
 };
 
+/// `_act` while `_available` holds, and `null` otherwise, which the strip draws as a disabled action.
+const offer = (_available: boolean, _act: () => void) => (_available ? _act : null);
+
 /// Creates the cue sheet the operator steps through. It sends cues and toggles to `_robot`.
 /// In play mode the sheet fires its saved cells; in edit mode the operator changes a draft of them,
 /// which Save makes the saved sheet and writes to `_storage`.
@@ -37,27 +43,25 @@ export const createCueSheet = (
     _robot: typeof robot,
     _storage: Pick<Storage, 'getItem' | 'setItem'>,
 ) => {
-    /// The cells play mode fires: the sheet last saved to `_storage`, or `_cues` when `_storage`
-    /// holds no non-empty list of cues.
-    const sheet = writable<Cue[]>(
-        attempt(() => {
-            const stored: unknown = JSON.parse(_storage.getItem(KEY) ?? 'null');
-            return Array.isArray(stored) && stored.length > 0 && stored.every(isCue) ? stored : _cues;
-        }, _cues),
+    /// The cells play mode fires: the sheet last saved to `_storage`, or `_cues` when it holds none.
+    const sheet = writable(
+        attempt(() => [JSON.parse(_storage.getItem(KEY) ?? 'null')].find(isSheet) ?? _cues, _cues),
     );
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
 
-    /// Sends the cue at `_index`, and leaves the pointer and the pressed cue as they are.
-    const send = (_index: number) => void _robot.request(get(sheet)[_index]);
-
     /// What a click on a cell does with each edit tool, and the cursor over the strip that shows it.
+    /// A Select click selects the cell; a shift-click also selects every cell from the selection to it.
     const tools = {
-        Select: { cursor: 'default', click: (_index: number, _shift: boolean) => (_shift ? extend : select)(_index) },
-        Rename: {
-            cursor: 'text',
-            click: (_index: number) => edit(_index)((_draft) => ({ ..._draft, renaming: _index })),
+        Select: {
+            cursor: 'default',
+            click: (_index: number, _shift: boolean) =>
+                edit(_index)((_draft) => {
+                    const ends = [_index, ...(_shift ? _draft.selection : [])];
+                    return set(_draft, 'selection', range(Math.min(...ends), Math.max(...ends) + 1));
+                }),
         },
+        Rename: { cursor: 'text', click: (_index: number) => edit(_index)(set('renaming', _index)) },
     };
 
     /// A draft of `_cells` with its pointer at `_pointer`, under the Select tool, with nothing
@@ -73,130 +77,40 @@ export const createCueSheet = (
     /// The cells edit mode changes; `null` in play mode.
     const draft = writable<Draft | null>(null);
 
-    /// Replaces the draft by `_change` of it when every index in `_indices` names one of its cells.
-    /// Does nothing in play mode.
-    const edit =
-        (..._indices: number[]) =>
-        (_change: (_draft: Draft) => Draft) =>
-            draft.update((_draft) =>
-                _draft !== null && _indices.every(isIncludedIn(range(0, _draft.cells.length)))
-                    ? _change(_draft)
-                    : _draft,
-            );
+    /// In edit mode, replaces the draft by `_change` of it when each of `_indices` names one of its cells.
+    const edit = (..._indices: number[]) => (_change: (_draft: Draft) => Draft) =>
+        draft.update((_draft) =>
+            _draft !== null && _indices.every(isIncludedIn(range(0, _draft.cells.length))) ? _change(_draft) : _draft,
+        );
 
-    /// Gives cell `_index` the label `_label`, and ends any renaming.
-    const rename = (_index: number, _label: string) =>
-        edit(_index)((_draft) => ({
-            ..._draft,
-            cells: splice(_draft.cells, _index, 1, [{ ..._draft.cells[_index], label: _label }]),
-            renaming: null,
-        }));
-
-    /// Ends any renaming and keeps the label.
-    const stopRenaming = () => edit()((_draft) => ({ ..._draft, renaming: null }));
-
-    /// Replaces cell `_index` of a draft by its constituents, in order, selects them, and ends any
-    /// renaming. A draft whose cell `_index` has no constituents stays as it is.
-    const splitAt = (_index: number) => (_draft: Draft) => {
-        const { items } = _draft.cells[_index];
-        return items.length === 0
-            ? _draft
-            : {
-                  ..._draft,
-                  cells: splice(_draft.cells, _index, 1, items),
-                  pointer: _draft.pointer > _index ? _draft.pointer + items.length - 1 : _draft.pointer,
-                  selection: range(_index, _index + items.length),
-                  renaming: null,
-              };
-    };
-
-    /// Replaces cell `_index` by its constituents, in order, and selects them. A cell without
-    /// constituents stays as it is.
-    const split = (_index: number) => edit(_index)(splitAt(_index));
-
-    /// The selected cells that have constituents.
-    const groups = (_draft: Draft) => _draft.selection.filter((_index) => _draft.cells[_index].items.length > 0);
-
-    /// Splits every selected cell that has constituents, in one change of the draft, and selects the
-    /// run the selection covered, grown by the cells the splits added. The splits run from the
-    /// highest index to the lowest, so each one leaves the indices of the cells before it valid.
-    const ungroup = () =>
-        edit()((_draft) => {
-            const ungrouped = sort(groups(_draft), (_a, _b) => _b - _a).reduce(
-                (_split, _index) => splitAt(_index)(_split),
-                _draft,
-            );
-            const [lo, hi] = [Math.min(..._draft.selection), Math.max(..._draft.selection)];
-            return { ...ungrouped, selection: range(lo, hi + 1 + ungrouped.cells.length - _draft.cells.length) };
+    /// Replaces cells `_lo` to `_hi` by `_cells`, selects them, and ends any renaming. A pointer
+    /// on a replaced cell lands on the first new one; a pointer after them keeps its cell.
+    const replace = (_lo: number, _hi: number, _cells: Cue[]) => (_draft: Draft) =>
+        evolve(_draft, {
+            cells: splice(_lo, _hi - _lo + 1, _cells),
+            pointer: (_at) => (_at > _hi ? _at + _cells.length - (_hi - _lo + 1) : Math.min(_at, _lo)),
+            selection: () => range(_lo, _lo + _cells.length),
+            renaming: () => null,
         });
 
-    /// Replaces the cells from `_from` to `_to`, in either order, by one sequence of them labelled
-    /// with the first and the last label, and selects it.
-    const merge = (_from: number, _to: number) =>
-        edit(_from, _to)((_draft) => {
-            const [lo, hi] = [Math.min(_from, _to), Math.max(_from, _to)];
-            const label = `${_draft.cells[lo].label} → ${_draft.cells[hi].label}`;
-            return lo === hi
-                ? _draft
-                : {
-                      ..._draft,
-                      cells: splice(_draft.cells, lo, hi - lo + 1, [
-                          sequence(label, _draft.cells[lo], ..._draft.cells.slice(lo + 1, hi + 1)),
-                      ]),
-                      // A pointer inside the merged cells lands on the sequence; one after them
-                      // moves up by the cells the sequence absorbed.
-                      pointer: _draft.pointer - clamp(_draft.pointer - lo, { min: 0, max: hi - lo }),
-                      selection: [lo],
-                      renaming: null,
-                  };
+    /// Moves cell `_from` to position `_to`, selects it there, and ends any renaming. The cells and
+    /// the pointer go through the same permutation, so the pointer keeps its cell.
+    const reorder = (_from: number, _to: number) => (_draft: Draft) => {
+        const order = splice(splice(range(0, _draft.cells.length), _from, 1, []), _to, 0, [_from]);
+        return evolve(_draft, {
+            cells: (_cells) => order.map((_index) => _cells[_index]),
+            pointer: (_at) => order.indexOf(_at),
+            selection: () => [_to],
+            renaming: () => null,
         });
-
-    /// Moves cell `_from` to position `_to`, and selects it there. The cells between the two
-    /// positions shift by one toward `_from`.
-    const reorder = (_from: number, _to: number) =>
-        edit(_from, _to)((_draft) => ({
-            ..._draft,
-            cells: splice(splice(_draft.cells, _from, 1, []), _to, 0, [_draft.cells[_from]]),
-            pointer:
-                _draft.pointer === _from
-                    ? _to
-                    : isIncludedIn(_draft.pointer, range(Math.min(_from, _to), Math.max(_from, _to) + 1))
-                      ? _draft.pointer + Math.sign(_from - _to)
-                      : _draft.pointer,
-            selection: [_to],
-            renaming: null,
-        }));
-
-    /// Selects cell `_index` alone.
-    const select = (_index: number) => edit(_index)((_draft) => ({ ..._draft, selection: [_index] }));
-
-    /// Adds every cell from the first selected one to `_index`, both included. On an empty
-    /// selection, selects `_index` alone. The selection therefore stays a contiguous run of cells.
-    const extend = (_index: number) =>
-        edit(_index)((_draft) => {
-            const anchor = first(_draft.selection) ?? _index;
-            const run = range(Math.min(anchor, _index), Math.max(anchor, _index) + 1);
-            return { ..._draft, selection: unique([..._draft.selection, ...run]) };
-        });
-
-    /// The pointer stays on a cell of the saved sheet. Does nothing in edit mode.
-    const move = (_steps: number) => {
-        if (get(draft) !== null) return;
-        pointer.update((_at) => clamp(_at + _steps, { min: 0, max: get(sheet).length - 1 }));
     };
 
-    /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
-    /// Does nothing in edit mode.
-    const fire = (_steps: number) => {
-        if (get(draft) !== null) return;
-        const at = get(pointer);
-        pressed.set(at);
-        send(at);
-        move(_steps);
-    };
-
-    /// What the cue strip draws and what its controls call, in the current mode and tool.
+    /// What the cue strip draws and what its controls call, in the current mode and tool. The keys
+    /// that fire and move call `fire` and `move`, which do nothing in edit mode.
     const strip = derived([sheet, pointer, pressed, draft], ([_sheet, _pointer, _pressed, _draft]) => {
+        const start = () => draft.set(begin(_sheet, _pointer));
+        const send = (_index: number) => void _robot.request(_sheet[_index]);
+        const move = (_steps: number) => pointer.set(clamp(_pointer + _steps, { min: 0, max: _sheet.length - 1 }));
         if (_draft === null)
             return {
                 cells: _sheet,
@@ -205,59 +119,77 @@ export const createCueSheet = (
                 selection: [],
                 renaming: null,
                 click: send,
-                cursor: 'default',
+                cursor: 'pointer',
                 draggable: false,
                 tools: null,
                 actions: null,
-                transitions: { Edit: () => draft.set(begin(_sheet, _pointer)) },
+                transitions: { Edit: start },
+                /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
+                fire: (_steps: number) => {
+                    pressed.set(_pointer);
+                    send(_pointer);
+                    move(_steps);
+                },
+                move,
             };
+        const { cells, selection } = _draft;
+        const [lo, hi] = [Math.min(...selection), Math.max(...selection)];
+        const selected = cells.slice(lo, hi + 1);
         return {
-            cells: _draft.cells,
+            cells,
             pointer: _draft.pointer,
             pressed: null,
-            selection: _draft.selection,
+            selection,
             renaming: _draft.renaming,
-            ...tools[_draft.tool],
+            click: tools[_draft.tool].click,
+            cursor: tools[_draft.tool].cursor,
             draggable: true,
-            tools: {
-                ...mapValues(tools, (_tool, _name) => () => edit()((_d) => ({ ..._d, tool: _name, renaming: null }))),
-                active: _draft.tool,
-            },
+            tools: addProp(
+                mapValues(tools, (_tool, _name) => () => edit()(evolve({ tool: () => _name, renaming: () => null }))),
+                'active',
+                _draft.tool,
+            ),
+            /// Group replaces the selection by one sequence of it; Ungroup replaces each selected
+            /// group by its constituents.
             actions: {
-                group:
-                    _draft.selection.length >= 2
-                        ? () => merge(Math.min(..._draft.selection), Math.max(..._draft.selection))
-                        : null,
-                ungroup: groups(_draft).length > 0 ? ungroup : null,
+                group: offer(selected.length >= 2, () => {
+                    const label = `${cells[lo].label} → ${cells[hi].label}`;
+                    edit()(replace(lo, hi, [sequence(label, cells[lo], ...selected.slice(1))]));
+                }),
+                ungroup: offer(selected.some((_cell) => !isEmpty(_cell.items)), () => {
+                    const parts = flatMap(selected, (_cell) => (isEmpty(_cell.items) ? [_cell] : _cell.items));
+                    edit()(replace(lo, hi, parts));
+                }),
             },
             transitions: {
                 Save: () => {
-                    sheet.set(_draft.cells);
-                    attempt(() => _storage.setItem(KEY, JSON.stringify(_draft.cells)), undefined);
+                    sheet.set(cells);
+                    attempt(() => _storage.setItem(KEY, JSON.stringify(cells)), undefined);
                     pointer.set(_draft.pointer);
                     pressed.set(null);
                     draft.set(null);
                 },
-                Reset: () => draft.set(begin(_sheet, _pointer)),
+                Reset: start,
                 Cancel: () => draft.set(null),
             },
+            fire: doNothing(),
+            move: doNothing(),
         };
     });
 
     /// Releasing a key that fires a cue ends that cue's pressed drawing; other keys do nothing.
     const unpress = () => pressed.set(null);
-    const noop = () => {};
     /// What each key does when pressed and when released. `label` names it for the operator.
     const keyBindings = {
-        ArrowRight: { label: 'Fire, then next cue', press: () => fire(1), release: unpress },
-        ArrowLeft: { label: 'Fire, then previous cue', press: () => fire(-1), release: unpress },
-        ArrowDown: { label: 'Next cue', press: () => move(1), release: noop },
-        ArrowUp: { label: 'Previous cue', press: () => move(-1), release: noop },
-        Enter: { label: 'Fire', press: () => fire(0), release: unpress },
-        a: { label: 'Toggle Pose', press: () => _robot.togglePosture('Pose'), release: noop },
-        b: { label: 'Toggle Leaping', press: () => _robot.toggleGait('Leaping'), release: noop },
-        x: { label: 'Toggle Sit', press: () => _robot.togglePosture('Sitting'), release: noop },
-        y: { label: 'Dance', press: () => void _robot.request(presets.dance), release: noop },
+        ArrowRight: { label: 'Fire, then next cue', press: () => get(strip).fire(1), release: unpress },
+        ArrowLeft: { label: 'Fire, then previous cue', press: () => get(strip).fire(-1), release: unpress },
+        ArrowDown: { label: 'Next cue', press: () => get(strip).move(1), release: doNothing() },
+        ArrowUp: { label: 'Previous cue', press: () => get(strip).move(-1), release: doNothing() },
+        Enter: { label: 'Fire', press: () => get(strip).fire(0), release: unpress },
+        a: { label: 'Toggle Pose', press: () => _robot.togglePosture('Pose'), release: doNothing() },
+        b: { label: 'Toggle Leaping', press: () => _robot.toggleGait('Leaping'), release: doNothing() },
+        x: { label: 'Toggle Sit', press: () => _robot.togglePosture('Sitting'), release: doNothing() },
+        y: { label: 'Dance', press: () => void _robot.request(presets.dance), release: doNothing() },
     };
     /// Every key starts on its binding in `keyBindings`; writing this store rebinds a key while the
     /// app runs, to any binding the table holds.
@@ -265,29 +197,24 @@ export const createCueSheet = (
         keyBindings,
     );
 
-    /// Runs the `_phase` of the binding of `_key` in `bindings`. An unbound key does nothing.
-    const run = (_phase: 'press' | 'release') => (_key: string) => {
-        const current = get(bindings);
-        if (isIncludedIn(_key, keys(current))) current[_key][_phase]();
-    };
+    /// Runs the `_phase` of the binding of `_key` in `bindings`. An unbound key matches no binding.
+    const run = (_phase: 'press' | 'release') => (_key: string) =>
+        entries(get(bindings))
+            .filter(([_bound]) => _bound === _key)
+            .forEach(([, _binding]) => _binding[_phase]());
 
     return {
-        /// Where the operator stands in the saved sheet.
-        pointer: readonly(pointer),
-        /// The cue a held key is executing, drawn pressed until the key is released.
-        pressed: readonly(pressed),
         strip,
         bindings,
-        send,
-        move,
-        fire,
-        rename,
-        stopRenaming,
-        split,
-        merge,
-        reorder,
-        select,
-        extend,
+        /// Gives cell `_index` the label `_label`, and ends any renaming.
+        rename: (_index: number, _label: string) =>
+            edit(_index)((_draft) => {
+                const renamed = set(_draft.cells[_index], 'label', _label);
+                return evolve(_draft, { cells: splice(_index, 1, [renamed]), renaming: () => null });
+            }),
+        /// Ends any renaming and keeps the label.
+        stopRenaming: () => edit()(set('renaming', null)),
+        reorder: (_from: number, _to: number) => edit(_from, _to)(reorder(_from, _to)),
         press: run('press'),
         release: run('release'),
     };
