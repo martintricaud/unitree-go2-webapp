@@ -13,15 +13,22 @@ const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 /** The label and steps of each cue, as the robot writes them to the relay. */
 const asSent = (..._cues: Cue[]) => _cues.map((_cue) => ({ command_name: _cue.label, sequence: _cue.steps }));
 
-/** A cue sheet of its own, on a fresh robot whose open socket the relay never answers, so every
- * cue sent stays pending. `sent` reads each cue the robot wrote, as `asSent` shows it. */
-const setup = (_cues = CUES) => {
+/** A storage that keeps its entries in `entries`, as `localStorage` keeps them across reloads. */
+const memoryStorage = (_entries = new Map<string, string>()) => ({
+  entries: _entries,
+  getItem: (_key: string) => _entries.get(_key) ?? null,
+  setItem: (_key: string, _value: string) => void _entries.set(_key, _value),
+});
+
+/** A cue sheet of its own on `_storage`, on a fresh robot whose open socket the relay never answers,
+ * so every cue sent stays pending. `sent` reads each cue the robot wrote, as `asSent` shows it. */
+const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage()) => {
   const frames: string[] = [];
   const send = (_frame: string) => void frames.push(_frame);
   const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null };
   const robot = createRobot({ openSocket: () => socket, outcomeLog: writable<Outcome[]>([]) });
   robot.connect();
-  const cueSheet = createCueSheet(_cues, robot);
+  const cueSheet = createCueSheet(_cues, robot, _storage);
   const sent = () => frames.map((_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
   return { cueSheet, robot, sent };
 };
@@ -156,10 +163,10 @@ const transition = (_cueSheet: CueSheet, _name: string) => {
   run();
 };
 
-/** A sheet of `SHEET` with its pointer moved to `_pointer` in play mode, then switched to edit mode.
- * `shown` reads what the strip shows, with the active tool in place of the tools. */
-const editing = (_pointer = 0) => {
-  const { cueSheet, robot, sent } = setup(SHEET);
+/** A sheet of `SHEET` on `_storage` with its pointer moved to `_pointer` in play mode, then switched
+ * to edit mode. `shown` reads what the strip shows, with the active tool in place of the tools. */
+const editing = (_pointer = 0, _storage = memoryStorage()) => {
+  const { cueSheet, robot, sent } = setup(SHEET, _storage);
   const shown = () => {
     const { cells, pointer, pressed, selection, renaming, cursor, draggable, tools } = get(cueSheet.strip);
     return { cells, pointer, pressed, selection, renaming, cursor, draggable, tool: tools?.active ?? null };
@@ -459,5 +466,61 @@ describe('cueSheet in edit mode', () => {
     const { cueSheet, sent } = editing(1);
     cueSheet.press('a');
     expect(sent()).toEqual(asSent(ENTER_POSE));
+  });
+});
+
+describe('cueSheet in storage', () => {
+  it('starts a second sheet on the same storage with the sheet the first one saved', () => {
+    const storage = memoryStorage();
+    const { cueSheet } = editing(0, storage);
+    cueSheet.rename(1, 'X');
+    cueSheet.merge(3, 4);
+    transition(cueSheet, 'Save');
+    expect(storage.entries.has('cueSheet.v1')).toBe(true);
+    const { cueSheet: reloaded } = setup(SHEET, storage);
+    expect(get(reloaded.strip).cells).toEqual(get(cueSheet.strip).cells);
+    expect(get(reloaded.strip).cells).not.toEqual(SHEET);
+  });
+
+  it.each(['Cancel', 'Reset'])('leaves the storage as it is after edits and %s', (_name) => {
+    const storage = memoryStorage();
+    const { cueSheet } = editing(0, storage);
+    cueSheet.rename(0, 'Saved');
+    transition(cueSheet, 'Save');
+    const before = [...storage.entries];
+    transition(cueSheet, 'Edit');
+    editAll(cueSheet);
+    transition(cueSheet, _name);
+    expect([...storage.entries]).toEqual(before);
+  });
+
+  it.each([
+    'not json',
+    '[]',
+    '[{"label":1}]',
+    '{"label":"A","steps":[],"changes":[],"items":[]}',
+    '[{"label":"A","steps":[],"changes":[],"items":[{"label":"B","steps":[],"changes":[]}]}]',
+  ])('starts from the given cues when the storage holds %s', (_stored) => {
+    const { cueSheet } = setup(SHEET, memoryStorage(new Map([['cueSheet.v1', _stored]])));
+    expect(get(cueSheet.strip).cells).toEqual(SHEET);
+  });
+
+  it('works in memory on a storage that throws on every access', () => {
+    const refuse = () => {
+      throw new Error('Storage is forbidden.');
+    };
+    const { cueSheet } = setup(SHEET, { getItem: refuse, setItem: refuse });
+    expect(get(cueSheet.strip).cells).toEqual(SHEET);
+    expect(() => {
+      transition(cueSheet, 'Edit');
+      editAll(cueSheet);
+      transition(cueSheet, 'Reset');
+      editAll(cueSheet);
+      transition(cueSheet, 'Cancel');
+      transition(cueSheet, 'Edit');
+      cueSheet.rename(1, 'X');
+      transition(cueSheet, 'Save');
+    }).not.toThrow();
+    expect(get(cueSheet.strip).cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
   });
 });

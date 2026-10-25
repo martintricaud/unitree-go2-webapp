@@ -1,16 +1,50 @@
-import { clamp, first, isIncludedIn, keys, mapValues, range, splice, unique } from 'remeda';
+import { clamp, first, isIncludedIn, isPlainObject, isString, keys, mapValues, range, splice, unique } from 'remeda';
 import { derived, get, readonly, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { robot } from './robot';
 
+/// The storage key of the saved sheet. A change to the shape of `Cue` must change it, so that
+/// sheets stored in the old shape are ignored.
+const KEY = 'cueSheet.v1';
+
+/// A stored value is taken for a cue when it has a string label and arrays of steps, changes and
+/// constituents, the constituents being cues in turn. The steps and changes are not inspected.
+const isCue = (_value: unknown): _value is Cue =>
+    isPlainObject(_value) &&
+    isString(_value.label) &&
+    Array.isArray(_value.steps) &&
+    Array.isArray(_value.changes) &&
+    Array.isArray(_value.items) &&
+    _value.items.every(isCue);
+
+/// Runs `_act`, or gives `_fallback` when it throws. Storage can be missing, full or forbidden,
+/// and the sheet must keep working in memory in every case.
+const attempt = <T>(_act: () => T, _fallback: T) => {
+    try {
+        return _act();
+    } catch {
+        return _fallback;
+    }
+};
+
 /// Creates the cue sheet the operator steps through. It sends cues and toggles to `_robot`.
 /// In play mode the sheet fires its saved cells; in edit mode the operator changes a draft of them,
-/// which Save makes the saved sheet.
-export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => {
-    /// The cells play mode fires.
-    const sheet = writable<Cue[]>(_cues);
+/// which Save makes the saved sheet and writes to `_storage`.
+export const createCueSheet = (
+    _cues: typeof CONDUITE,
+    _robot: typeof robot,
+    _storage: Pick<Storage, 'getItem' | 'setItem'>,
+) => {
+    /// The cells play mode fires: the sheet last saved to `_storage`, or `_cues` when `_storage`
+    /// holds no non-empty list of cues.
+    const sheet = writable<Cue[]>(
+        attempt(() => {
+            const stored: unknown = JSON.parse(_storage.getItem(KEY) ?? 'null');
+            return Array.isArray(stored) && stored.length > 0 && stored.every(isCue) ? stored : _cues;
+        }, _cues),
+    );
     const pointer = writable(0);
     const pressed = writable<number | null>(null);
 
@@ -178,6 +212,7 @@ export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => 
             transitions: {
                 Save: () => {
                     sheet.set(_draft.cells);
+                    attempt(() => _storage.setItem(KEY, JSON.stringify(_draft.cells)), undefined);
                     pointer.set(_draft.pointer);
                     pressed.set(null);
                     draft.set(null);
@@ -237,5 +272,6 @@ export const createCueSheet = (_cues: typeof CONDUITE, _robot: typeof robot) => 
     };
 };
 
-/// The app's cue sheet, the show's running order, sent to the app's robot.
-export const cueSheet = createCueSheet(CONDUITE, robot);
+/// The app's cue sheet, the show's running order or the sheet last saved in the browser, sent to
+/// the app's robot.
+export const cueSheet = createCueSheet(CONDUITE, robot, globalThis.localStorage);
