@@ -91,12 +91,6 @@ button:focus-visible {
   padding-bottom: 1em;
 }
 
-.double-col {
-  display: flex;
-  gap: 0.5em;
-  flex-wrap: nowrap;
-  justify-content: space-around;
-}
 
 .button-grid {
   column-fill: balance;

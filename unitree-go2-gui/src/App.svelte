@@ -74,11 +74,6 @@
         >
             Content + Red
         </button> -->
-        <div class="double-col">
-            <p>Websocket: {$robot.channelOpen ? '✅' : '❌'}</p>
-            <p>Robot: {$robot.robotConnected ? '✅' : '❌'}</p>
-        </div>
-
         <Switch
             label={'Lidar'}
             value={$robot.lidarOn}
