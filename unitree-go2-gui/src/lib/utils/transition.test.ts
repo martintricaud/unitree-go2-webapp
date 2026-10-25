@@ -14,7 +14,7 @@ import {
   transition,
   wait,
 } from './commands';
-import type { Cue, RobotState, Step } from './commands';
+import type { Cue, PostureRequest, RobotState } from './commands';
 import type { Confirmable } from './confirmable';
 import { presets } from '../data/cues';
 
@@ -107,16 +107,20 @@ describe('transition', () => {
   });
 
   it('refuses commands that do not exist, at compile time', () => {
-    // @ts-expect-error 'Sit' is a request, not a gait or a posture.
-    enter('Sit');
-    // @ts-expect-error 'Stairs' is a gait the robot reports but the app cannot command.
-    enter('Stairs');
-    // @ts-expect-error 'Pose' is a posture, not an action.
-    perform('Pose');
-    // @ts-expect-error 'Leaping' is a gait, not a posture, so it cannot be left.
-    leave('Leaping');
+    // Type-checked but never called: a constructor reads the request tables, so it throws on these.
+    const refused = () => {
+      // @ts-expect-error 'Sit' is a request, not a gait or a posture.
+      enter('Sit');
+      // @ts-expect-error 'Stairs' is a gait the robot reports but the app cannot command.
+      enter('Stairs');
+      // @ts-expect-error 'Pose' is a posture, not an action.
+      perform('Pose');
+      // @ts-expect-error 'Leaping' is a gait, not a posture, so it cannot be left.
+      leave('Leaping');
+    };
+    expect(refused).toBeDefined();
     // @ts-expect-error 'Sit' takes no flag.
-    const flagged: Step = ['Sit', true];
+    const flagged: PostureRequest = ['Sit', true];
     expect(flagged).toBeDefined();
     // @ts-expect-error 'pink' is not a headlight colour.
     set({ name: 'headlight', value: 'pink' });

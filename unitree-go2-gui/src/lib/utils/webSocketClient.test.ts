@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
-import { WebSocketClient, encode } from './webSocketClient';
+import { WebSocketClient } from './webSocketClient';
 import type { Sink } from './webSocketClient';
 import {
     lidarOn,
@@ -141,10 +141,10 @@ describe('request', () => {
         vi.useRealTimers();
     });
 
-    it('sends the encoded cue, tagged with the request id it returns', async () => {
+    it("sends the cue as one sequence of its steps, named by its label and tagged with the request id it returns", async () => {
         const { client, socket } = openClient();
         const { reqId, verdict: answer } = client.request(HELLO);
-        expect(socket.written[0]).toEqual({ ...encode(HELLO), reqId });
+        expect(socket.written[0]).toEqual({ kind: 'sequence', command_name: 'Hello', sequence: HELLO.steps, reqId });
         await client.received(resultFor(reqIdOf(socket), 'confirmed', 0));
         await answer;
     });

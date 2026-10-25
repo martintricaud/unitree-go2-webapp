@@ -1,8 +1,7 @@
 import { entries, isEmpty, isIncludedIn, values } from 'remeda';
-import { SPORT_API } from '../data/sportApi';
-import { BRIGHTNESS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
-import { BALANCE_STAND_CODE, GAITS, POSTURES, TRANSIENT_CODES, cueLabel, isPosture } from './commands';
-import type { Cue, RobotState, SportRequest, Step } from './commands';
+import { SPEED_LEVELS } from '../data/settings';
+import { BALANCE_STAND_CODE, GAITS, POSTURES, TRANSIENT_CODES } from './commands';
+import type { Cue, RobotState } from './commands';
 import { OUTCOMES, outcomeLog, recorded } from '../stores/outcomes';
 import type { Outcome } from '../stores/outcomes';
 import {
@@ -34,90 +33,6 @@ type RelayMessage =
     /// The robot's `rt/lf/sportmodestate` report, sent only when one of its fields changes. Null for
     /// a field the report did not carry, or for a motion-control mode the relay could not read.
     | { type: 'sport_state'; motionMode: string | null; mode: number | null; errorCode: number | null };
-
-/// A cue as the relay reads it.
-type Wire =
-    | {
-          kind: 'command';
-          topic: string;
-          api_id: number;
-          command_name: string;
-          parameter?: Record<string, unknown>;
-      }
-    | { kind: 'wait'; wait: number }
-    | { kind: 'sequence'; displayName?: string; sequence: Wire[] };
-
-/// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
-const sportCommand = (_request: SportRequest, _flag = true): Wire => ({
-    kind: 'command',
-    topic: 'SPORT_MOD',
-    api_id: SPORT_API[_request].api_id,
-    command_name: _request,
-    ...('flag' in SPORT_API[_request] ? { parameter: { data: _flag } } : {}),
-});
-
-const stepCommand = (_step: Step) =>
-    typeof _step === 'string' ? sportCommand(_step) : sportCommand(_step[0], _step[1]);
-
-/// The wire cues a cue sends in a row. A posture's entry or exit sends each of its steps; any other
-/// cue is one wire cue. A sequence splices its items' rows, so the steps of a posture inside a named
-/// sequence run under that name.
-function row(_cue: Cue): Wire[] {
-    switch (_cue.kind) {
-        case 'enter':
-            return isPosture(_cue.target)
-                ? POSTURES[_cue.target].enter.map(stepCommand)
-                : [sportCommand(GAITS[_cue.target].enter)];
-        case 'leave':
-            return POSTURES[_cue.posture].exit.map(stepCommand);
-        default:
-            return [encode(_cue)];
-    }
-}
-
-export function encode(_cue: Cue): Wire {
-    switch (_cue.kind) {
-        case 'enter':
-        case 'leave': {
-            const [first, ...rest] = row(_cue);
-            return rest.length === 0 ? first : { kind: 'sequence', displayName: cueLabel(_cue), sequence: [first, ...rest] };
-        }
-        case 'perform':
-            return sportCommand(_cue.action);
-        case 'recover':
-            return sportCommand('RecoveryStand');
-        case 'set': {
-            const { topic, api_id, command_name, argument } = SETTINGS[_cue.setting.name];
-            return {
-                kind: 'command',
-                topic,
-                api_id,
-                command_name,
-                parameter: { [argument]: _cue.setting.value },
-            };
-        }
-        case 'orient':
-            return {
-                kind: 'command',
-                topic: EULER.topic,
-                api_id: EULER.api_id,
-                command_name: EULER.command_name,
-                parameter: { x: _cue.x, y: _cue.y, z: _cue.z },
-            };
-        case 'dim':
-            return {
-                kind: 'command',
-                topic: BRIGHTNESS.topic,
-                api_id: BRIGHTNESS.api_id,
-                command_name: BRIGHTNESS.command_name,
-                parameter: { [BRIGHTNESS.argument]: _cue.brightness },
-            };
-        case 'wait':
-            return { kind: 'wait', wait: _cue.seconds };
-        case 'sequence':
-            return { kind: 'sequence', displayName: _cue.label, sequence: _cue.items.flatMap(row) };
-    }
-}
 
 const RELAY_URL = 'ws://localhost:8000/ws';
 
@@ -299,12 +214,12 @@ export class WebSocketClient {
         }
     }
 
-    /// Send a cue. Returns at once with the id the relay sees and a promise of the relay's verdict,
+    /// Send a cue as one sequence of its steps, named by its label. Returns at once with the id the relay sees and a promise of the relay's verdict,
     /// so the caller can attach its own bookkeeping to the same id.
     request(cue: Cue): { reqId: number; verdict: Promise<Outcome> } {
         const reqId = (this.lastRequestId += 1);
-        const label = cueLabel(cue);
-        if (!this.send({ ...encode(cue), reqId })) {
+        const { label } = cue;
+        if (!this.send({ kind: 'sequence', command_name: label, sequence: cue.steps, reqId })) {
             const outcome = CHANNEL_CLOSED(reqId, label, Date.now());
             this.stores.outcomeLog.update(recorded(outcome));
             return { reqId, verdict: Promise.resolve(outcome) };

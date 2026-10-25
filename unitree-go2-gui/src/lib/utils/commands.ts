@@ -12,9 +12,9 @@ type FlagRequest = {
 
 /// One request a posture's entry or exit sends: a request without argument, or a flag request
 /// with the flag it sends.
-export type Step = Exclude<SportRequest, FlagRequest> | readonly [FlagRequest, boolean];
+export type PostureRequest = Exclude<SportRequest, FlagRequest> | readonly [FlagRequest, boolean];
 
-type Steps = readonly [Step, ...Step[]];
+type PostureRequests = readonly [PostureRequest, ...PostureRequest[]];
 
 /// The ways the robot walks. In a gait the robot can walk, and standing still is part of the gait.
 /// `enter` is the request that enters the gait; a gait without one is reported by the robot but
@@ -49,7 +49,7 @@ export const POSTURES = {
     Lying: { enter: ['StandDown'], exit: ['StandUp', 'BalanceStand'], codes: [1004] },
     JointLock: { enter: ['StandUp'], exit: ['BalanceStand'], codes: [1002] },
     Damp: { enter: ['Damp'], exit: ['RecoveryStand'], codes: [1001] },
-} as const satisfies Record<string, { enter: Steps; exit: Steps; codes: readonly number[] }>;
+} as const satisfies Record<string, { enter: PostureRequests; exit: PostureRequests; codes: readonly number[] }>;
 
 /// The one-shot movements. Each changes neither the gait nor the posture.
 export const ACTIONS = [
@@ -94,65 +94,103 @@ type Setting = {
     [K in keyof typeof SETTINGS]: { name: K; value: RobotState[K] };
 }[keyof typeof SETTINGS];
 
-/// One request to the robot. `orient` and `dim` change nothing the interface tracks.
-export type Command =
-    | { kind: 'enter'; target: CommandableGait | Posture }
-    | { kind: 'leave'; posture: Posture }
-    | { kind: 'perform'; action: Action }
-    | { kind: 'recover' }
-    | { kind: 'set'; setting: Setting }
-    | { kind: 'orient'; x: number; y: number; z: number }
-    | { kind: 'dim'; brightness: number };
+/// One message the relay sends to the robot, or a pause between two of them.
+export type Step =
+    | { kind: 'command'; topic: string; api_id: number; command_name: string; parameter?: Record<string, unknown> }
+    | { kind: 'wait'; wait: number };
 
-type Sequence = { kind: 'sequence'; label?: string; items: [Cue, ...Cue[]] };
+/// What the operator fires. `label` names it in the cue sheet and the outcome log; `steps` are the
+/// messages it sends, in order; `changes` are the fields it changes in `RobotState`, in order.
+export type Cue = { label: string; steps: Step[]; changes: Partial<RobotState>[] };
 
-export type Cue = Command | { kind: 'wait'; seconds: number } | Sequence;
+/// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
+const sportCommand = (_request: SportRequest, _flag = true): Step => ({
+    kind: 'command',
+    topic: 'SPORT_MOD',
+    api_id: SPORT_API[_request].api_id,
+    command_name: _request,
+    ...('flag' in SPORT_API[_request] ? { parameter: { data: _flag } } : {}),
+});
 
-export const enter = (_target: CommandableGait | Posture): Command => ({ kind: 'enter', target: _target });
-export const leave = (_posture: Posture): Command => ({ kind: 'leave', posture: _posture });
-export const perform = (_action: Action): Command => ({ kind: 'perform', action: _action });
+const stepCommand = (_request: PostureRequest) =>
+    typeof _request === 'string' ? sportCommand(_request) : sportCommand(_request[0], _request[1]);
+
+/// Entering a posture keeps the gait; entering a gait leaves any posture.
+export const enter = (_target: CommandableGait | Posture): Cue =>
+    isPosture(_target)
+        ? { label: _target, steps: POSTURES[_target].enter.map(stepCommand), changes: [{ posture: _target }] }
+        : {
+              label: _target,
+              steps: [sportCommand(GAITS[_target].enter)],
+              changes: [{ gait: _target, posture: null }],
+          };
+
+export const leave = (_posture: Posture): Cue => ({
+    label: `Exit ${_posture}`,
+    steps: POSTURES[_posture].exit.map(stepCommand),
+    changes: [{ posture: null }],
+});
+
+export const perform = (_action: Action): Cue => ({ label: _action, steps: [sportCommand(_action)], changes: [] });
+
 /// RecoveryStand: from any state, the robot stands in its gait, in no posture.
-export const recover = (): Command => ({ kind: 'recover' });
-export const set = (_setting: Setting): Command => ({ kind: 'set', setting: _setting });
-export const orient = (_x: number, _y: number, _z: number): Command => ({
-    kind: 'orient',
-    x: _x,
-    y: _y,
-    z: _z,
-});
-export const dim = (_brightness: number): Command => ({ kind: 'dim', brightness: _brightness });
-export const wait = (_seconds: number): Cue => ({ kind: 'wait', seconds: _seconds });
-
-/// An empty label leaves the sequence unnamed.
-export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Sequence => ({
-    kind: 'sequence',
-    label: _label === '' ? undefined : _label,
-    items: _items,
+export const recover = (): Cue => ({
+    label: 'RecoveryStand',
+    steps: [sportCommand('RecoveryStand')],
+    changes: [{ posture: null }],
 });
 
-/// How the cue sheet and the outcome log name a cue.
-export function cueLabel(_cue: Cue) {
-    switch (_cue.kind) {
-        case 'enter':
-            return _cue.target;
-        case 'leave':
-            return `Exit ${_cue.posture}`;
-        case 'perform':
-            return _cue.action;
-        case 'recover':
-            return 'RecoveryStand';
-        case 'set':
-            return SETTINGS[_cue.setting.name].command_name;
-        case 'orient':
-            return EULER.command_name;
-        case 'dim':
-            return BRIGHTNESS.command_name;
-        case 'wait':
-            return `⏱ ${_cue.seconds}s`;
-        case 'sequence':
-            return _cue.label ?? 'unnamed sequence';
-    }
-}
+export const set = (_setting: Setting): Cue => {
+    const { topic, api_id, command_name, argument } = SETTINGS[_setting.name];
+    return {
+        label: command_name,
+        steps: [{ kind: 'command', topic, api_id, command_name, parameter: { [argument]: _setting.value } }],
+        changes: [{ [_setting.name]: _setting.value }],
+    };
+};
+
+/// Changes nothing the interface tracks.
+export const orient = (_x: number, _y: number, _z: number): Cue => ({
+    label: EULER.command_name,
+    steps: [
+        {
+            kind: 'command',
+            topic: EULER.topic,
+            api_id: EULER.api_id,
+            command_name: EULER.command_name,
+            parameter: { x: _x, y: _y, z: _z },
+        },
+    ],
+    changes: [],
+});
+
+/// Changes nothing the interface tracks.
+export const dim = (_brightness: number): Cue => ({
+    label: BRIGHTNESS.command_name,
+    steps: [
+        {
+            kind: 'command',
+            topic: BRIGHTNESS.topic,
+            api_id: BRIGHTNESS.api_id,
+            command_name: BRIGHTNESS.command_name,
+            parameter: { [BRIGHTNESS.argument]: _brightness },
+        },
+    ],
+    changes: [],
+});
+
+export const wait = (_seconds: number): Cue => ({
+    label: `⏱ ${_seconds}s`,
+    steps: [{ kind: 'wait', wait: _seconds }],
+    changes: [],
+});
+
+/// Runs its items one after the other, as one cue. An empty label leaves the sequence unnamed.
+export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Cue => ({
+    label: _label === '' ? 'unnamed sequence' : _label,
+    steps: _items.flatMap((_item) => _item.steps),
+    changes: _items.flatMap((_item) => _item.changes),
+});
 
 export type RobotState = {
     /// Null when the gait is unknown. While the robot is in a posture, this keeps the gait it
@@ -168,36 +206,20 @@ export type RobotState = {
     obstacleAvoidance: boolean;
 };
 
-/// The state once one command or wait has run, with `previousGait` not yet updated.
-function step(_cue: Exclude<Cue, Sequence>, _state: RobotState): RobotState {
-    switch (_cue.kind) {
-        case 'enter':
-            return isPosture(_cue.target)
-                ? { ..._state, posture: _cue.target }
-                : { ..._state, gait: _cue.target, posture: null };
-        case 'leave':
-        case 'recover':
-            return { ..._state, posture: null };
-        case 'set':
-            return { ..._state, [_cue.setting.name]: _cue.setting.value };
-        case 'perform':
-        case 'orient':
-        case 'dim':
-        case 'wait':
-            return _state;
-    }
-}
-
-/// The state the robot is in once the cue has run from `_state`. A sequence runs item by item, so
-/// each gait change inside it updates `previousGait` in turn.
+/// The state the robot is in once the cue has run from `_state`. The changes apply one by one, so
+/// each gait change inside a sequence updates `previousGait` in turn.
 export function transition(_cue: Cue): (_state: RobotState) => RobotState {
     return function (_state) {
-        if (_cue.kind === 'sequence')
-            return reduce(_cue.items, (_reached, _item) => transition(_item)(_reached), _state);
-        const reached = step(_cue, _state);
-        return _state.gait !== null && reached.gait !== _state.gait
-            ? { ...reached, previousGait: _state.gait }
-            : reached;
+        return reduce(
+            _cue.changes,
+            (_before, _change) => {
+                const reached = { ..._before, ..._change };
+                return _before.gait !== null && reached.gait !== _before.gait
+                    ? { ...reached, previousGait: _before.gait }
+                    : reached;
+            },
+            _state,
+        );
     };
 }
 

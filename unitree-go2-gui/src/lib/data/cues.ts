@@ -1,8 +1,8 @@
 import { dim, enter, leave, perform, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 
-const DANSE_DU_SABBAT = sequence(
-    'Sabbat',
+/// The Sabbat dance, whose cues open the cue sheet one by one.
+const DANSE_DU_SABBAT: [Cue, ...Cue[]] = [
     enter('FreeWalk'),
     enter('Pose'),
     sequence(
@@ -14,19 +14,22 @@ const DANSE_DU_SABBAT = sequence(
         set({ name: 'headlight', value: 'blue' }),
     ),
     sequence('Wizard of Oz', enter('ClassicWalk'), wait(0.1), set({ name: 'headlight', value: 'green' })),
-);
+];
+
+const CONTENT_RED: [Cue, ...Cue[]] = [
+    set({ name: 'headlight', value: 'red' }),
+    wait(0.1),
+    perform('Content'),
+    wait(0.5),
+    enter('FreeWalk'),
+];
+
+const EXIT_SIT: [Cue, ...Cue[]] = [leave('Sitting'), enter('FreeWalk')];
 
 /// Cues the operator fires from a key or a button rather than from the cue sheet.
 export const presets = {
-    contentRed: sequence(
-        '',
-        set({ name: 'headlight', value: 'red' }),
-        wait(0.1),
-        perform('Content'),
-        wait(0.5),
-        enter('FreeWalk'),
-    ),
-    exitSit: sequence('', leave('Sitting'), enter('FreeWalk')),
+    contentRed: sequence('', ...CONTENT_RED),
+    exitSit: sequence('', ...EXIT_SIT),
     dance: sequence('Dance', perform('Dance2'), wait(0.1), enter('FreeWalk')),
 };
 
@@ -46,7 +49,7 @@ const STRETCH_HELLO_JUMP = sequence(
 
 const MONOLOGUE = [
     enter('Sitting'),
-    sequence('FreeWalk', ...presets.exitSit.items),
+    sequence('FreeWalk', ...EXIT_SIT),
     sequence('Chien', enter('Leaping')),
     enter('FreeWalk'),
     presets.dance,
@@ -57,7 +60,7 @@ const MONOLOGUE = [
     // enter('FreeWalk'),
     // sequence('Visée Public 3', enter('Pose')),
     // enter('FreeWalk'),
-    sequence('Ahahah Redlight', ...presets.contentRed.items),
+    sequence('Ahahah Redlight', ...CONTENT_RED),
     sequence(
         'Assis Whitelight',
         enter('JointLock'),
@@ -72,7 +75,7 @@ const MONOLOGUE = [
 
 /// The performance cue sheet, which the operator steps through with the arrow keys.
 export const CONDUITE: [Cue, ...Cue[]] = [
-    ...DANSE_DU_SABBAT.items,
+    ...DANSE_DU_SABBAT,
     STRETCH_HELLO_JUMP,
     sequence('Content', perform('Content'), wait(0.05), enter('FreeWalk')),
     sequence('Picture me...', enter('Pose')),

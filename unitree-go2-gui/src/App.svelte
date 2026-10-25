@@ -14,7 +14,6 @@
         GAITS,
         POSTURES,
         activeMode,
-        cueLabel,
         enter,
         isCommandable,
         perform,
@@ -175,7 +174,7 @@
                 class:pressed={i === $pressed}
                 on:click={() => cueSheet.send(i)}
             >
-                {cueLabel(action)}
+                {action.label}
             </button>
         {/each}
 </div>
