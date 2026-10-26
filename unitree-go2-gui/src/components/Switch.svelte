@@ -79,7 +79,6 @@
         background-color: rgb(230, 230, 230);
         position: relative;
         left:-1px;
-        top: -1px;
         width: calc(var(--slider-size) - 6px);
         height: calc(var(--slider-size) - 6px);
         /* border-style: outset;

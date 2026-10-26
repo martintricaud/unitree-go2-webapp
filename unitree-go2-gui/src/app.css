@@ -131,10 +131,11 @@ button:focus-visible {
   text-align: left !important;
 }
 
-/* The list must not start with the generic `monospace`: browsers give that family a smaller
-   default size, and each browser resolves it to its own font. */
+/* Named fonts only at the front: the generic `monospace` gets a smaller default size, and
+   `ui-monospace` is SF Mono in Safari but unsupported in Chrome, so each browser would draw
+   its own font. With Menlo first, both browsers draw Menlo on macOS. */
 * {
-  font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+  font-family: Menlo, Consolas, 'Courier New', monospace;
   box-sizing: border-box;
   scrollbar-color: rgba(128, 128, 128, 0) !important;
   scrollbar-width: none !important;
