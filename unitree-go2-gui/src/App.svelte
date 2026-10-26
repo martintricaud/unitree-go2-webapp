@@ -12,7 +12,6 @@
         ACTIONS,
         GAITS,
         POSTURES,
-        activeMode,
         enter,
         isCommandable,
         perform,
@@ -112,12 +111,24 @@
         {/each}
         <button disabled={!$robot.robotConnected} on:click={() => sendToRobot(recover())}>RecoveryStand</button>
     </div>
+    <!-- The gait stays ticked during a posture, as the gait the robot returns to when it leaves it. -->
     <div class="button-grid">
-        {#each [...keys(GAITS).filter(isCommandable), ...keys(POSTURES)] as target}
+        {#each keys(GAITS).filter(isCommandable) as target}
             <Radio
                 optionName={target}
-                selected={activeMode($robot.state.settled) === target}
-                spinning={activeMode(shown) === target && activeMode(shown) !== activeMode($robot.state.settled)}
+                selected={$robot.state.settled.gait === target}
+                spinning={$robot.state.pending.gait?.value === target}
+                disabled={!$robot.robotConnected || !($robot.reported.gait || $robot.reported.posture)}
+                callback={() => sendToRobot(enter(target))}
+            />
+        {/each}
+    </div>
+    <div class="button-grid">
+        {#each keys(POSTURES) as target}
+            <Radio
+                optionName={target}
+                selected={$robot.state.settled.posture === target}
+                spinning={$robot.state.pending.posture?.value === target}
                 disabled={!$robot.robotConnected || !($robot.reported.gait || $robot.reported.posture)}
                 callback={() => sendToRobot(enter(target))}
             />

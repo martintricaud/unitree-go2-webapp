@@ -212,6 +212,3 @@ export type RobotState = {
 export const transition =
     (_cue: Cue) =>
     (_state: RobotState): RobotState => ({ ..._state, ...mergeAll(_cue.changes) });
-
-/// What the mode buttons show: the posture when there is one, otherwise the gait.
-export const activeMode = (_state: Pick<RobotState, 'gait' | 'posture'>) => _state.posture ?? _state.gait;

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  activeMode,
   dim,
   enter,
   leave,
@@ -72,11 +71,6 @@ describe('transition', () => {
     STATES.forEach((state) => {
       expect(transition(sequence('', enter('Sitting'), leave('Sitting')))(state)).toEqual({ ...state, posture: null });
     });
-  });
-
-  it('shows the posture when there is one, otherwise the gait', () => {
-    expect(activeMode(INITIAL_ROBOT_STATE)).toBe('FreeWalk');
-    expect(activeMode(STATES[2])).toBe('Lying');
   });
 
   it('is the identity for a one-shot action, an orientation, a dim and a wait', () => {
