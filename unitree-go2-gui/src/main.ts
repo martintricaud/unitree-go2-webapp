@@ -1,6 +1,6 @@
 import { mount } from 'svelte'
 
-import 'modern-normalize/modern-normalize.css'
+import '@acab/reset.css'
 import './app.css'
 import App from './App.svelte'
 

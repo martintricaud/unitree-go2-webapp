@@ -51,6 +51,9 @@
         font-size: 0;
         flex-shrink: 0;
         position: relative;
+        /* The knob's `left` is measured from the track's left edge, so the knob must start there
+           instead of at the centre that the global button rule sets. */
+        justify-content: flex-start;
         width: var(--switch-width);
         line-height: 1;
         height: 24px;

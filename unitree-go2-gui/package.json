@@ -26,10 +26,9 @@
     "npm": "10.9.4"
   },
   "dependencies": {
+    "@acab/reset.css": "^0.11.0",
     "@mediapipe/tasks-vision": "^0.10.22-rc.20250304",
     "@types/ramda": "^0.31.1",
-    "hack": "^0.8.1",
-    "modern-normalize": "^3.0.1",
     "ramda": "^0.32.0",
     "remeda": "^2.34.1",
     "three": "^0.182.0"

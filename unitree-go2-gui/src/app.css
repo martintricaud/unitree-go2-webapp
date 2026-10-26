@@ -35,28 +35,48 @@ body {
   background-color: rgb(230, 230, 230);
 }
 
+/* The reset unsets every button property, so this rule draws the whole button. inline-flex
+   centres the content vertically, as a native button does when it is taller than its content. */
 button {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   line-height: 1em;
   vertical-align: middle !important;
-  border-width: 4px;
+  border: 4px outset rgb(118, 118, 118);
+  background-color: rgb(239, 239, 239);
+  color: rgb(0, 0, 0);
   padding: 0.6em 0.6em;
-  font-weight: 500;
   font-family: inherit;
+  font-weight: 500;
+  font-size: .9em;
   cursor: pointer;
   min-height: 3em;
   white-space: nowrap;
-  font-size: .9em;
-
+  user-select: none;
 }
 
 button:hover {
   font-weight: bold;
 }
 
-button:focus,
+/* :where() keeps the states at the specificity of `button`, so a component's own button rule
+   still overrides them. */
+button:where(:active:not(:disabled)) {
+  border-style: inset;
+}
+
+button:where(:disabled) {
+  color: rgb(16 16 16 / 0.3);
+  border-color: rgb(118 118 118 / 0.3);
+  background-color: rgb(239 239 239 / 0.3);
+  cursor: not-allowed;
+}
+
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid rgb(0, 95, 204);
+  outline-offset: 1px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -111,8 +131,10 @@ button:focus-visible {
   text-align: left !important;
 }
 
+/* The list must not start with the generic `monospace`: browsers give that family a smaller
+   default size, and each browser resolves it to its own font. */
 * {
-  font-family: monospace, 'Courier New', Courier, monospace;
+  font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
   box-sizing: border-box;
   scrollbar-color: rgba(128, 128, 128, 0) !important;
   scrollbar-width: none !important;
