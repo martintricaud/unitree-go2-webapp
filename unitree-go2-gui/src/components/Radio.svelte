@@ -1,17 +1,19 @@
 <script lang="ts">
-    export let optionName: string;
-    /// Whether the group is showing this option. Its owner holds it: this component never
-    /// writes it, so the tick cannot sit on an option its owner never agreed to.
-    export let selected: boolean = false;
-    /// Whether a command proposing this option is waiting for the robot's verdict.
-    export let spinning: boolean = false;
-    export let disabled: boolean = false;
-    export let callback: () => void;
+    let props: {
+        optionName: string;
+        /// Whether the group is showing this option. Its owner holds it: this component never
+        /// writes it, so the tick cannot sit on an option its owner never agreed to.
+        selected: boolean;
+        /// Whether a command proposing this option is waiting for the robot's verdict.
+        spinning: boolean;
+        disabled: boolean;
+        callback: () => void;
+    } = $props();
 </script>
 
-<button {disabled} on:click={callback}>
-    {optionName}
-    {#if spinning}<span class="spinner" aria-label="waiting for the robot"></span>{:else if selected}✅{/if}
+<button disabled={props.disabled} onclick={props.callback}>
+    {props.optionName}
+    {#if props.spinning}<span class="spinner" aria-label="waiting for the robot"></span>{:else if props.selected}✅{/if}
 </button>
 
 <style>

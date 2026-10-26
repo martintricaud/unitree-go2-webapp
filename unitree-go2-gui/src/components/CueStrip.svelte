@@ -9,10 +9,10 @@
     /// The sweep in progress, as the cell `a` the press started on and the cell `b` under the pointer;
     /// empty while no button is pressed on a cell. A release on a cell completes the sweep; a release
     /// anywhere else only ends it.
-    let sweeps: { a: number; b: number }[] = [];
+    let sweeps: { a: number; b: number }[] = $state([]);
 
     /// The indices of the cells the sweep in progress highlights.
-    $: swept = flatMap(sweeps, ({ a, b }) => pipe(span(a, b), ([_lo, _hi]) => range(_lo, _hi + 1)));
+    let swept = $derived(flatMap(sweeps, ({ a, b }) => pipe(span(a, b), ([_lo, _hi]) => range(_lo, _hi + 1))));
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
     /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
@@ -57,23 +57,23 @@
 <div
     id="sidebar"
     class="actionsequence"
-    style:cursor={cueSheet.instruments[$cueSheet.instrument].cursor}
+    style:cursor={cueSheet.instruments[cueSheet.state.instrument].cursor}
     bind:this={strip}
     onpointerdown={(event) => (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index })))}
     onpointerover={(event) => (sweeps = map(sweeps, ({ a, b }) => ({ a, b: last([b, ...cellAt(event)]) })))}
     onpointerup={(event) => forEach(sweeps, ({ a }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b)))}
 >
-    {#if $cueSheet.instrument !== 'Fire'}
+    {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar top">
             {#each ['Move', 'Rename', 'Group', 'Ungroup'] as const as name}
-                <button class:active={$cueSheet.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
+                <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
             {/each}
         </div>
     {/if}
-    {#each $cueSheet.cells as cell, i}
-        <div class="cell" data-index={i} class:active-step={i === $cueSheet.pointer} class:pressed={i === $cueSheet.pressed}
+    {#each cueSheet.state.cells as cell, i}
+        <div class="cell" data-index={i} class:active-step={i === cueSheet.state.pointer} class:pressed={i === cueSheet.state.pressed}
             class:swept={isIncludedIn(i, swept)}>
-            {#if $cueSheet.renaming === i}
+            {#if cueSheet.state.renaming === i}
                 <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
             {:else}
                 <span>{cell.label}</span>
@@ -84,7 +84,7 @@
         </div>
     {/each}
     <div class="bar bottom">
-        {#if $cueSheet.instrument === 'Fire'}
+        {#if cueSheet.state.instrument === 'Fire'}
             <button onclick={() => cueSheet.choose('Move')}>Edit</button>
         {:else}
             <button onclick={() => cueSheet.save()}>Save</button>

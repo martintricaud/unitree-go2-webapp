@@ -197,14 +197,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'sub
 
     /// Every key starts on its binding in `keyBindings`; writing `bindings` rebinds a key while the
     /// app runs, to any binding the table holds.
-    #bindings = $state.raw<Record<keyof CueSheet['keyBindings'], CueSheet['keyBindings']['a']>>(this.keyBindings);
-
-    /// The bindings as a writable store, which `ControllerEmulation` reads with `$bindings`.
-    bindings = toStore(() => this.#bindings, (_bindings) => (this.#bindings = _bindings));
+    bindings = $state.raw<Record<keyof CueSheet['keyBindings'], CueSheet['keyBindings']['a']>>(this.keyBindings);
 
     /// Runs the `_phase` of the binding of `_key`. An unbound key matches no binding.
     #run = (_phase: 'press' | 'release') => (_key: string) =>
-        pipe(this.#bindings, entries(), filter(([_bound]) => _bound === _key), forEach(([, _binding]) => _binding[_phase]()));
+        pipe(this.bindings, entries(), filter(([_bound]) => _bound === _key), forEach(([, _binding]) => _binding[_phase]()));
 
     press = this.#run('press');
     release = this.#run('release');

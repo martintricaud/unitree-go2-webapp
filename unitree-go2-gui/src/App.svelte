@@ -27,17 +27,17 @@
     /* STATE VARIABLES */
 
     /// Local display only: these two toggle what the video overlay draws and reach no robot.
-    let FACE_DETECTION = false;
-    let FACE_LANDMARKS = false;
+    let FACE_DETECTION = $state(false);
+    let FACE_LANDMARKS = $state(false);
 
     /// Every robot command leaves the browser through here, so every control the command
     /// affects shows the change and the robot's verdict on it.
     const sendToRobot = (_cue: Cue) => void robot.request(_cue);
 
     /// Whether the left sidebar holding the controller emulator is open. It starts closed.
-    let drawerOpen = false;
+    let drawerOpen = $state(false);
 
-    $: shown = displayed($robot.state);
+    let shown = $derived(displayed($robot.state));
 
     onMount(() => {
         robot.connect();
@@ -54,8 +54,8 @@
     <ControllerEmulation callback={(key, down) => (down ? cueSheet.press(key) : cueSheet.release(key))} />
 </aside>
 <svelte:window
-    on:keyup={(event) => cueSheet.release(event.key)}
-    on:keydown={(event) => {
+    onkeyup={(event) => cueSheet.release(event.key)}
+    onkeydown={(event) => {
         // A cancelled Escape keydown would stop Escape from closing the log popover.
         if (event.key !== 'Escape') event.preventDefault();
         // A held key repeats its keydown; every binding acts once per press.
@@ -66,7 +66,7 @@
 <div class="ui-pane">
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <!-- <button
-            on:click={() => {
+            onclick={() => {
                 sendToRobot(presets.contentRed);
             }}
         >
@@ -105,11 +105,11 @@
     </div>
     <div class="button-grid">
         {#each ACTIONS as action}
-            <button disabled={!$robot.robotConnected} on:click={() => sendToRobot(perform(action))}>
+            <button disabled={!$robot.robotConnected} onclick={() => sendToRobot(perform(action))}>
                 {action}
             </button>
         {/each}
-        <button disabled={!$robot.robotConnected} on:click={() => sendToRobot(recover())}>RecoveryStand</button>
+        <button disabled={!$robot.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
     </div>
     <!-- The gait stays ticked during a posture, as the gait the robot returns to when it leaves it. -->
     <div class="button-grid">

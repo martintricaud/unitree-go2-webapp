@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { map, pick, times } from 'remeda';
+import { map, pick, set, times } from 'remeda';
 import { get, writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { enter, perform, sequence, wait } from '../utils/commands';
@@ -128,7 +128,7 @@ describe('cueSheet keys', () => {
 
   it('runs the binding a key was rebound to', () => {
     const { cueSheet, sent } = setup();
-    cueSheet.bindings.update((_bindings) => ({ ..._bindings, a: _bindings.y }));
+    cueSheet.bindings = set(cueSheet.bindings, 'a', cueSheet.bindings.y);
     cueSheet.press('a');
     expect(sent()).toEqual(asSent(presets.dance));
   });

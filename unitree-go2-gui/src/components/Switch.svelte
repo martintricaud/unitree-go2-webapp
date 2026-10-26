@@ -1,31 +1,33 @@
 <script lang="ts">
-    /// Where the knob sits: the value the operator asked for. Its owner holds it: this component
-    /// never writes it, so the switch cannot sit on a value its owner never agreed to.
-    export let value: boolean = false;
-    /// The track's colour: the value the robot has confirmed. It follows `value` when omitted, for
-    /// switches that wait on no robot verdict.
-    export let confirmed: boolean | undefined = undefined;
-    /// Draws a spinner in the track while a command waits for its verdict.
-    export let spinning: boolean = false;
-    export let label: string = '';
-    export let disabled: boolean = false;
-    export let callback: (next: boolean) => void;
+    let props: {
+        /// Where the knob sits: the value the operator asked for. Its owner holds it: this component
+        /// never writes it, so the switch cannot sit on a value its owner never agreed to.
+        value: boolean;
+        /// The track's colour: the value the robot has confirmed. It follows `value` when omitted, for
+        /// switches that wait on no robot verdict.
+        confirmed?: boolean;
+        /// Draws a spinner in the track while a command waits for its verdict.
+        spinning?: boolean;
+        label: string;
+        disabled?: boolean;
+        callback: (next: boolean) => void;
+    } = $props();
 </script>
 
 
 <div class="main">
-    <div>{label}</div>
+    <div>{props.label}</div>
 <button
     aria-label="Basculer l'interrupteur"
-    aria-checked={value}
+    aria-checked={props.value}
     role="switch"
     class="switch"
-    class:on={confirmed ?? value}
-    class:knob-right={value}
-    {disabled}
-    on:click={() => callback(!value)}>
+    class:on={props.confirmed ?? props.value}
+    class:knob-right={props.value}
+    disabled={props.disabled}
+    onclick={() => props.callback(!props.value)}>
     <div class="slider"></div>
-    {#if spinning}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
+    {#if props.spinning}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
 </button>
 </div>
 

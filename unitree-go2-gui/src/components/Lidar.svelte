@@ -13,8 +13,8 @@
     let animationFrameId: number;
 
     // Container dimensions
-    let width: number;
-    let height: number;
+    let width = $state(0);
+    let height = $state(0);
     let maxPointCount = 0;
     let controls : OrbitControls;
 
@@ -148,14 +148,15 @@
         };
     }
 
-    // Re-initialize scene when dimensions change
-    $: if (width && height) {
-        if (camera) camera.aspect = width / height;
-        if (camera) camera.updateProjectionMatrix();
-        if (renderer) renderer.setSize(width, height);
-    }
-
     onMount(initScene);
+
+    // Fits the camera and the renderer to the canvas's size, at mount and on every resize. Declared
+    // after `onMount`, so its first run finds the camera and the renderer that `initScene` creates.
+    $effect(() => {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    });
 </script>
 
 <!-- Your existing canvas -->

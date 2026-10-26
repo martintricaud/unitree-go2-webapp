@@ -4,11 +4,13 @@
     import type { Outcome } from '../lib/stores/outcomes';
 
     /// Whether the log popover is open. The browser owns the popover; its toggle event keeps this in step.
-    let logOpen = false;
+    let logOpen = $state(false);
 
-    /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
-    export let drawerOpen: boolean;
-    export let callback: (next: boolean) => void;
+    let props: {
+        /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
+        drawerOpen: boolean;
+        callback: (next: boolean) => void;
+    } = $props();
 </script>
 
 {#snippet summary(entry: Outcome)}
@@ -20,12 +22,12 @@
         <button
             class="toggle"
             disabled={!$robot.channelOpen}
-            on:click={() => ($robot.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
+            onclick={() => ($robot.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
         >
             {$robot.robotConnected ? 'Disconnect' : 'Connect'}
         </button>
-        <button class="toggle" on:click={() => callback(!drawerOpen)}>
-            {drawerOpen ? 'Hide' : 'Show'} controller
+        <button class="toggle" onclick={() => props.callback(!props.drawerOpen)}>
+            {props.drawerOpen ? 'Hide' : 'Show'} controller
         </button>
         <span>Websocket {$robot.channelOpen ? '✅' : '❌'}</span>
         <span>Robot {$robot.robotConnected ? '✅' : '❌'}</span>
@@ -44,7 +46,7 @@
         id="outcome-log"
         class="log"
         popover="auto"
-        on:toggle={(event) => (logOpen = event.newState === 'open')}
+        ontoggle={(event) => (logOpen = event.newState === 'open')}
     >
         <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
              duplicate key would take the whole strip down mid-performance. -->

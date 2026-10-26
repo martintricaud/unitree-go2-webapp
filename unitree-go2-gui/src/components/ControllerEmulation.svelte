@@ -16,13 +16,12 @@
         { name: 'A', key: 'a', label: 'A', area: '3 / 2' },
     ] as const;
 
-    /// Called with the button's key, and with `true` when the button is pressed and `false` when it
-    /// is released.
-    export let callback: (key: (typeof DIRECTIONS | typeof FACE_BUTTONS)[number]['key'], pressed: boolean) => void;
-    export let disabled: boolean = false;
-
-    /// A top-level binding, so the markup can subscribe to it with `$bindings`.
-    const { bindings } = cueSheet;
+    let props: {
+        /// Called with the button's key, and with `true` when the button is pressed and `false` when
+        /// it is released.
+        callback: (key: (typeof DIRECTIONS | typeof FACE_BUTTONS)[number]['key'], pressed: boolean) => void;
+        disabled?: boolean;
+    } = $props();
 </script>
 
 
@@ -32,12 +31,12 @@
             {#each block.buttons as button}
                 <button
                     aria-label={button.name}
-                    title={$bindings[button.key].label}
+                    title={cueSheet.bindings[button.key].label}
                     style:grid-area={button.area}
-                    {disabled}
-                    on:pointerdown={() => callback(button.key, true)}
-                    on:pointerup={() => callback(button.key, false)}
-                    on:pointerleave={(event) => event.buttons && callback(button.key, false)}>
+                    disabled={props.disabled}
+                    onpointerdown={() => props.callback(button.key, true)}
+                    onpointerup={() => props.callback(button.key, false)}
+                    onpointerleave={(event) => event.buttons && props.callback(button.key, false)}>
                     {button.label}
                 </button>
             {/each}

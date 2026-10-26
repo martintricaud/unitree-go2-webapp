@@ -19,8 +19,10 @@
 
     let webcamOn = false;
     let horizontalScale = -1;
-    export let faceLandmarksEnabled: boolean = true;
-    export let faceDetectionEnabled: boolean = true;
+    let props: {
+        faceLandmarksEnabled: boolean;
+        faceDetectionEnabled: boolean;
+    } = $props();
     let canvas: HTMLCanvasElement;
     let liveView: HTMLElement;
     let ctx: CanvasRenderingContext2D;
@@ -42,7 +44,8 @@
     let drawingUtils: DrawingUtils;
     let lastTs = 0;
 
-    let cw, ch;
+    let cw = $state(0);
+    let ch = $state(0);
 
     function initFaceDetection() {
         FilesetResolver.forVisionTasks('wasm')
@@ -188,12 +191,12 @@
             const now = performance.now();
             if (now <= lastTs) return;
             lastTs = now;
-            if (faceLandmarker && faceLandmarksEnabled) {
+            if (faceLandmarker && props.faceLandmarksEnabled) {
                 landmarkDetectionResult = faceLandmarker.detectForVideo(canvas, now);
                 if (!landmarkDetectionResult.faceLandmarks) return;
                 drawFaceLandmarks(landmarkDetectionResult.faceLandmarks);
             }
-            if (faceDetector && faceDetectionEnabled) {
+            if (faceDetector && props.faceDetectionEnabled) {
                 // faceDetectionResult = faceDetector.detectForVideo(canvas, now);
                 faceDetectionResult.set(faceDetector.detectForVideo(canvas, now));
                 if (!$faceDetectionResult.detections) return;
