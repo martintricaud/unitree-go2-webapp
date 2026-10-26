@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { entries, isIncludedIn } from 'remeda';
+    import { entries, isEmpty, isIncludedIn } from 'remeda';
     import { cueSheet } from '../lib/stores/cueSheet';
+    import type { Cue } from '../lib/utils/commands';
 
     /// Top-level binding, so the markup can subscribe to it with `$strip`.
     const { strip } = cueSheet;
@@ -13,6 +14,11 @@
     /// while no button is pressed on a cell. A release on a cell completes the sweep; a release
     /// anywhere else only ends it.
     let sweeps: [number, number][] = [];
+
+    /// The number of robot commands a group cell sends, counting its nested groups and not its
+    /// waits; 0 for a cell that is not a group, so only a group shows a count.
+    const commandCount = (_cell: Cue) =>
+        isEmpty(_cell.items) ? 0 : _cell.steps.filter((_step) => _step.kind === 'command').length;
 
     /// Makes `_span` the editable label of cell `_index`. It takes the focus with its text selected,
     /// so typing replaces the label, and no typed key reaches the window shortcuts. Moving the focus
@@ -74,6 +80,9 @@
             {:else}
                 <span>{cell.label}</span>
             {/if}
+            {#if commandCount(cell) > 1}
+                <span>({commandCount(cell)})</span>
+            {/if}
         </button>
     {/each}
     <div class="bar bottom">
@@ -121,8 +130,10 @@
         font-weight: bold;
     }
 
-    /* A cell shows the strip's cursor, which depends on the tool. A long label wraps inside its cell. */
+    /* A cell shows the strip's cursor, which depends on the tool. A long label wraps inside its cell.
+       The gap separates the label from the command count, since a flex container drops the space. */
     .cell {
+        gap: 1ch;
         cursor: inherit;
         white-space: normal;
         overflow-wrap: anywhere;
