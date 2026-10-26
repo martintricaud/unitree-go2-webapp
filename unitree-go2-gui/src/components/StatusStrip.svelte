@@ -40,7 +40,12 @@
             {logOpen ? 'Hide' : 'Show'} log ({$outcomeLog.length})
         </button>
     </div>
-    <ol id="outcome-log" class="log" popover="auto" on:toggle={(event) => (logOpen = event.newState === 'open')}>
+    <ol
+        id="outcome-log"
+        class="log"
+        popover="auto"
+        on:toggle={(event) => (logOpen = event.newState === 'open')}
+    >
         <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
              duplicate key would take the whole strip down mid-performance. -->
         {#each $outcomeLog as entry}
@@ -91,12 +96,13 @@
         border-width: 2px;
     }
 
-    /* The reset removes most of the browser's popover styles, so the popover draws itself. In the
-       top layer an absolute box is placed against the viewport, which never scrolls here. The
-       popover keeps the browser's `width: fit-content`, up to 60 characters of its font. */
+    /* The reset removes most of the browser's popover styles, so the popover draws itself. It sits
+       at the bottom right of the screen, just above the strip, under the log button; its width
+       fits its content between 40 and 60 characters of its font. */
     .log {
-        position: absolute;
-        inset: auto auto calc(var(--app-border) + var(--strip-height)) calc(var(--app-border) + var(--strip-padding-x));
+        position: fixed;
+        inset: auto calc(var(--app-border) + var(--strip-padding-x)) calc(var(--app-border) + var(--strip-height)) auto;
+        min-width: 40ch;
         max-width: 60ch;
         margin: 0;
         min-height: 8lh;
@@ -111,6 +117,7 @@
     .log li {
         display: flex;
         gap: 0.8em;
+        white-space: nowrap;
     }
 
     .clock {
