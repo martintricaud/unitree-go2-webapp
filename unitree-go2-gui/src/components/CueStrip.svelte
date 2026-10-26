@@ -50,7 +50,7 @@
 
 <svelte:window on:pointerup={() => (sweeps = [])} />
 
-<div id="sidebar" class="actionsequence" style:cursor={$strip.cursor}>
+<div id="sidebar" class="actionsequence" class:editing={$strip.tools !== null} style:cursor={$strip.cursor}>
     {#if $strip.tools}
         <div class="bar top">
             <button class:active={$strip.tools.active === 'Move'} on:click={$strip.tools.Move}>Move</button>
@@ -131,8 +131,11 @@
     }
 
     /* A cell shows the strip's cursor, which depends on the tool. A long label wraps inside its cell.
-       The gap separates the label from the command count, since a flex container drops the space. */
+       The label sits flush left and the command count flush right; the gap separates them, since
+       a flex container drops the space. */
     .cell {
+        justify-content: space-between;
+        text-align: left;
         gap: 1ch;
         cursor: inherit;
         white-space: normal;
@@ -152,5 +155,11 @@
     .cell:active,
     .pressed {
         border-style: inset;
+    }
+
+    /* In edit mode a press starts a drag, a rename or a selection, not a cue, so the cell does not
+       look pressed. */
+    .editing .cell:active {
+        border-style: outset;
     }
 </style>
