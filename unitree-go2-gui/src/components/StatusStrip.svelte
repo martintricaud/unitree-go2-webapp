@@ -91,14 +91,16 @@
         border-width: 2px;
     }
 
-    /* The reset removes most of the browser's popover styles, so the popover draws itself.
-       The browser's `width: fit-content` survives the reset; `width: auto` lets left and right set it. */
+    /* The reset removes most of the browser's popover styles, so the popover draws itself. In the
+       top layer an absolute box is placed against the viewport, which never scrolls here. The
+       popover keeps the browser's `width: fit-content`, up to 60 characters of its font. */
     .log {
-        position: fixed;
-        inset: auto calc(var(--app-border) + var(--strip-padding-x)) calc(var(--app-border) + var(--strip-height));
-        width: auto;
+        position: absolute;
+        inset: auto auto calc(var(--app-border) + var(--strip-height)) calc(var(--app-border) + var(--strip-padding-x));
+        max-width: 60ch;
         margin: 0;
-        max-height: 12rem;
+        min-height: 8lh;
+        max-height: 50vh;
         overflow-y: auto;
         padding: 0.3rem 0.6rem;
         border: 2px solid #999;
