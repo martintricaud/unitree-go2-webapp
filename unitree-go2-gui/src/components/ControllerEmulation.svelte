@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { cueSheet } from '../lib/stores/cueSheet';
+    import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
     /// Each button stands for the keyboard key `key`, and occupies one cell of a 3×3 grid, given as
     /// "row / column".

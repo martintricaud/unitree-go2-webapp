@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { keys, pick, times } from 'remeda';
+import { map, pick, times } from 'remeda';
 import { get, writable } from 'svelte/store';
-import { presets } from '../data/cues';
+import { CONDUITE, presets } from '../data/cues';
 import { enter, perform, sequence, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { createCueSheet } from './cueSheet';
+import { CueSheet } from './cueSheet.svelte';
 import type { Outcome } from './outcomes';
 import { createRobot } from './robot';
 
 const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 
 /** The label and steps of each cue, as the robot writes them to the relay. */
-const asSent = (..._cues: Cue[]) => _cues.map((_cue) => ({ command_name: _cue.label, sequence: _cue.steps }));
+const asSent = (..._cues: Cue[]) => map(_cues, (_cue) => ({ command_name: _cue.label, sequence: _cue.steps }));
 
 /** A storage that keeps its entries in `entries`, as `localStorage` keeps them across reloads. */
 const memoryStorage = (_entries = new Map<string, string>()) => ({
@@ -28,15 +28,13 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
   const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null };
   const robot = createRobot({ openSocket: () => socket, outcomeLog: writable<Outcome[]>([]) });
   robot.connect();
-  const cueSheet = createCueSheet(_cues, robot, _storage);
-  const sent = () => frames.map((_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
+  const cueSheet = new CueSheet(_cues, robot, _storage);
+  const sent = () => map(frames, (_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
   return { cueSheet, robot, sent };
 };
 
-type CueSheet = ReturnType<typeof setup>['cueSheet'];
-
-/** The pointer and the pressed cell the strip of `_cueSheet` shows. */
-const position = (_cueSheet: CueSheet) => pick(get(_cueSheet.strip), ['pointer', 'pressed']);
+/** The pointer and the pressed cell of `_cueSheet`, read through the store contract. */
+const position = (_cueSheet: CueSheet) => pick(get(_cueSheet), ['pointer', 'pressed']);
 
 /** Presses and releases `_key` on `_cueSheet`, `_count` times. */
 const tap = (_cueSheet: CueSheet, _key: string, _count = 1) =>
@@ -54,10 +52,10 @@ const pressOnce = (_key: string) => {
 
 const ENTER_POSE = enter('Pose');
 
-describe('cueSheet', () => {
-  it('starts on the first cue, with no cue pressed', () => {
+describe('cueSheet in play mode', () => {
+  it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
-    expect(position(cueSheet)).toEqual({ pointer: 0, pressed: null });
+    expect(get(cueSheet)).toEqual({ saved: CUES, cells: CUES, pointer: 0, pressed: null, instrument: 'Fire', renaming: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -65,29 +63,21 @@ describe('cueSheet', () => {
     cueSheet.press('ArrowRight');
     expect(sent()).toEqual(asSent(CUES[0]));
     expect(position(cueSheet)).toEqual({ pointer: 1, pressed: 0 });
-
     cueSheet.press('Enter');
     expect(sent()).toEqual(asSent(CUES[0], CUES[1]));
     expect(position(cueSheet)).toEqual({ pointer: 1, pressed: 1 });
   });
 
-  it('moves the pointer without sending', () => {
+  it('moves the pointer without sending, and keeps it on the first and the last cue', () => {
     const { cueSheet, sent } = setup();
     tap(cueSheet, 'ArrowDown', 2);
-    expect(position(cueSheet).pointer).toBe(2);
     tap(cueSheet, 'ArrowUp');
     expect(position(cueSheet)).toEqual({ pointer: 1, pressed: null });
     expect(sent()).toEqual([]);
-  });
-
-  it('keeps the pointer on the first and the last cue', () => {
-    const { cueSheet } = setup();
-    tap(cueSheet, 'ArrowUp');
-    expect(position(cueSheet).pointer).toBe(0);
+    tap(cueSheet, 'ArrowUp', 2);
     tap(cueSheet, 'ArrowLeft');
     expect(position(cueSheet).pointer).toBe(0);
     tap(cueSheet, 'ArrowDown', 10);
-    expect(position(cueSheet).pointer).toBe(CUES.length - 1);
     tap(cueSheet, 'ArrowRight');
     expect(position(cueSheet).pointer).toBe(CUES.length - 1);
   });
@@ -103,13 +93,15 @@ describe('cueSheet', () => {
     expect(position(cueSheet)).toEqual({ pointer: 1, pressed: null });
   });
 
-  it('sends the cue of a clicked cell, and keeps the pointer and the pressed cue', () => {
+  it('sends the cue of the cell a Fire sweep ends on, and keeps the pointer and the pressed cue', () => {
     const { cueSheet, sent } = setup();
-    get(cueSheet.strip).click(2);
+    cueSheet.sweep(0, 2);
     expect(sent()).toEqual(asSent(CUES[2]));
     expect(position(cueSheet)).toEqual({ pointer: 0, pressed: null });
   });
+});
 
+describe('cueSheet keys', () => {
   it.each([
     ['ArrowRight', { sent: asSent(CUES[0]), pointer: 1, pressed: 0 }],
     ['ArrowLeft', { sent: asSent(CUES[0]), pointer: 0, pressed: 0 }],
@@ -152,380 +144,212 @@ describe('cueSheet', () => {
     cueSheet.press('y');
     expect(sent()).toEqual(asSent(ENTER_POSE, presets.dance));
   });
+
+  it.each(['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Enter'])(
+    'sends nothing and keeps the pointer on %s while editing',
+    (_key) => {
+      const { cueSheet, sent } = setup();
+      tap(cueSheet, 'ArrowDown');
+      cueSheet.choose('Move');
+      tap(cueSheet, _key);
+      expect([sent(), position(cueSheet)]).toEqual([[], { pointer: 1, pressed: null }]);
+    },
+  );
+
+  it('still toggles Pose on a while editing', () => {
+    const { cueSheet, sent } = setup();
+    cueSheet.choose('Group');
+    cueSheet.press('a');
+    expect(sent()).toEqual(asSent(ENTER_POSE));
+  });
 });
+
+describe('cueSheet as a store', () => {
+  it('applies a detached update, and shows the change through get', () => {
+    const { cueSheet } = setup();
+    const { update } = cueSheet;
+    update((_state) => ({ ..._state, pointer: 2 }));
+    expect(position(cueSheet).pointer).toBe(2);
+  });
+});
+
+/** `choose` takes only an instrument: the type checker proves it on this line, which no test runs. */
+// @ts-expect-error: 'Erase' is not an instrument.
+void ((_cueSheet: CueSheet) => _cueSheet.choose('Erase'));
 
 const SABOTS = sequence('Sabots', enter('FreeWalk'), wait(0.1), enter('Backstand'));
 const BYE = sequence('Bye', perform('Content'), wait(0.5));
 /** A sheet whose cells 2 and 5 have constituents. */
 const SHEET: [Cue, ...Cue[]] = [enter('FreeWalk'), enter('Pose'), SABOTS, perform('Hello'), wait(1), BYE];
 
-/** Runs the transition `_name` that the strip of `_cueSheet` offers in its current mode, and throws
- * when that mode does not offer it. */
-const transition = (_cueSheet: CueSheet, _name: string) => {
-  const run = new Map(Object.entries(get(_cueSheet.strip).transitions)).get(_name);
-  if (run === undefined) throw new Error(`The strip offers no ${_name} in this mode.`);
-  run();
-};
-
-/** The names of the edit tools, as the strip shows the active one. */
-type Tool = NonNullable<ReturnType<ReturnType<typeof editing>['shown']>['tool']>;
-
-/** Makes `_name` the active tool of the strip of `_cueSheet`; does nothing in play mode. */
-const choose = (_cueSheet: CueSheet, _name: Tool) => get(_cueSheet.strip).tools?.[_name]();
-
-/** Clicks cell `_index` of the strip of `_cueSheet`. */
-const click = (_cueSheet: CueSheet, _index: number) => get(_cueSheet.strip).click(_index);
-
-/** Presses on cell `_from` of the strip of `_cueSheet` and releases on cell `_to`. */
-const sweep = (_cueSheet: CueSheet, _from: number, _to: number) => get(_cueSheet.strip).sweep(_from, _to);
-
-/** Groups cells `_from` to `_to` with the Group tool. */
-const groupSweep = (_cueSheet: CueSheet, _from: number, _to: number) => {
-  choose(_cueSheet, 'Group');
-  sweep(_cueSheet, _from, _to);
-};
-
-/** Ungroups cell `_index` with the Ungroup tool. */
-const ungroupClick = (_cueSheet: CueSheet, _index: number) => {
-  choose(_cueSheet, 'Ungroup');
-  click(_cueSheet, _index);
-};
-
-/** A sheet of `_cues` on `_storage` with its pointer moved to `_pointer` in play mode, then switched
- * to edit mode. `shown` reads what the strip shows, with the active tool in place of the tools. */
-const editing = (_pointer = 0, _storage = memoryStorage(), _cues = SHEET) => {
-  const { cueSheet, robot, sent } = setup(_cues, _storage);
-  const shown = () => {
-    const { cells, pointer, pressed, renaming, cursor, draggable, tools } = get(cueSheet.strip);
-    return { cells, pointer, pressed, renaming, cursor, draggable, tool: tools?.active ?? null };
-  };
+/** A sheet of `_cues` on `_storage` with its pointer moved to `_pointer` in play mode, then edited
+ * under `_instrument`. */
+const editing = (
+  _instrument: CueSheet['state']['instrument'],
+  _pointer = 0,
+  _cues = SHEET,
+  _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage(),
+) => {
+  const { cueSheet, sent } = setup(_cues, _storage);
   tap(cueSheet, 'ArrowDown', _pointer);
-  transition(cueSheet, 'Edit');
-  return { cueSheet, robot, sent, shown };
+  cueSheet.choose(_instrument);
+  return { cueSheet, sent, shown: () => get(cueSheet) };
 };
 
-/** Calls every edit method the cue sheet exports, with indices inside the sheet. */
-const editMethods = (_cueSheet: CueSheet) => {
-  _cueSheet.rename(0, 'X');
-  _cueSheet.reorder(0, 1);
-  _cueSheet.stopRenaming();
-};
+describe('cueSheet sweeps', () => {
+  it('moves cell 0 of CONDUITE to position 2, and keeps the pointer on its cell', () => {
+    const { cueSheet, shown } = editing('Move', 1, CONDUITE);
+    cueSheet.sweep(0, 2);
+    expect(map(shown().cells.slice(0, 3), (_cell) => _cell.label)).toEqual(['Pose', 'Sabots', 'FreeWalk']);
+    expect(shown().cells[shown().pointer]).toBe(CONDUITE[1]);
+  });
 
-/** Makes every kind of edit once, with indices inside the sheet: the edit methods, an Ungroup, a
- * Group, and a rename left open. */
-const editAll = (_cueSheet: CueSheet) => {
-  editMethods(_cueSheet);
-  ungroupClick(_cueSheet, 2);
-  groupSweep(_cueSheet, 3, 4);
-  choose(_cueSheet, 'Rename');
-  click(_cueSheet, 1);
-};
-
-describe('cueSheet in edit mode', () => {
-  it('shows the saved sheet in play mode, and a draft of it with the Move tool after Edit', () => {
-    const { cueSheet, sent } = setup(SHEET);
-    const play = get(cueSheet.strip);
-    expect(pick(play, ['cells', 'pointer', 'pressed', 'renaming', 'cursor', 'draggable'])).toEqual({
-      cells: SHEET,
-      pointer: 0,
-      pressed: null,
-      renaming: null,
-      cursor: 'pointer',
-      draggable: false,
+  it.each([
+    [1, 4],
+    [4, 1],
+  ])('moves only cell %i to position %i, and keeps the pointer on its cell wherever it is', (_from, _to) => {
+    times(SHEET.length, (_pointer) => {
+      const { cueSheet, shown } = editing('Move', _pointer);
+      cueSheet.sweep(_from, _to);
+      expect(shown().cells[_to]).toBe(SHEET[_from]);
+      expect(shown().cells[shown().pointer]).toBe(SHEET[_pointer]);
     });
-    expect([play.tools, keys(play.transitions), play.run(0, 2)]).toEqual([null, ['Edit'], []]);
-    play.sweep(0, 2);
-    play.click(3);
-    expect(sent()).toEqual(asSent(SHEET[3]));
+    const { cueSheet, shown } = editing('Move');
+    cueSheet.sweep(_from, _to);
+    expect(shown().cells).toEqual(map(_from < _to ? [0, 2, 3, 4, 1, 5] : [0, 4, 1, 2, 3, 5], (_index) => SHEET[_index]));
+  });
 
-    const { cueSheet: edited, shown } = editing(2);
-    expect(shown()).toEqual({
-      cells: SHEET,
-      pointer: 2,
-      pressed: null,
-      renaming: null,
-      cursor: 'grab',
-      draggable: true,
-      tool: 'Move',
+  it('groups the cells of a sweep made in either direction into one sequence, and leaves a sweep of one cell', () => {
+    const grouped = [SHEET[0], sequence('Pose → Hello', SHEET[1], SHEET[2], SHEET[3]), ...SHEET.slice(4)];
+    times(2, (_reverse) => {
+      const { cueSheet, shown } = editing('Group');
+      cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
+      expect(shown().cells).toEqual(grouped);
     });
-    expect(keys(get(edited.strip).transitions)).toEqual(['Save', 'Reset', 'Cancel']);
-  });
-
-  it('saves a renamed cell with its steps, changes and items, and sends it under its new label', () => {
-    const { cueSheet, sent } = editing();
-    cueSheet.rename(1, 'X');
-    transition(cueSheet, 'Save');
-    const renamed = { ...SHEET[1], label: 'X' };
-    expect(get(cueSheet.strip).cells).toEqual([SHEET[0], renamed, ...SHEET.slice(2)]);
-    expect(get(cueSheet.strip).tools).toBeNull();
-    get(cueSheet.strip).click(1);
-    expect(sent()).toEqual(asSent(renamed));
-  });
-
-  it('saves the draft pointer, clears the pressed cell, and clamps the pointer to the saved length', () => {
-    const { cueSheet } = setup(SHEET);
-    cueSheet.press('ArrowRight');
-    tap(cueSheet, 'ArrowDown', 3);
-    transition(cueSheet, 'Edit');
-    groupSweep(cueSheet, 1, 3);
-    transition(cueSheet, 'Save');
-    expect(position(cueSheet)).toEqual({ pointer: 2, pressed: null });
-    tap(cueSheet, 'ArrowDown', 10);
-    expect(position(cueSheet).pointer).toBe(SHEET.length - 3);
-  });
-
-  it('keeps the saved sheet and the pointer after edits and Cancel', () => {
-    const { cueSheet } = editing(2);
-    editAll(cueSheet);
-    transition(cueSheet, 'Cancel');
-    expect(get(cueSheet.strip).tools).toBeNull();
-    expect([get(cueSheet.strip).cells, position(cueSheet).pointer]).toEqual([SHEET, 2]);
-  });
-
-  it('starts a new draft of the saved sheet with the Move tool after edits and Reset, and stays in edit mode', () => {
-    const { cueSheet, shown } = editing(2);
+    const { cueSheet, shown } = editing('Group');
     const before = shown();
-    editAll(cueSheet);
-    expect(shown()).toMatchObject({ tool: 'Rename', renaming: 1 });
-    transition(cueSheet, 'Reset');
+    cueSheet.sweep(2, 2);
     expect(shown()).toEqual(before);
-    expect(shown()).toMatchObject({ cells: SHEET, tool: 'Move' });
   });
 
   it.each([
-    ['Move', 'grab', true],
-    ['Rename', 'text', false],
-    ['Group', 'cell', false],
-    ['Ungroup', 'pointer', false],
-  ] as const)('shows the %s tool with the cursor %s, and draggable cells: %s', (_tool, _cursor, _draggable) => {
-    const { cueSheet, shown } = editing();
-    choose(cueSheet, _tool);
-    expect(shown()).toMatchObject({ tool: _tool, cursor: _cursor, draggable: _draggable });
+    ['before lo', 0, 0],
+    ['on lo', 1, 1],
+    ['inside', 2, 1],
+    ['on hi', 3, 1],
+    ['after hi', 5, 3],
+  ])('moves the pointer %s of a Group of cells 1 to 3', (_where, _pointer, _after) => {
+    const { cueSheet, shown } = editing('Group', _pointer);
+    cueSheet.sweep(3, 1);
+    expect(shown().pointer).toBe(_after);
+  });
+
+  it('replaces both groups of a swept range by their constituents, and keeps its plain cell', () => {
+    const cues: [Cue, ...Cue[]] = [enter('FreeWalk'), SABOTS, perform('Hello'), BYE, wait(1)];
+    const { cueSheet, shown } = editing('Ungroup', 0, cues);
+    cueSheet.sweep(3, 1);
+    expect(shown().cells).toEqual([cues[0], ...SABOTS.items, cues[2], ...BYE.items, cues[4]]);
   });
 
   it.each([
-    ['Move', SHEET, null],
-    ['Rename', SHEET, 2],
-    ['Group', SHEET, null],
-    ['Ungroup', [SHEET[0], SHEET[1], ...SABOTS.items, ...SHEET.slice(3)], null],
-  ] as const)('makes of a click on a group with the %s tool the cells %j, renaming %s', (_tool, _cells, _renaming) => {
-    const { cueSheet, sent, shown } = editing();
-    choose(cueSheet, _tool);
-    click(cueSheet, 2);
-    expect(shown()).toMatchObject({ cells: _cells, renaming: _renaming, tool: _tool });
+    ['before the cell', 1, 1],
+    ['on the cell', 2, 2],
+    ['after the cell', 4, 6],
+  ])('moves the pointer %s on an Ungroup of cell 2 into 3 cells', (_where, _pointer, _after) => {
+    const { cueSheet, shown } = editing('Ungroup', _pointer);
+    cueSheet.sweep(2, 2);
+    expect(shown().pointer).toBe(_after);
+  });
+
+  it('starts renaming the cell a Rename sweep ends on, and sends nothing', () => {
+    const { cueSheet, sent, shown } = editing('Rename');
+    cueSheet.sweep(0, 2);
+    expect(shown()).toMatchObject({ cells: SHEET, renaming: 2, instrument: 'Rename' });
     expect(sent()).toEqual([]);
   });
+});
 
-  it.each([
-    ['Move', SHEET],
-    ['Rename', SHEET],
-    ['Group', [sequence('FreeWalk → Pose', SHEET[0], SHEET[1]), ...SHEET.slice(2)]],
-    ['Ungroup', SHEET],
-  ] as const)('makes of a sweep from cell 0 to cell 1 with the %s tool the cells %j', (_tool, _cells) => {
-    const { cueSheet, sent, shown } = editing();
-    choose(cueSheet, _tool);
-    sweep(cueSheet, 0, 1);
-    expect(shown()).toMatchObject({ cells: _cells, tool: _tool });
-    expect(sent()).toEqual([]);
-  });
-
-  it('highlights the swept run only with the Group tool, in either direction', () => {
-    const { cueSheet } = editing();
-    expect(get(cueSheet.strip).run(3, 1)).toEqual([]);
-    choose(cueSheet, 'Group');
-    expect(get(cueSheet.strip).run(3, 1)).toEqual([1, 2, 3]);
-    expect(get(cueSheet.strip).run(1, 3)).toEqual([1, 2, 3]);
-  });
-
-  it('replaces a group clicked with the Ungroup tool by its constituents, and leaves a cell without constituents', () => {
-    const { cueSheet, shown } = editing();
-    ungroupClick(cueSheet, 2);
-    expect(shown().cells).toEqual([SHEET[0], SHEET[1], ...SABOTS.items, ...SHEET.slice(3)]);
-    const before = shown();
-    click(cueSheet, 0);
-    expect(shown()).toEqual(before);
-  });
-
-  it('groups the cells of a sweep made in either direction into one sequence, and does nothing on a sweep to the same cell', () => {
-    const grouped = (_from: number, _to: number) => {
-      const { cueSheet, shown } = editing();
-      groupSweep(cueSheet, _from, _to);
-      return shown();
-    };
-    const expected = [SHEET[0], sequence('Pose → Hello', SHEET[1], SHEET[2], SHEET[3]), ...SHEET.slice(4)];
-    expect(grouped(1, 3).cells).toEqual(expected);
-    expect(grouped(3, 1)).toEqual(grouped(1, 3));
-
-    const { cueSheet, shown } = editing();
-    choose(cueSheet, 'Group');
-    const before = shown();
-    sweep(cueSheet, 2, 2);
-    sweep(cueSheet, 4, 4);
-    expect(shown()).toEqual(before);
-  });
-
-  it('restores the draft by ungrouping what a Group made', () => {
-    const { cueSheet, shown } = editing();
-    const before = shown();
-    groupSweep(cueSheet, 1, 3);
-    ungroupClick(cueSheet, 1);
-    choose(cueSheet, 'Move');
-    expect(shown()).toEqual(before);
-  });
-
-  it.each([
-    [1, 4, [0, 2, 3, 4, 1, 5]],
-    [4, 1, [0, 4, 1, 2, 3, 5]],
-  ])('moves only cell %i to position %i', (_from, _to, _order) => {
-    const { cueSheet, shown } = editing();
-    cueSheet.reorder(_from, _to);
-    expect(shown().cells).toEqual(_order.map((_index) => SHEET[_index]));
-  });
-
-  it.each([
-    ['rename(-1)', 'Move', (_s: CueSheet) => _s.rename(-1, 'X')],
-    ['rename(6)', 'Move', (_s: CueSheet) => _s.rename(6, 'X')],
-    ['reorder(0, 6)', 'Move', (_s: CueSheet) => _s.reorder(0, 6)],
-    ['reorder(6, 0)', 'Move', (_s: CueSheet) => _s.reorder(6, 0)],
-    ['a Rename click on cell 6', 'Rename', (_s: CueSheet) => click(_s, 6)],
-    ['a Rename click on cell 1.5', 'Rename', (_s: CueSheet) => click(_s, 1.5)],
-    ['an Ungroup click on cell 6', 'Ungroup', (_s: CueSheet) => click(_s, 6)],
-    ['a Group sweep from cell -1 to cell 2', 'Group', (_s: CueSheet) => sweep(_s, -1, 2)],
-    ['a Group sweep from cell 3 to cell 6', 'Group', (_s: CueSheet) => sweep(_s, 3, 6)],
-  ] as const)('leaves the draft as it is on %s', (_name, _tool, _edit) => {
-    const { cueSheet, shown } = editing(3);
-    choose(cueSheet, _tool);
-    const before = shown();
-    _edit(cueSheet);
-    expect(shown()).toEqual(before);
-  });
-
-  it('does nothing on any edit method in play mode', () => {
-    const { cueSheet } = setup(SHEET);
-    const data = () => pick(get(cueSheet.strip), ['cells', 'pointer', 'pressed', 'renaming', 'tools']);
-    const before = data();
-    editMethods(cueSheet);
-    expect(data()).toEqual(before);
-    expect(before.tools).toBeNull();
-  });
-
-  it('renames on a click with the Rename tool, keeps the tool, and ends the rename on another tool', () => {
-    const { cueSheet, sent, shown } = editing();
-    choose(cueSheet, 'Rename');
-    click(cueSheet, 2);
-    expect(shown()).toMatchObject({ renaming: 2, tool: 'Rename' });
+describe('cueSheet edits', () => {
+  it('renames a cell and ends the rename, keeps the label on stopRenaming, and ends a rename on another change', () => {
+    const { cueSheet, shown } = editing('Rename');
+    cueSheet.sweep(2, 2);
     cueSheet.stopRenaming();
-    expect(shown().renaming).toBeNull();
+    expect(shown()).toMatchObject({ renaming: null, instrument: 'Rename' });
     expect(shown().cells[2].label).toBe('Sabots');
-    click(cueSheet, 2);
+    cueSheet.sweep(2, 2);
     cueSheet.rename(2, 'ay b');
-    expect(shown()).toMatchObject({ renaming: null, tool: 'Rename' });
-    expect(shown().cells[2].label).toBe('ay b');
-    click(cueSheet, 3);
-    choose(cueSheet, 'Move');
-    expect(shown()).toMatchObject({ renaming: null, cursor: 'grab', tool: 'Move' });
-    expect(sent()).toEqual([]);
-  });
-
-  it('ends a rename on reorder', () => {
-    const { cueSheet, shown } = editing();
-    choose(cueSheet, 'Rename');
-    click(cueSheet, 2);
+    expect(shown()).toMatchObject({ renaming: null, instrument: 'Rename' });
+    expect(shown().cells[2]).toEqual({ ...SABOTS, label: 'ay b' });
+    cueSheet.sweep(3, 3);
     cueSheet.reorder(1, 3);
     expect(shown().renaming).toBeNull();
+    cueSheet.sweep(3, 3);
+    cueSheet.choose('Move');
+    expect(shown().renaming).toBeNull();
   });
 
-  describe('moves the pointer', () => {
-    it.each([
-      [3, 3],
-      [0, 0],
-    ])('nowhere on rename, with the pointer at %i', (_pointer, _after) => {
-      const { cueSheet, shown } = editing(_pointer);
-      cueSheet.rename(1, 'X');
-      expect(shown().pointer).toBe(_after);
-    });
-
-    it.each([
-      ['before the cell', 1, 1],
-      ['on the cell', 2, 2],
-      ['after the cell', 4, 6],
-    ])('on Ungroup of cell 2 into 3 cells, with the pointer %s', (_where, _pointer, _after) => {
-      const { cueSheet, shown } = editing(_pointer);
-      ungroupClick(cueSheet, 2);
-      expect(shown().pointer).toBe(_after);
-    });
-
-    it.each([
-      ['before lo', 0, 0],
-      ['on lo', 1, 1],
-      ['inside', 2, 1],
-      ['on hi', 3, 1],
-      ['after hi', 5, 3],
-    ])('on Group of cells 1 to 3, with the pointer %s', (_where, _pointer, _after) => {
-      const { cueSheet, shown } = editing(_pointer);
-      groupSweep(cueSheet, 3, 1);
-      expect(shown().pointer).toBe(_after);
-    });
-
-    it.each([
-      [1, 4, 'on from', 1, 4],
-      [1, 4, 'between', 3, 2],
-      [1, 4, 'on to', 4, 3],
-      [1, 4, 'before', 0, 0],
-      [1, 4, 'after', 5, 5],
-      [4, 1, 'on from', 4, 1],
-      [4, 1, 'between', 2, 3],
-      [4, 1, 'on to', 1, 2],
-      [4, 1, 'before', 0, 0],
-      [4, 1, 'after', 5, 5],
-    ])('on reorder(%i, %i), with the pointer %s', (_from, _to, _where, _pointer, _after) => {
-      const { cueSheet, shown } = editing(_pointer);
-      cueSheet.reorder(_from, _to);
-      expect(shown().pointer).toBe(_after);
-    });
+  it('saves the shown cells, clears the pressed cell, returns to Fire, and sends a renamed cell under its new label', () => {
+    const { cueSheet, sent } = setup(SHEET);
+    const shown = () => get(cueSheet);
+    cueSheet.press('ArrowRight');
+    cueSheet.choose('Rename');
+    cueSheet.rename(1, 'X');
+    cueSheet.save();
+    const renamed = { ...SHEET[1], label: 'X' };
+    const cells = [SHEET[0], renamed, ...SHEET.slice(2)];
+    expect(shown()).toEqual({ saved: cells, cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null });
+    cueSheet.sweep(1, 1);
+    expect(sent()).toEqual(asSent(SHEET[0], renamed));
   });
 
-  it.each(['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Enter'])(
-    'sends nothing and keeps the pointer on %s',
-    (_key) => {
-      const { cueSheet, sent, shown } = editing(1);
-      cueSheet.press(_key);
-      expect(shown()).toMatchObject({ pointer: 1, pressed: null });
-      cueSheet.release(_key);
-      transition(cueSheet, 'Cancel');
-      expect([sent(), position(cueSheet)]).toEqual([[], { pointer: 1, pressed: null }]);
-    },
-  );
+  it('restores the saved cells on Cancel, returns to Fire, and keeps the pointer index, clamped to the saved length', () => {
+    const { cueSheet, shown } = editing('Group', 4);
+    cueSheet.sweep(0, 3);
+    expect(shown().pointer).toBe(1);
+    cueSheet.cancel();
+    expect(shown()).toEqual({ saved: SHEET, cells: SHEET, pointer: 1, pressed: null, instrument: 'Fire', renaming: null });
 
-  it('still toggles Pose on a', () => {
-    const { cueSheet, sent } = editing(1);
-    cueSheet.press('a');
-    expect(sent()).toEqual(asSent(ENTER_POSE));
+    const { cueSheet: grown, shown: grownShown } = editing('Ungroup', 5);
+    grown.sweep(2, 2);
+    expect(grownShown().pointer).toBe(7);
+    grown.cancel();
+    expect(grownShown()).toMatchObject({ cells: SHEET, pointer: SHEET.length - 1, instrument: 'Fire' });
+  });
+
+  it('shows the saved cells again on Reset, keeps the instrument, and ends any rename', () => {
+    const { cueSheet, shown } = editing('Ungroup', 5);
+    cueSheet.sweep(2, 2);
+    cueSheet.choose('Rename');
+    cueSheet.sweep(1, 1);
+    cueSheet.reset();
+    expect(shown()).toEqual({ saved: SHEET, cells: SHEET, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null });
   });
 });
 
 describe('cueSheet in storage', () => {
   it('starts a second sheet on the same storage with the sheet the first one saved', () => {
     const storage = memoryStorage();
-    const { cueSheet } = editing(0, storage);
-    cueSheet.rename(1, 'X');
-    groupSweep(cueSheet, 3, 4);
-    transition(cueSheet, 'Save');
+    const { cueSheet } = editing('Group', 0, SHEET, storage);
+    cueSheet.sweep(3, 4);
+    cueSheet.save();
     expect(storage.entries.has('cueSheet.v1')).toBe(true);
     const { cueSheet: reloaded } = setup(SHEET, storage);
-    expect(get(reloaded.strip).cells).toEqual(get(cueSheet.strip).cells);
-    expect(get(reloaded.strip).cells).not.toEqual(SHEET);
+    expect(get(reloaded).cells).toEqual(get(cueSheet).cells);
+    expect(get(reloaded).cells).not.toEqual(SHEET);
   });
 
-  it.each(['Cancel', 'Reset'])('leaves the storage as it is after edits and %s', (_name) => {
+  it.each([
+    ['Cancel', (_cueSheet: CueSheet) => _cueSheet.cancel()],
+    ['Reset', (_cueSheet: CueSheet) => _cueSheet.reset()],
+  ])('leaves the storage as it is after edits and %s', (_name, _end) => {
     const storage = memoryStorage();
-    const { cueSheet } = editing(0, storage);
+    const { cueSheet } = editing('Rename', 0, SHEET, storage);
     cueSheet.rename(0, 'Saved');
-    transition(cueSheet, 'Save');
+    cueSheet.save();
     const before = [...storage.entries];
-    transition(cueSheet, 'Edit');
-    editAll(cueSheet);
-    transition(cueSheet, _name);
+    cueSheet.choose('Group');
+    cueSheet.sweep(1, 3);
+    _end(cueSheet);
     expect([...storage.entries]).toEqual(before);
   });
 
@@ -537,25 +361,19 @@ describe('cueSheet in storage', () => {
     '[{"label":"A","steps":[],"changes":[],"items":[{"label":"B","steps":[],"changes":[]}]}]',
   ])('starts from the given cues when the storage holds %s', (_stored) => {
     const { cueSheet } = setup(SHEET, memoryStorage(new Map([['cueSheet.v1', _stored]])));
-    expect(get(cueSheet.strip).cells).toEqual(SHEET);
+    expect(get(cueSheet).cells).toEqual(SHEET);
   });
 
   it('works in memory on a storage that throws on every access', () => {
     const refuse = () => {
       throw new Error('Storage is forbidden.');
     };
-    const { cueSheet } = setup(SHEET, { getItem: refuse, setItem: refuse });
-    expect(get(cueSheet.strip).cells).toEqual(SHEET);
+    const { cueSheet } = editing('Rename', 0, SHEET, { getItem: refuse, setItem: refuse });
+    expect(get(cueSheet).cells).toEqual(SHEET);
     expect(() => {
-      transition(cueSheet, 'Edit');
-      editAll(cueSheet);
-      transition(cueSheet, 'Reset');
-      editAll(cueSheet);
-      transition(cueSheet, 'Cancel');
-      transition(cueSheet, 'Edit');
       cueSheet.rename(1, 'X');
-      transition(cueSheet, 'Save');
+      cueSheet.save();
     }).not.toThrow();
-    expect(get(cueSheet.strip).cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
+    expect(get(cueSheet).cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
   });
 });

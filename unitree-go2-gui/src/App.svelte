@@ -21,7 +21,7 @@
     import type { Cue } from './lib/utils/commands';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot';
-    import { cueSheet } from './lib/stores/cueSheet';
+    import { cueSheet } from './lib/stores/cueSheet.svelte';
     import { displayed } from './lib/utils/confirmable';
 
     /* STATE VARIABLES */

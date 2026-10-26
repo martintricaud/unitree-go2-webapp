@@ -77,12 +77,6 @@ button:where(:disabled) {
   cursor: not-allowed;
 }
 
-/* The reset's `all: unset` on buttons also unsets the browser default that lets a draggable
-   element start a drag, so a draggable cell would never fire dragstart. */
-[draggable='true'] {
-  -webkit-user-drag: element;
-}
-
 button:focus-visible {
   outline: 2px solid rgb(0, 95, 204);
   outline-offset: 1px;

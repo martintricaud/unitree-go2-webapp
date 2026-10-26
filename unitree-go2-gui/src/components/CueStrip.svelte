@@ -1,32 +1,40 @@
 <script lang="ts">
-    import { entries, isEmpty, isIncludedIn } from 'remeda';
-    import { cueSheet } from '../lib/stores/cueSheet';
+    import { filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, pipe, range } from 'remeda';
+    import { cueSheet, span } from '../lib/stores/cueSheet.svelte';
     import type { Cue } from '../lib/utils/commands';
 
-    /// Top-level binding, so the markup can subscribe to it with `$strip`.
-    const { strip } = cueSheet;
+    /// The strip's root element, whose drawn cells give each cell its index.
+    let strip: HTMLDivElement;
 
-    /// The cell being dragged. -1 names no cell, and the store ignores an index outside the sheet,
-    /// so a drop that no drag in the strip started moves nothing.
-    let dragged = -1;
-
-    /// The sweep in progress, as the cell the press started on and the cell under the pointer; empty
-    /// while no button is pressed on a cell. A release on a cell completes the sweep; a release
+    /// The sweep in progress, as the cell `a` the press started on and the cell `b` under the pointer;
+    /// empty while no button is pressed on a cell. A release on a cell completes the sweep; a release
     /// anywhere else only ends it.
-    let sweeps: [number, number][] = [];
+    let sweeps: { a: number; b: number }[] = [];
+
+    /// The indices of the cells the sweep in progress highlights.
+    $: swept = flatMap(sweeps, ({ a, b }) => pipe(span(a, b), ([_lo, _hi]) => range(_lo, _hi + 1)));
+
+    /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
+    /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
+    /// there places the caret.
+    const cellAt = ({ target }: Event) => {
+        const cell = target instanceof HTMLElement && !target.isContentEditable && target.closest('[data-index]');
+        return flatMap([...strip.querySelectorAll('[data-index]')], (_cell, _index) => (_cell === cell ? [_index] : []));
+    };
 
     /// The number of robot commands a group cell sends, counting its nested groups and not its
     /// waits; 0 for a cell that is not a group, so only a group shows a count.
     const commandCount = (_cell: Cue) =>
-        isEmpty(_cell.items) ? 0 : _cell.steps.filter((_step) => _step.kind === 'command').length;
+        isEmpty(_cell.items) ? 0 : filter(_cell.steps, (_step) => _step.kind === 'command').length;
 
     /// Makes `_span` the editable label of cell `_index`. It takes the focus with its text selected,
     /// so typing replaces the label, and no typed key reaches the window shortcuts. Moving the focus
     /// out commits the label; Enter does that without typing a newline. Escape restores the previous
-    /// label, and releasing Space types a space without clicking the cell.
+    /// label.
     const editor = (_span: HTMLSpanElement, _index: number) => {
         const commit = () => cueSheet.rename(_index, _span.textContent ?? '');
         _span.addEventListener('focusout', commit);
+        _span.addEventListener('keyup', (_event) => _event.stopPropagation());
         _span.addEventListener('keydown', (_event) => {
             _event.stopPropagation();
             if (_event.key === 'Enter') {
@@ -39,43 +47,33 @@
                 cueSheet.stopRenaming();
             }
         });
-        _span.addEventListener('keyup', (_event) => {
-            _event.stopPropagation();
-            if (_event.key === ' ') _event.preventDefault();
-        });
         _span.focus();
         getSelection()?.selectAllChildren(_span);
     };
 </script>
 
-<svelte:window on:pointerup={() => (sweeps = [])} />
+<svelte:window onpointerup={() => (sweeps = [])} />
 
-<div id="sidebar" class="actionsequence" class:editing={$strip.tools !== null} style:cursor={$strip.cursor}>
-    {#if $strip.tools}
+<div
+    id="sidebar"
+    class="actionsequence"
+    style:cursor={cueSheet.instruments[$cueSheet.instrument].cursor}
+    bind:this={strip}
+    onpointerdown={(event) => (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index })))}
+    onpointerover={(event) => (sweeps = map(sweeps, ({ a, b }) => ({ a, b: last([b, ...cellAt(event)]) })))}
+    onpointerup={(event) => forEach(sweeps, ({ a }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b)))}
+>
+    {#if $cueSheet.instrument !== 'Fire'}
         <div class="bar top">
-            <button class:active={$strip.tools.active === 'Move'} on:click={$strip.tools.Move}>Move</button>
-            <button class:active={$strip.tools.active === 'Rename'} on:click={$strip.tools.Rename}>Rename</button>
-            <button class:active={$strip.tools.active === 'Group'} on:click={$strip.tools.Group}>Group</button>
-            <button class:active={$strip.tools.active === 'Ungroup'} on:click={$strip.tools.Ungroup}>Ungroup</button>
+            {#each ['Move', 'Rename', 'Group', 'Ungroup'] as const as name}
+                <button class:active={$cueSheet.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
+            {/each}
         </div>
     {/if}
-    {#each $strip.cells as cell, i}
-        <button
-            class="cell"
-            class:active-step={i === $strip.pointer}
-            class:pressed={i === $strip.pressed}
-            class:swept={sweeps.some(([_from, _to]) => isIncludedIn(i, $strip.run(_from, _to)))}
-            draggable={$strip.draggable}
-            on:click={() => $strip.click(i)}
-            on:pointerdown={() => (sweeps = [[i, i]])}
-            on:pointerenter={() => (sweeps = sweeps.map(([_from]) => [_from, i]))}
-            on:pointerup={() => sweeps.forEach(([_from, _to]) => $strip.sweep(_from, _to))}
-            on:dragstart={() => (dragged = i)}
-            on:dragover|preventDefault
-            on:drop={() => cueSheet.reorder(dragged, i)}
-            on:dragend={() => (dragged = -1)}
-        >
-            {#if $strip.renaming === i}
+    {#each $cueSheet.cells as cell, i}
+        <div class="cell" data-index={i} class:active-step={i === $cueSheet.pointer} class:pressed={i === $cueSheet.pressed}
+            class:swept={isIncludedIn(i, swept)}>
+            {#if $cueSheet.renaming === i}
                 <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
             {:else}
                 <span>{cell.label}</span>
@@ -83,12 +81,16 @@
             {#if commandCount(cell) > 1}
                 <span>({commandCount(cell)})</span>
             {/if}
-        </button>
+        </div>
     {/each}
     <div class="bar bottom">
-        {#each entries($strip.transitions) as [label, go]}
-            <button on:click={go}>{label}</button>
-        {/each}
+        {#if $cueSheet.instrument === 'Fire'}
+            <button onclick={() => cueSheet.choose('Move')}>Edit</button>
+        {:else}
+            <button onclick={() => cueSheet.save()}>Save</button>
+            <button onclick={() => cueSheet.reset()}>Reset</button>
+            <button onclick={() => cueSheet.cancel()}>Cancel</button>
+        {/if}
     </div>
 </div>
 
@@ -130,15 +132,22 @@
         font-weight: bold;
     }
 
-    /* A cell shows the strip's cursor, which depends on the tool. A long label wraps inside its cell.
-       The label sits flush left and the command count flush right; the gap separates them, since
-       a flex container drops the space. */
+    /* A cell is drawn as the app's buttons are, with no pressed look of its own: only the keys draw a
+       cell pressed. A long label wraps inside its cell. The label sits flush left and the command
+       count flush right; the gap separates them, since a flex container drops the space. */
     .cell {
+        display: flex;
+        align-items: center;
         justify-content: space-between;
-        text-align: left;
         gap: 1ch;
-        cursor: inherit;
-        white-space: normal;
+        min-height: 3em;
+        padding: 0.6em;
+        border: 4px outset rgb(118, 118, 118);
+        background-color: rgb(239, 239, 239);
+        font-size: 0.9em;
+        font-weight: 500;
+        line-height: 1em;
+        user-select: none;
         overflow-wrap: anywhere;
     }
 
@@ -152,14 +161,7 @@
         background: rgb(170, 200, 240);
     }
 
-    .cell:active,
     .pressed {
         border-style: inset;
-    }
-
-    /* In edit mode a press starts a drag, a rename or a selection, not a cue, so the cell does not
-       look pressed. */
-    .editing .cell:active {
-        border-style: outset;
     }
 </style>
