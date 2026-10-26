@@ -56,7 +56,9 @@
 </aside>
 <svelte:window
     on:keyup={(event) => cueSheet.release(event.key)}
-    on:keydown|preventDefault={(event) => {
+    on:keydown={(event) => {
+        // A cancelled Escape keydown would stop Escape from closing the log popover.
+        if (event.key !== 'Escape') event.preventDefault();
         // A held key repeats its keydown; every binding acts once per press.
         if (!event.repeat) cueSheet.press(event.key);
     }}
