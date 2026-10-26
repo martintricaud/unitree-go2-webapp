@@ -1,4 +1,7 @@
 :root {
+  /* The width of #app's border. The log popover in StatusStrip also reads it, because the
+     border insets the status strip from the viewport edges. */
+  --app-border: 2px;
   font-size: small;
   line-height: 1.5;
   color-scheme: light;
@@ -19,7 +22,7 @@ body {
 
 
 #app {
-  border: 2px solid rgb(177,177,177) ;
+  border: var(--app-border) solid rgb(177,177,177) ;
   background-color:rgb(177,177,177) ;
   gap: 2px;
   width: 100vw;

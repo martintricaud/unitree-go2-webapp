@@ -58,8 +58,6 @@
         /* The log popover reads these properties to sit right above the strip. */
         --strip-height: 2.6rem;
         --strip-padding-x: 0.6rem;
-        /* #app's border in app.css: the strip is inset from the viewport edges by this width. */
-        --app-border: 2px;
         grid-area: strip;
         height: var(--strip-height);
         display: flex;
