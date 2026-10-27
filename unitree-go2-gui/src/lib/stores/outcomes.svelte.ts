@@ -1,5 +1,4 @@
 import { constant, countBy, first, fromKeys, prop, take } from 'remeda';
-import { toStore } from 'svelte/store';
 import type { Updater, Writable } from 'svelte/store';
 
 /// `confirmed`: the robot's service accepted the request, which does not prove it moved.
@@ -21,7 +20,7 @@ export type Outcome = {
 const LOG_LIMIT = 200;
 
 /// The outcomes of a robot's requests. The robot clears the log when its control channel opens.
-export class OutcomeLog implements Pick<Writable<Outcome[]>, 'subscribe' | 'update'> {
+export class OutcomeLog implements Pick<Writable<Outcome[]>, 'update'> {
     /// Newest first.
     entries = $state.raw<Outcome[]>([]);
     /// The newest entry, or null while the log is empty.
@@ -30,12 +29,6 @@ export class OutcomeLog implements Pick<Writable<Outcome[]>, 'subscribe' | 'upda
     /// gives it zero.
     #counted = $derived(countBy(this.entries, prop('outcome')));
     counts = $derived(fromKeys(OUTCOMES, (_name) => this.#counted[_name] ?? 0));
-    subscribe;
-
-    constructor() {
-        // `toStore` reads the entries once on creation; the constructor runs after every field is set.
-        this.subscribe = toStore(() => this.entries).subscribe;
-    }
 
     /// An arrow function, so a caller may pass it detached from the object, as `Writable` allows.
     update = (_change: Updater<Outcome[]>) => { this.entries = _change(this.entries); };

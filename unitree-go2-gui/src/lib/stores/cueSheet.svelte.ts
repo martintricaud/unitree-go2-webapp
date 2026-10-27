@@ -1,7 +1,6 @@
 import { clamp, conditional, constant, doNothing, drop, entries, evolve, filter, findIndex, first, flatMap } from 'remeda';
 import { forEach, hasAtLeast, identity, isArray, isEmpty, isPlainObject, isStrictEqual, isString, last } from 'remeda';
 import { map, merge, pipe, piped, range, set, sortBy, splice, take } from 'remeda';
-import { toStore } from 'svelte/store';
 import type { Updater, Writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
@@ -61,11 +60,10 @@ const move = (_from: number, _to: number) => <T>(_items: T[]) =>
 /// plays the saved cells; under the other instruments the operator edits the shown cells, which
 /// Save makes the saved sheet and writes to storage. Indices name drawn cells: the strip hands
 /// over no other.
-export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'subscribe' | 'update'> {
+export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'update'> {
     #robot: typeof robot;
     #storage: Pick<Storage, 'getItem' | 'setItem'>;
     state: ReturnType<typeof playing>;
-    subscribe: Writable<CueSheet['state']>['subscribe'];
 
     /// Starts on the sheet last saved to `_storage`, or on `_cues` when it holds none.
     constructor(_cues: typeof CONDUITE, _robot: typeof robot, _storage: Pick<Storage, 'getItem' | 'setItem'>) {
@@ -73,8 +71,6 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'sub
         this.#storage = _storage;
         const stored = attempt(() => JSON.parse(_storage.getItem(KEY) ?? 'null'), null);
         this.state = $state.raw(playing(conditional(stored, [isSheet, identity()], constant(_cues))));
-        // `toStore` reads the state once on creation, so it must follow the state's first value.
-        this.subscribe = toStore(() => this.state).subscribe;
     }
 
     /// An arrow function, so a caller may pass it detached from the object, as `Writable` allows.

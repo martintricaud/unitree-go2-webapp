@@ -33,8 +33,8 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
   return { cueSheet, robot, sent };
 };
 
-/** The pointer and the pressed cell of `_cueSheet`, read through the store contract. */
-const position = (_cueSheet: CueSheet) => pick(get(_cueSheet), ['pointer', 'pressed']);
+/** The pointer and the pressed cell of `_cueSheet`. */
+const position = (_cueSheet: CueSheet) => pick(_cueSheet.state, ['pointer', 'pressed']);
 
 /** Presses and releases `_key` on `_cueSheet`, `_count` times. */
 const tap = (_cueSheet: CueSheet, _key: string, _count = 1) =>
@@ -55,7 +55,7 @@ const ENTER_POSE = enter('Pose');
 describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
-    expect(get(cueSheet)).toEqual({ saved: CUES, cells: CUES, pointer: 0, pressed: null, instrument: 'Fire', renaming: null });
+    expect(cueSheet.state).toEqual({ saved: CUES, cells: CUES, pointer: 0, pressed: null, instrument: 'Fire', renaming: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -165,10 +165,10 @@ describe('cueSheet keys', () => {
 });
 
 describe('cueSheet as a store', () => {
-  it('applies a detached update, and shows the change through get', () => {
+  it('applies a detached update', () => {
     const { cueSheet } = setup();
     const { update } = cueSheet;
-    update((_state) => ({ ..._state, pointer: 2 }));
+    update(set('pointer', 2));
     expect(position(cueSheet).pointer).toBe(2);
   });
 });
@@ -193,7 +193,7 @@ const editing = (
   const { cueSheet, sent } = setup(_cues, _storage);
   tap(cueSheet, 'ArrowDown', _pointer);
   cueSheet.choose(_instrument);
-  return { cueSheet, sent, shown: () => get(cueSheet) };
+  return { cueSheet, sent, shown: () => cueSheet.state };
 };
 
 describe('cueSheet sweeps', () => {
@@ -312,7 +312,7 @@ describe('cueSheet edits', () => {
 
   it('saves the shown cells, clears the pressed cell, returns to Fire, and sends a renamed cell under its new label', () => {
     const { cueSheet, sent } = setup(SHEET);
-    const shown = () => get(cueSheet);
+    const shown = () => cueSheet.state;
     cueSheet.press('ArrowRight');
     cueSheet.choose('Rename');
     cueSheet.rename(1, 'X');
@@ -356,8 +356,8 @@ describe('cueSheet in storage', () => {
     cueSheet.save();
     expect(storage.entries.has('cueSheet.v1')).toBe(true);
     const { cueSheet: reloaded } = setup(SHEET, storage);
-    expect(get(reloaded).cells).toEqual(get(cueSheet).cells);
-    expect(get(reloaded).cells).not.toEqual(SHEET);
+    expect(reloaded.state.cells).toEqual(cueSheet.state.cells);
+    expect(reloaded.state.cells).not.toEqual(SHEET);
   });
 
   it.each([
@@ -383,7 +383,7 @@ describe('cueSheet in storage', () => {
     '[{"label":"A","steps":[],"changes":[],"items":[{"label":"B","steps":[],"changes":[]}]}]',
   ])('starts from the given cues when the storage holds %s', (_stored) => {
     const { cueSheet } = setup(SHEET, memoryStorage(new Map([['cueSheet.v1', _stored]])));
-    expect(get(cueSheet).cells).toEqual(SHEET);
+    expect(cueSheet.state.cells).toEqual(SHEET);
   });
 
   it('works in memory on a storage that throws on every access', () => {
@@ -391,11 +391,11 @@ describe('cueSheet in storage', () => {
       throw new Error('Storage is forbidden.');
     };
     const { cueSheet } = editing('Rename', 0, SHEET, { getItem: refuse, setItem: refuse });
-    expect(get(cueSheet).cells).toEqual(SHEET);
+    expect(cueSheet.state.cells).toEqual(SHEET);
     expect(() => {
       cueSheet.rename(1, 'X');
       cueSheet.save();
     }).not.toThrow();
-    expect(get(cueSheet).cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
+    expect(cueSheet.state.cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
   });
 });
