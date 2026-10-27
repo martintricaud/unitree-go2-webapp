@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
-    import { cueSheet } from '../lib/stores/cueSheet.svelte';
-    import type { Cue } from '../lib/utils/commands';
+    import { drop, filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
+    import { cueSheet, INSTRUMENTS } from '../lib/stores/cueSheet.svelte';
+    import type { Cell, Cue } from '../lib/utils/commands';
 
     /// The strip's root element, whose drawn cells give each cell its index.
     let strip: HTMLDivElement;
@@ -13,7 +13,7 @@
 
     /// The active instrument, and the cells it shows and highlights during the sweep in progress.
     let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
-    let shown = $derived(reduce(sweeps, (_cells: Cue[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.cells));
+    let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.cells));
     let swept = $derived(flatMap(sweeps, ({ a, b }) => instrument.swept(a, b)));
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
@@ -67,7 +67,7 @@
 >
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar top">
-            {#each ['Move', 'Rename', 'Group', 'Ungroup'] as const as name}
+            {#each drop(INSTRUMENTS, 1) as name}
                 <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
             {/each}
         </div>

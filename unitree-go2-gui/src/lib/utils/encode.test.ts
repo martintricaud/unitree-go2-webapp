@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { fromKeys, keys, mapValues } from 'remeda';
+import { drop, fromKeys, keys, map, mapValues, pipe, set as setField } from 'remeda';
+import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { COLOURS, SPEED_LEVELS } from '../data/settings';
 import { ACTIONS, GAITS, dim, enter, isCommandable, leave, orient, perform, recover, sequence, set, wait } from './commands';
+import { grouped, nextId, numbered, sheetSchema, stored } from './commands';
 import WIRE from './encode.fixture.json';
 
 const COMMANDABLE_GAITS = keys(GAITS).filter(isCommandable);
@@ -172,5 +174,44 @@ describe('items', () => {
   it('survives a JSON round trip, constituents included', () => {
     const cues = [...CONDUITE, ...Object.values(presets)];
     expect(JSON.parse(JSON.stringify(cues))).toStrictEqual(cues);
+  });
+});
+
+/** `_cells` written as the browser stores them, then read back. */
+const reread = (_cells: ReturnType<typeof numbered>) =>
+  v.parse(sheetSchema, JSON.parse(JSON.stringify(pipe(_cells, map(stored)))));
+
+/** The message and the location of each issue found in `_value`, read as a stored sheet. */
+const issuesOf = (_value: unknown) =>
+  map(v.safeParse(sheetSchema, _value).issues ?? [], (_issue) => ({ message: _issue.message, at: v.getDotPath(_issue) }));
+
+/** A stored leaf with identifier `_id`. */
+const leaf = (_name: string, _args: unknown[], _id = 0) => ({ id: _id, label: 'x', name: _name, args: _args });
+
+describe('the stored sheet', () => {
+  const cells = numbered(CONDUITE, 0);
+
+  it('reads back the cells it was written from, identifiers included', () => {
+    expect(reread(cells)).toEqual(cells);
+  });
+
+  it('reads back renamed cells and a new group of groups', () => {
+    const both = grouped(nextId(cells), 'Both', [cells[1], cells[2]]);
+    const edited = [setField(cells[0], 'label', 'Renamed'), both, ...drop(cells, 3)];
+    expect(reread(edited)).toEqual(edited);
+  });
+
+  it.each([
+    ['a gait the app cannot command', [leaf('enter', ['Stairs'])], 'received "Stairs"', '0.args.0'],
+    ['an unknown colour', [leaf('set', [{ name: 'headlight', value: 'pink' }])], 'received "pink"', '0.args.0.value'],
+    ['a duration written as text', [leaf('wait', ['1'])], 'Expected number but received "1"', '0.args.0'],
+    ['an inherited property as a command name', [leaf('toString', [])], 'received "toString"', '0.name'],
+    ['recover with an argument', [leaf('recover', [1])], 'recover takes no argument', '0.args.0'],
+    ['an empty group', [{ id: 0, label: 'g', items: [] }], 'a group needs at least one cell', '0.items'],
+    ['an empty sheet', [], 'a sheet needs at least one cell', null],
+    ['two cells with one identifier', [leaf('wait', [1]), leaf('wait', [2])], 'two cells share an identifier', null],
+    ['a group and its cell with one identifier', [{ id: 1, label: 'g', items: [leaf('wait', [1], 1)] }], 'share an identifier', null],
+  ])('rejects %s, at its location', (_case, _value, _message, _at) => {
+    expect(issuesOf(_value)).toEqual([{ message: expect.stringContaining(_message), at: _at }]);
   });
 });

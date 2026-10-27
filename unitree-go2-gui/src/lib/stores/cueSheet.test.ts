@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { map, pick, set, times } from 'remeda';
 import { CONDUITE, presets } from '../data/cues';
-import { enter, perform, sequence, wait } from '../utils/commands';
+import { enter, grouped, numbered, perform, sequence, stored, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { CueSheet } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
@@ -54,7 +54,8 @@ const ENTER_POSE = enter('Pose');
 describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
-    expect(cueSheet.state).toEqual({ saved: CUES, cells: CUES, pointer: 0, pressed: null, instrument: 'Fire', renaming: null });
+    const cells = numbered(CUES, 0);
+    expect(cueSheet.state).toEqual({ saved: cells, cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -180,6 +181,8 @@ const SABOTS = sequence('Sabots', enter('FreeWalk'), wait(0.1), enter('Backstand
 const BYE = sequence('Bye', perform('Content'), wait(0.5));
 /** A sheet whose cells 2 and 5 have constituents. */
 const SHEET: [Cue, ...Cue[]] = [enter('FreeWalk'), enter('Pose'), SABOTS, perform('Hello'), wait(1), BYE];
+/** SHEET as the cue sheet holds it: identifiers 0 to 10 in pre-order. */
+const CELLS = numbered(SHEET, 0);
 
 /** A sheet of `_cues` on `_storage` with its pointer moved to `_pointer` in play mode, then edited
  * under `_instrument`. */
@@ -200,7 +203,7 @@ describe('cueSheet sweeps', () => {
     const { cueSheet, shown } = editing('Move', 1, CONDUITE);
     cueSheet.sweep(0, 2);
     expect(map(shown().cells.slice(0, 3), (_cell) => _cell.label)).toEqual(['Pose', 'Sabots', 'FreeWalk']);
-    expect(shown().cells[shown().pointer]).toBe(CONDUITE[1]);
+    expect(shown().cells[shown().pointer]).toEqual(numbered(CONDUITE, 0)[1]);
   });
 
   it.each([
@@ -210,20 +213,20 @@ describe('cueSheet sweeps', () => {
     times(SHEET.length, (_pointer) => {
       const { cueSheet, shown } = editing('Move', _pointer);
       cueSheet.sweep(_from, _to);
-      expect(shown().cells[_to]).toBe(SHEET[_from]);
-      expect(shown().cells[shown().pointer]).toBe(SHEET[_pointer]);
+      expect(shown().cells[_to]).toEqual(CELLS[_from]);
+      expect(shown().cells[shown().pointer]).toEqual(CELLS[_pointer]);
     });
     const { cueSheet, shown } = editing('Move');
     cueSheet.sweep(_from, _to);
-    expect(shown().cells).toEqual(map(_from < _to ? [0, 2, 3, 4, 1, 5] : [0, 4, 1, 2, 3, 5], (_index) => SHEET[_index]));
+    expect(shown().cells).toEqual(map(_from < _to ? [0, 2, 3, 4, 1, 5] : [0, 4, 1, 2, 3, 5], (_index) => CELLS[_index]));
   });
 
-  it('groups the cells of a sweep made in either direction into one sequence, and leaves a sweep of one cell', () => {
-    const grouped = [SHEET[0], sequence('Pose → Hello', SHEET[1], SHEET[2], SHEET[3]), ...SHEET.slice(4)];
+  it('groups a sweep made in either direction into one sequence with a new identifier, and leaves a sweep of one cell', () => {
+    const expected = [CELLS[0], grouped(11, 'Pose → Hello', [CELLS[1], CELLS[2], CELLS[3]]), ...CELLS.slice(4)];
     times(2, (_reverse) => {
       const { cueSheet, shown } = editing('Group');
       cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
-      expect(shown().cells).toEqual(grouped);
+      expect(shown().cells).toEqual(expected);
     });
     const { cueSheet, shown } = editing('Group');
     const before = shown();
@@ -247,7 +250,8 @@ describe('cueSheet sweeps', () => {
     const cues: [Cue, ...Cue[]] = [enter('FreeWalk'), SABOTS, perform('Hello'), BYE, wait(1)];
     const { cueSheet, shown } = editing('Ungroup', 0, cues);
     cueSheet.sweep(3, 1);
-    expect(shown().cells).toEqual([cues[0], ...SABOTS.items, cues[2], ...BYE.items, cues[4]]);
+    const cells = numbered(cues, 0);
+    expect(shown().cells).toEqual([cells[0], ...cells[1].items, cells[2], ...cells[3].items, cells[4]]);
   });
 
   it.each([
@@ -263,7 +267,7 @@ describe('cueSheet sweeps', () => {
   it('starts renaming the cell a Rename sweep ends on, and sends nothing', () => {
     const { cueSheet, sent, shown } = editing('Rename');
     cueSheet.sweep(0, 2);
-    expect(shown()).toMatchObject({ cells: SHEET, renaming: 2, instrument: 'Rename' });
+    expect(shown()).toMatchObject({ cells: CELLS, renaming: 2, instrument: 'Rename' });
     expect(sent()).toEqual([]);
   });
 });
@@ -300,7 +304,7 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(2, 2);
     cueSheet.rename(2, 'ay b');
     expect(shown()).toMatchObject({ renaming: null, instrument: 'Rename' });
-    expect(shown().cells[2]).toEqual({ ...SABOTS, label: 'ay b' });
+    expect(shown().cells[2]).toEqual(set(CELLS[2], 'label', 'ay b'));
     cueSheet.sweep(3, 3);
     cueSheet.reorder(1, 3);
     expect(shown().renaming).toBeNull();
@@ -316,11 +320,11 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.rename(1, 'X');
     cueSheet.save();
-    const renamed = { ...SHEET[1], label: 'X' };
-    const cells = [SHEET[0], renamed, ...SHEET.slice(2)];
+    const renamed = set(CELLS[1], 'label', 'X');
+    const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
     expect(shown()).toEqual({ saved: cells, cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null });
     cueSheet.sweep(1, 1);
-    expect(sent()).toEqual(asSent(SHEET[0], renamed));
+    expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
 
   it('restores the saved cells on Cancel, returns to Fire, and keeps the pointer index, clamped to the saved length', () => {
@@ -328,13 +332,13 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(0, 3);
     expect(shown().pointer).toBe(1);
     cueSheet.cancel();
-    expect(shown()).toEqual({ saved: SHEET, cells: SHEET, pointer: 1, pressed: null, instrument: 'Fire', renaming: null });
+    expect(shown()).toEqual({ saved: CELLS, cells: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null });
 
     const { cueSheet: grown, shown: grownShown } = editing('Ungroup', 5);
     grown.sweep(2, 2);
     expect(grownShown().pointer).toBe(7);
     grown.cancel();
-    expect(grownShown()).toMatchObject({ cells: SHEET, pointer: SHEET.length - 1, instrument: 'Fire' });
+    expect(grownShown()).toMatchObject({ cells: CELLS, pointer: SHEET.length - 1, instrument: 'Fire' });
   });
 
   it('shows the saved cells again on Reset, keeps the instrument, and ends any rename', () => {
@@ -343,20 +347,21 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(shown()).toEqual({ saved: SHEET, cells: SHEET, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null });
+    expect(shown()).toEqual({ saved: CELLS, cells: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null });
   });
 });
 
 describe('cueSheet in storage', () => {
-  it('starts a second sheet on the same storage with the sheet the first one saved', () => {
+  it('starts a second sheet on the same storage with the cells and identifiers the first one saved', () => {
     const storage = memoryStorage();
     const { cueSheet } = editing('Group', 0, SHEET, storage);
     cueSheet.sweep(3, 4);
+    cueSheet.rename(0, 'Renamed');
     cueSheet.save();
-    expect(storage.entries.has('cueSheet.v1')).toBe(true);
+    expect([...storage.entries.keys()]).toEqual(['cueSheet.v2']);
     const { cueSheet: reloaded } = setup(SHEET, storage);
     expect(reloaded.state.cells).toEqual(cueSheet.state.cells);
-    expect(reloaded.state.cells).not.toEqual(SHEET);
+    expect(reloaded.state.cells).not.toEqual(CELLS);
   });
 
   it.each([
@@ -375,14 +380,12 @@ describe('cueSheet in storage', () => {
   });
 
   it.each([
-    'not json',
-    '[]',
-    '[{"label":1}]',
-    '{"label":"A","steps":[],"changes":[],"items":[]}',
-    '[{"label":"A","steps":[],"changes":[],"items":[{"label":"B","steps":[],"changes":[]}]}]',
-  ])('starts from the given cues when the storage holds %s', (_stored) => {
-    const { cueSheet } = setup(SHEET, memoryStorage(new Map([['cueSheet.v1', _stored]])));
-    expect(cueSheet.state.cells).toEqual(SHEET);
+    ['cueSheet.v1', JSON.stringify(SHEET)],
+    ['cueSheet.v2', 'not json'],
+    ['cueSheet.v2', JSON.stringify(map(numbered([wait(2)], 0), stored))],
+  ])('starts from the given cues, numbered from 0, when %s holds %s', (_key, _stored) => {
+    const { cueSheet } = setup(SHEET, memoryStorage(new Map([[_key, _stored]])));
+    expect(cueSheet.state.cells).toEqual(CELLS);
   });
 
   it('works in memory on a storage that throws on every access', () => {
@@ -390,11 +393,11 @@ describe('cueSheet in storage', () => {
       throw new Error('Storage is forbidden.');
     };
     const { cueSheet } = editing('Rename', 0, SHEET, { getItem: refuse, setItem: refuse });
-    expect(cueSheet.state.cells).toEqual(SHEET);
+    expect(cueSheet.state.cells).toEqual(CELLS);
     expect(() => {
       cueSheet.rename(1, 'X');
       cueSheet.save();
     }).not.toThrow();
-    expect(cueSheet.state.cells).toEqual([SHEET[0], { ...SHEET[1], label: 'X' }, ...SHEET.slice(2)]);
+    expect(cueSheet.state.cells).toEqual([CELLS[0], set(CELLS[1], 'label', 'X'), ...CELLS.slice(2)]);
   });
 });
