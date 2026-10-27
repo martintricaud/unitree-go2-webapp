@@ -121,8 +121,8 @@ button:focus-visible {
   flex-shrink: 0;
   width: max-content;
   height: 100%;
-  /* Equal at the top and the bottom; together 1em, which leaves the grids their six rows. */
-  padding-block: 0.5em;
+  /* Equal at the top and the bottom. */
+  padding-block: 0.8em;
 }
 
 /* A thin grooved line between two neighbouring columns of the pane, centred in the gap. */
@@ -138,6 +138,7 @@ button:focus-visible {
 }
 
 .ui-pane h2 {
+  text-align: center;
   font-size: 0.9em;
   font-weight: bold;
   margin-bottom: 0.3em;
