@@ -68,7 +68,7 @@ describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
     const cells = numbered(CUES, 0);
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, key: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -343,7 +343,7 @@ describe('cueSheet edits', () => {
     cueSheet.save();
     const renamed = set(CELLS[1], 'label', 'X');
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
     cueSheet.sweep(1, 1);
     expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
@@ -353,7 +353,7 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(0, 3);
     expect(state().pointer).toBe(1);
     cueSheet.cancel();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
 
     const { cueSheet: grown, state: grownState } = editing('Ungroup', 5);
     grown.sweep(2, 2);
@@ -368,7 +368,7 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, key: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, key: null, problem: null });
   });
 });
 
@@ -529,5 +529,54 @@ describe('cueSheet key assignment', () => {
     const document = { sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings: { a: 999, b: 0, x: 3 } };
     const reloaded = setup(SHEET, memoryStorage(new Map([['cueSheet.v2', JSON.stringify(document)]]))).cueSheet;
     expect(reloaded.state.saved.bindings).toEqual({ b: 0 });
+  });
+});
+
+describe('cueSheet import and export', () => {
+  /** The JSON text of a file holding `_sheet` as its stored cells, and the pane of `_cueSheet`. */
+  const file = (_cueSheet: CueSheet, _sheet: unknown[]) =>
+    JSON.stringify({ version: 2, sheet: _sheet, pane: mapValues(_cueSheet.state.shown.pane, map(stored)), bindings: {} });
+
+  /** One stored leaf, numbered above every identifier of the default document. */
+  const ONE = { id: 1000, label: 'Sit', name: 'enter', args: ['Sitting'] };
+
+  it('writes the version, and shows an equal document on importing its own export, under the same instrument', () => {
+    const { cueSheet } = editing('Group');
+    cueSheet.sweep(0, 1);
+    const shown = cueSheet.state.shown;
+    cueSheet.import(cueSheet.exported());
+    expect(JSON.parse(cueSheet.exported()).version).toBe(2);
+    expect([cueSheet.state.shown, cueSheet.state.instrument]).toEqual([shown, 'Group']);
+  });
+
+  it.each([
+    ['an invalid leaf', (_cueSheet: CueSheet) => file(_cueSheet, [set(ONE, 'args', ['Stairs'])]), /→ at sheet\.0\.args\.0$/],
+    ['a wrong version', (_cueSheet: CueSheet) => file(_cueSheet, [ONE]).replace('"version":2', '"version":3'), /→ at version$/],
+    ['text that is not JSON', () => 'not json', /JSON/],
+  ])('keeps the shown document on %s, and reports the first issue until the next action', (_name, _text, _message) => {
+    const { cueSheet } = editing('Move');
+    const shown = cueSheet.state.shown;
+    cueSheet.import(_text(cueSheet));
+    expect(cueSheet.state.shown).toBe(shown);
+    expect(cueSheet.state.problem).toMatch(_message);
+    cueSheet.sweep(0, 0);
+    expect(cueSheet.state.problem).toBeNull();
+  });
+
+  it('restores the saved document on Cancel after an import', () => {
+    const { cueSheet } = editing('Move');
+    const saved = cueSheet.state.saved;
+    cueSheet.import(file(cueSheet, [ONE]));
+    expect(cueSheet.state.shown.sheet).toHaveLength(1);
+    cueSheet.cancel();
+    expect(cueSheet.state.shown).toBe(saved);
+  });
+
+  it('stores an imported document on Save', () => {
+    const storage = memoryStorage();
+    const { cueSheet } = editing('Move', 0, SHEET, storage);
+    cueSheet.import(file(cueSheet, [ONE]));
+    cueSheet.save();
+    expect(map(setup(SHEET, storage).cueSheet.state.shown.sheet, prop('label'))).toEqual(['Sit']);
   });
 });

@@ -34,17 +34,22 @@ type Document = { sheet: Cell[]; pane: Record<PaneGroup, Cell[]>; bindings: Part
 /// so that it also lists the default cues, and takes a parsed document, whose sheet is non-empty.
 const cellsOf = <T>({ sheet, pane }: { sheet: T[]; pane: Record<PaneGroup, T[]> }) => [...sheet, ...pipe(pane, values(), flat())];
 
-/// `_document` without the links to identifiers no drawn cell holds, so that every key is either
-/// unassigned or linked to a button.
-const resolved = <D extends Document>(_document: D) =>
-    pipe(map(cellsOf(_document), prop('id')), (_drawn) =>
-        merge(_document, { bindings: pickBy(_document.bindings, (_id) => isIncludedIn(_id, _drawn)) }),
-    );
+/// The document of `_sheet`, `_pane` and the links to identifiers a drawn cell holds, so that every
+/// key is either unassigned or linked to a button. Any other field of the argument is left out.
+/// Generic, so that the schema's transform takes the parsed document's own type.
+const resolved = <D extends Document>({ sheet, pane, bindings }: D): Document =>
+    pipe(map(cellsOf({ sheet, pane }), prop('id')), (_drawn) => ({
+        sheet,
+        pane,
+        bindings: pickBy(bindings, (_id) => isIncludedIn(_id, _drawn)),
+    }));
 
 /// The stored document: the sheet, each pane group as `stored` writes them, and the bindings,
-/// every identifier held by one cell only. A binding to a missing cell is dropped.
+/// every identifier held by one cell only. The format's version is optional, because documents
+/// saved before it was added lack it. A binding to a missing cell is dropped.
 export const documentSchema = v.pipe(
     v.strictObject({
+        version: v.optional(v.literal(2)),
         sheet: sheetSchema,
         pane: v.strictObject(mapValues(PANE_KINDS, (_kind) => v.array(v.pipe(_kind, cellSchema)))),
         bindings: v.record(v.picklist(KEYS), v.number()),
@@ -52,6 +57,9 @@ export const documentSchema = v.pipe(
     distinctIn(cellsOf),
     v.transform(resolved),
 );
+
+/// The document as JSON text, as storage and an imported file hold it.
+const documentText = v.pipe(v.string(), v.parseJson(), documentSchema);
 
 /// The document of `_cues` and the default pane: the sheet numbered from 0, then each pane group
 /// above every identifier numbered before it. Each key links to the cell numbered from its
@@ -134,6 +142,7 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     instrument: _instrument,
     renaming: null as number | null,
     key: null as Key | null, // the key Assign links to the next cell chosen
+    problem: null as string | null, // why the last import failed, shown until the next action
 });
 
 /// The cue sheet the operator steps through, sending cues and toggles to a robot. Under Fire it
@@ -150,7 +159,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     constructor(_cues: Cue[], _robot: typeof robot, _storage: Pick<Storage, 'getItem' | 'setItem'>) {
         this.#robot = _robot;
         this.#storage = _storage;
-        const read = v.safeParse(documentSchema, attempt(() => JSON.parse(_storage.getItem(KEY) ?? 'null'), null));
+        const read = v.safeParse(documentText, attempt(() => _storage.getItem(KEY), null));
         this.state = $state.raw(playing(read.success ? read.output : numberedDocument(_cues)));
     }
 
@@ -179,11 +188,18 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
     };
 
-    /// Applies the sweep from cell `_a` to cell `_b` with the active instrument.
-    sweep = (_a: number, _b: number) => this.instruments[this.state.instrument].release(_a, _b);
+    /// Forgets why the last import failed: every action after it ends the message.
+    #dismiss = () => this.update(set('problem', null));
 
-    /// Replaces the state by `_change` of it, and ends any renaming.
-    #edit = (_change: Updater<CueSheet['state']>) => this.update(piped(_change, set('renaming', null)));
+    /// Applies the sweep from cell `_a` to cell `_b` with the active instrument.
+    sweep = (_a: number, _b: number) => {
+        this.#dismiss();
+        this.instruments[this.state.instrument].release(_a, _b);
+    };
+
+    /// Replaces the state by `_change` of it, and ends any renaming and any import message.
+    #edit = (_change: Updater<CueSheet['state']>) =>
+        this.update(piped(_change, set('renaming', null), set('problem', null)));
 
     /// Makes `_instrument` the active one, and ends any renaming. The strip's Edit is
     /// `choose('Move')`, the controller's is `choose('Assign')`.
@@ -236,10 +252,27 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
             }),
         );
 
-    /// Shows the saved document again, keeps the instrument, and ends any renaming. The pointer
-    /// keeps its index, moved onto the last cell when the saved cells are fewer.
-    reset = () =>
-        this.#edit((_state) => merge(_state, { shown: _state.saved, pointer: within(_state.saved.sheet, _state.pointer) }));
+    /// Shows `_document`, keeps the instrument, and ends any renaming. The pointer keeps its index,
+    /// moved onto the last cell when `_document` has fewer cells.
+    #show = (_document: Document) =>
+        this.#edit((_state) => merge(_state, { shown: _document, pointer: within(_document.sheet, _state.pointer) }));
+
+    /// Shows the saved document again.
+    reset = () => this.#show(this.state.saved);
+
+    /// The shown document as JSON text, as storage and an exported file hold it.
+    exported = () => {
+        const { sheet, pane, bindings } = this.state.shown;
+        return JSON.stringify({ version: 2, sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings }, null, 2);
+    };
+
+    /// Shows the document of the JSON text `_text` until Save or Cancel. When `_text` holds no valid
+    /// document, the shown one stays, and Valibot's message for the first issue, with its location,
+    /// is recorded until the next action.
+    import = (_text: string) =>
+        pipe(v.safeParse(documentText, _text), (_read) =>
+            _read.success ? this.#show(_read.output) : this.update(set('problem', v.summarize([first(_read.issues)]))),
+        );
 
     /// Discards the edits and returns to play mode.
     cancel = () => {
@@ -250,9 +283,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Makes the shown document the saved one, writes it to storage, and returns to play mode with
     /// no cell pressed.
     save = () => {
-        const { sheet, pane, bindings } = this.state.shown;
-        const json = JSON.stringify({ sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings });
-        attempt(() => this.#storage.setItem(KEY, json), undefined);
+        attempt(() => this.#storage.setItem(KEY, this.exported()), undefined);
         this.update((_state) => merge(_state, { saved: _state.shown, pressed: null }));
         this.choose('Fire');
     };
@@ -295,10 +326,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// What a pane button does with its cell: Assign links the selected key to `_cell`; every other
     /// instrument sends `_cue`, the cell itself unless the button sends another side of it, once the
     /// robot can take the cell.
-    use = (_cell: Cell, _cue: Cue = _cell) =>
-        this.state.instrument === 'Assign'
-            ? this.#bind(_cell)
-            : forEach(this.#ready(_cell), () => void this.#robot.request(_cue));
+    use = (_cell: Cell, _cue: Cue = _cell) => {
+        this.#dismiss();
+        if (this.state.instrument === 'Assign') this.#bind(_cell);
+        else forEach(this.#ready(_cell), () => void this.#robot.request(_cue));
+    };
 
     /// The cell `_key` is linked to in the shown document, if any.
     linked = (_key: Key) => pipe(linksOf(this.state.shown, _key), map(prop('cell')), first());
@@ -344,6 +376,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
 
     /// Runs the press of `_key`: an arrow's under Fire, a face key's always. Any other key matches nothing.
     press = (_key: string) => {
+        this.#dismiss();
         forEach(this.state.instrument === 'Fire' ? this.#arrow(_key) : [], (_arrow) => _arrow.press());
         forEach(this.#face(_key), this.#trigger);
     };

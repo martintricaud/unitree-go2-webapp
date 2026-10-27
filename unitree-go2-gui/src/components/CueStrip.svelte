@@ -52,6 +52,26 @@
         _span.focus();
         getSelection()?.selectAllChildren(_span);
     };
+
+    /// The hidden file input Import opens.
+    let picker: HTMLInputElement;
+
+    /// Imports the file chosen in the picker, then empties the picker, so that choosing the same
+    /// file again imports it again.
+    const importChosen = async () => {
+        const text = await picker.files?.[0]?.text();
+        picker.value = '';
+        if (text !== undefined) cueSheet.import(text);
+    };
+
+    /// Downloads the shown document as `cue-sheet.json`.
+    const exportShown = () => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([cueSheet.exported()], { type: 'application/json' }));
+        link.download = 'cue-sheet.json';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    };
 </script>
 
 <svelte:window onpointerup={() => (sweeps = [])} />
@@ -89,10 +109,20 @@
         {#if cueSheet.state.instrument === 'Fire'}
             <button onclick={() => cueSheet.choose('Move')}>Edit</button>
         {:else}
-            <button onclick={() => cueSheet.save()}>Save</button>
-            <button onclick={() => cueSheet.reset()}>Reset</button>
-            <button onclick={() => cueSheet.cancel()}>Cancel</button>
+            <div class="row">
+                <button onclick={() => cueSheet.save()}>Save</button>
+                <button onclick={() => cueSheet.reset()}>Reset</button>
+                <button onclick={() => cueSheet.cancel()}>Cancel</button>
+            </div>
+            <div class="row">
+                <button onclick={() => picker.click()}>Import</button>
+                <button onclick={exportShown}>Export</button>
+            </div>
+            {#if cueSheet.state.problem !== null}
+                <p class="problem">{cueSheet.state.problem}</p>
+            {/if}
         {/if}
+        <input type="file" accept=".json,application/json" hidden bind:this={picker} onchange={importChosen} />
     </div>
 </div>
 
@@ -132,6 +162,19 @@
     .bottom {
         bottom: 0;
         margin-top: auto;
+        flex-direction: column;
+    }
+
+    .row {
+        display: flex;
+    }
+
+    /* Valibot's message keeps its line break before the issue's location. */
+    .problem {
+        margin: 0;
+        padding: 0.25rem 0.5rem;
+        white-space: pre-line;
+        color: rgb(160, 0, 0);
     }
 
     .bar .active {
