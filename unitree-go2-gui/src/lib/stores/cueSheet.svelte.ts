@@ -1,9 +1,10 @@
-import { clamp, doNothing, drop, entries, evolve, filter, findIndex, first, flatMap, forEach, hasAtLeast } from 'remeda';
-import { identity, isEmpty, isStrictEqual, last, map, merge, pipe, piped, range, set, sortBy, splice, take } from 'remeda';
+import { clamp, doNothing, drop, entries, evolve, filter, findIndex, first, flat, flatMap, forEach, hasAtLeast } from 'remeda';
+import { identity, isEmpty, isStrictEqual, keys, last, map, mapValues, merge, pipe, piped, range, reduce, set } from 'remeda';
+import { sortBy, splice, take, values } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
-import { CONDUITE, presets } from '../data/cues';
-import { grouped, nextId, numbered, sheetSchema, stored } from '../utils/commands';
+import { CONDUITE, PANE, PANE_GROUPS, presets } from '../data/cues';
+import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, nextId, numbered, sheetSchema, stored } from '../utils/commands';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
 
@@ -11,8 +12,43 @@ import { robot } from './robot.svelte';
 /// documents stored in the old shape are ignored.
 const KEY = 'cueSheet.v2';
 
-/// The stored document: the sheet, as `stored` writes it.
-const documentSchema = v.strictObject({ sheet: sheetSchema });
+/// The cells each pane group accepts, checked on a stored cell before it is parsed. Each kind's
+/// output is unknown, so that `cellSchema` parses the checked input.
+const PANE_KINDS: Record<(typeof PANE_GROUPS)[number], v.GenericSchema> = {
+    actions: v.looseObject({ name: v.picklist(['perform', 'recover']) }),
+    gaits: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(COMMANDABLE_GAITS)]) }),
+    postures: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(keys(POSTURES))]) }),
+    lights: v.looseObject({ name: v.literal('set'), args: v.tuple([v.looseObject({ name: v.literal('headlight') })]) }),
+};
+
+/// The document: the sheet the operator steps through, and the cells of the pane's buttons.
+type Document = { sheet: Cell[]; pane: Record<keyof typeof PANE_KINDS, Cell[]> };
+
+/// Every top-level cell of `_document`. Generic, so that `distinctIn` also takes it for a parsed
+/// document, whose sheet is typed non-empty.
+const cellsOf = <D extends Document>({ sheet, pane }: D) => [...sheet, ...pipe(pane, values(), flat())];
+
+/// The stored document: the sheet and each pane group, as `stored` writes them, every identifier
+/// held by one cell only.
+export const documentSchema = v.pipe(
+    v.strictObject({
+        sheet: sheetSchema,
+        pane: v.strictObject(mapValues(PANE_KINDS, (_kind) => v.array(v.pipe(_kind, cellSchema)))),
+    }),
+    distinctIn(cellsOf),
+);
+
+/// The document of `_cues` and the default pane: the sheet numbered from 0, then each pane group
+/// above every identifier numbered before it.
+const numberedDocument = (_cues: Cue[]) =>
+    pipe(
+        PANE_GROUPS,
+        reduce(
+            (_document: Document, _group) =>
+                merge(_document, { pane: set(_document.pane, _group, numbered(PANE[_group], nextId(cellsOf(_document)))) }),
+            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []) },
+        ),
+    );
 
 /// The strip's instruments: Fire plays the sheet, the others edit it.
 export const INSTRUMENTS = ['Fire', 'Move', 'Rename', 'Group', 'Ungroup'] as const;
@@ -27,11 +63,12 @@ const attempt = <T>(_act: () => T, _fallback: T) => {
     }
 };
 
-/// The state of a sheet that plays `_cells` from the first one, under `_instrument`. The parameter
-/// admits every instrument, so that `choose` can replace the one it starts on.
-const playing = (_cells: Cell[], _instrument: (typeof INSTRUMENTS)[number] = 'Fire') => ({
-    saved: _cells, // the sheet Save last stored
-    cells: _cells, // the cells shown; equal to `saved` under Fire
+/// The state of a document that plays its sheet from the first cell, under `_instrument`. The
+/// parameter admits every instrument, so that `choose` can replace the one it starts on.
+const playing = ({ sheet, pane }: Document, _instrument: (typeof INSTRUMENTS)[number] = 'Fire') => ({
+    saved: sheet, // the sheet Save last stored
+    cells: sheet, // the cells shown; equal to `saved` under Fire
+    pane, // the pane's cells, by group
     pointer: 0,
     pressed: null as number | null,
     instrument: _instrument,
@@ -61,13 +98,13 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     #storage: Pick<Storage, 'getItem' | 'setItem'>;
     state: ReturnType<typeof playing>;
 
-    /// Starts on the sheet last saved to `_storage`, or on `_cues`, numbered from 0, when it holds
-    /// no valid document.
+    /// Starts on the document last saved to `_storage`, or on `_cues` and the default pane when it
+    /// holds no valid document.
     constructor(_cues: Cue[], _robot: typeof robot, _storage: Pick<Storage, 'getItem' | 'setItem'>) {
         this.#robot = _robot;
         this.#storage = _storage;
         const read = v.safeParse(documentSchema, attempt(() => JSON.parse(_storage.getItem(KEY) ?? 'null'), null));
-        this.state = $state.raw(playing(read.success ? read.output.sheet : numbered(_cues, 0)));
+        this.state = $state.raw(playing(read.success ? read.output : numberedDocument(_cues)));
     }
 
     /// An arrow function, so a caller may pass it detached from the object, as `Writable` allows.
@@ -108,14 +145,14 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Ends any renaming and keeps the label.
     stopRenaming = () => this.update(set('renaming', null));
 
-    /// Replaces the cells from `_a` to `_b`, in either order, by `_change` of them and of all the shown
-    /// cells, and ends any renaming. A pointer on a replaced cell lands on the first new one; a pointer after them
+    /// Replaces the cells from `_a` to `_b`, in either order, by `_change` of them and of the state,
+    /// and ends any renaming. A pointer on a replaced cell lands on the first new one; a pointer after them
     /// keeps its cell.
-    #replace = (_a: number, _b: number, _change: (_run: Cell[], _cells: Cell[]) => Cell[]) => {
+    #replace = (_a: number, _b: number, _change: (_run: Cell[], _state: CueSheet['state']) => Cell[]) => {
         const [lo, hi] = span(_a, _b);
         const count = hi - lo + 1;
         this.#edit((_state) => {
-            const made = _change(pipe(_state.cells, drop(lo), take(count)), _state.cells);
+            const made = _change(pipe(_state.cells, drop(lo), take(count)), _state);
             return evolve(_state, {
                 cells: splice(lo, count, made),
                 pointer: (_at) => (_at > hi ? _at + made.length - count : clamp(_at, { max: lo })),
@@ -127,10 +164,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     rename = (_index: number, _label: string) => this.#replace(_index, _index, map(set('label', _label)));
 
     /// Replaces the cells from `_a` to `_b` by one group of them, labelled with its first and last
-    /// labels, under an identifier no shown cell holds. A range of one cell stays as it is.
+    /// labels, under an identifier no shown cell and no pane cell holds. A range of one cell stays as
+    /// it is.
     group = (_a: number, _b: number) =>
-        this.#replace(_a, _b, (_run, _cells) =>
-            hasAtLeast(_run, 2) ? [grouped(nextId(_cells), `${first(_run).label} → ${last(_run).label}`, _run)] : _run,
+        this.#replace(_a, _b, (_run, { cells, pane }) =>
+            hasAtLeast(_run, 2) ? [grouped(nextId(cellsOf({ sheet: cells, pane })), `${first(_run).label} → ${last(_run).label}`, _run)] : _run,
         );
 
     /// Replaces every cell from `_a` to `_b` by its constituents; a cell without any stays as it is.
@@ -161,7 +199,9 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Makes the shown cells the saved sheet, writes it to storage, and returns to play mode with
     /// no cell pressed.
     save = () => {
-        attempt(() => this.#storage.setItem(KEY, JSON.stringify({ sheet: pipe(this.state.cells, map(stored)) })), undefined);
+        const { cells, pane } = this.state;
+        const json = JSON.stringify({ sheet: map(cells, stored), pane: mapValues(pane, map(stored)) });
+        attempt(() => this.#storage.setItem(KEY, json), undefined);
         this.update((_state) => merge(_state, { saved: _state.cells, pressed: null }));
         this.choose('Fire');
     };
@@ -194,7 +234,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         ArrowUp: { label: 'Previous cue', press: this.#playing(() => this.move(-1)), release: doNothing() },
         Enter: { label: 'Fire', press: this.#playing(() => this.fire(0)), release: this.#unpress },
         a: { label: 'Toggle Pose', press: () => this.#robot.togglePosture('Pose'), release: doNothing() },
-        b: { label: 'Toggle Leaping', press: () => this.#robot.toggleGait('Leaping'), release: doNothing() },
+        b: { label: 'Toggle Leaping', press: () => this.#robot.toggleTo('gait', 'Leaping'), release: doNothing() },
         x: { label: 'Toggle Sit', press: () => this.#robot.togglePosture('Sitting'), release: doNothing() },
         y: { label: 'Dance', press: () => void this.#robot.request(presets.dance), release: doNothing() },
     };

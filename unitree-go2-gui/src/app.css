@@ -131,6 +131,21 @@ button:focus-visible {
   min-height: 0;
 }
 
+/* A posture's toggle: its entry and its exit side by side, the side matching the robot's
+   settled posture drawn pressed. */
+.posture-toggle {
+  display: flex;
+}
+
+.posture-toggle>button {
+  flex: 1;
+}
+
+.posture-toggle>.active {
+  border-style: inset;
+  font-weight: bold;
+}
+
 
 /* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
    size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,

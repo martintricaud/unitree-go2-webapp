@@ -135,7 +135,7 @@ describe('label', () => {
 
 describe('changes', () => {
   it('lists the fields each cue changes, a sequence its items\' changes in order', () => {
-    expect(enter('Leaping').changes).toEqual([{ gait: 'Leaping', posture: null }]);
+    expect(enter('Leaping').changes).toEqual([{ gait: 'Leaping' }, { posture: null }]);
     expect(enter('Pose').changes).toEqual([{ posture: 'Pose' }]);
     expect(leave('Pose').changes).toEqual([{ posture: null }]);
     expect(recover().changes).toEqual([{ posture: null }]);
@@ -144,7 +144,8 @@ describe('changes', () => {
       expect(_cue.changes).toEqual([]);
     });
     expect(sequence('', enter('Trotting'), wait(1), enter('Sitting')).changes).toEqual([
-      { gait: 'Trotting', posture: null },
+      { gait: 'Trotting' },
+      { posture: null },
       { posture: 'Sitting' },
     ]);
   });

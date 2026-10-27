@@ -1,6 +1,7 @@
-import { constant, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, mapValues, merge, pickBy, piped, set, values } from 'remeda';
+import { constant, filter, flatMap, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys } from 'remeda';
+import { mapValues, merge, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { enter, isCommandable, leave, transition } from '../utils/commands';
+import { enter, isCommandable, leave, set as setting, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
@@ -87,6 +88,22 @@ const stamp = (_reqId: number, _label: string, _verdict: Verdict): Outcome =>
     merge(_verdict, { reqId: _reqId, label: _label, at: Date.now() });
 
 /// Losing the robot clears `reported` and keeps the settled values.
+/// The values a toggle switches between: the gaits the app can enter, and the colours.
+type Toggled = { gait: CommandableGait; headlight: RobotState['headlight'] };
+
+/// The cue each toggled field sends to reach a value.
+const TOGGLES: { [F in keyof Toggled]: (_value: Toggled[F]) => Cue } = {
+    gait: enter,
+    headlight: (_colour) => setting({ name: 'headlight', value: _colour }),
+};
+
+/// `_previous` once the settled state moves from `_from` to `_to`: a toggled field that changed
+/// keeps the value it left, if a toggle can send that value.
+const previousAfter = (_previous: Toggled, _from: RobotState, _to: RobotState): Toggled => ({
+    gait: _to.gait !== _from.gait && isCommandable(_from.gait) ? _from.gait : _previous.gait,
+    headlight: _to.headlight !== _from.headlight ? _from.headlight : _previous.headlight,
+});
+
 const lost = merge({ robotConnected: false, reported: {} });
 
 /// The control channel to the relay, as far as the robot uses it.
@@ -110,9 +127,9 @@ export class Robot {
         state: Confirmable<RobotState>;
         /// The fields the robot has stated since the robot was last lost, each marked true.
         reported: Partial<Record<keyof RobotState, true>>;
-        /// The last settled gait before the current one that the app can enter, so a toggle can
-        /// return to it.
-        previousGait: CommandableGait;
+        /// The last settled gait the app can enter and the last settled colour, each before the
+        /// current one, so a toggle can return to it.
+        previous: Toggled;
     }>({
         channelOpen: false,
         robotConnected: false,
@@ -131,8 +148,8 @@ export class Robot {
             pending: {},
         },
         reported: {},
-        /// A toggle that leaves a gait before any other gait was settled returns to the boot gait.
-        previousGait: 'FreeWalk',
+        /// A toggle that leaves a value before any other was settled returns to the boot value.
+        previous: { gait: 'FreeWalk', headlight: 'green' },
     });
     get current() { return this.#current; }
     /// The latest decoded frame of the robot's camera, or null before the first one arrives.
@@ -156,18 +173,17 @@ export class Robot {
     #update = (_change: (_current: Robot['current']) => Robot['current']) => { this.#current = _change(this.#current); };
 
     /// Applies `_change` to the robot's state and marks the fields in `_reported`. A change of the
-    /// settled gait records the gait it left as `previousGait`, if the app can enter that gait.
+    /// settled gait or colour records the value it left in `previous`.
     #changeState = (
         _change: (_state: Confirmable<RobotState>) => Confirmable<RobotState>,
         _reported: Robot['current']['reported'] = {},
     ) =>
         this.#update((_robot) => {
             const state = _change(_robot.state);
-            const left = _robot.state.settled.gait;
             return merge(_robot, {
                 state,
                 reported: merge(_robot.reported, _reported),
-                previousGait: state.settled.gait !== left && isCommandable(left) ? left : _robot.previousGait,
+                previous: previousAfter(_robot.previous, _robot.state.settled, state.settled),
             });
         });
 
@@ -331,12 +347,15 @@ export class Robot {
         void this.request(settled.posture === _posture ? leave(_posture) : enter(_posture));
     };
 
-    /// From `_gait` in no posture, the toggle returns to `previousGait`.
-    toggleGait = (_gait: CommandableGait) => {
-        const { state, previousGait } = this.#current;
-        const { gait, posture } = state.settled;
-        if (state.pending.gait !== undefined || state.pending.posture !== undefined) return;
-        void this.request(enter(gait === _gait && posture === null ? previousGait : _gait));
+    /// Sends `_field` to `_value`, or back to its previous value when the robot already shows
+    /// `_value`, that is, when the cue would change nothing. The fields the cue changes are the
+    /// toggled ones: a gait's cue also leaves the posture.
+    toggleTo = <F extends keyof Toggled>(_field: F, _value: Toggled[F]) => {
+        const { state, previous } = this.#current;
+        const cue = TOGGLES[_field](_value);
+        const waiting = pipe(cue.changes, flatMap(keys()), filter((_toggled) => state.pending[_toggled] !== undefined));
+        if (!isEmpty(waiting)) return;
+        void this.request(isDeepEqual(transition(cue)(state.settled), state.settled) ? TOGGLES[_field](previous[_field]) : cue);
     };
 
     setLidar = this.#switchRelay('lidar', 'lidarOn');

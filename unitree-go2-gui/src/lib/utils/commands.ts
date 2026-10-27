@@ -1,5 +1,5 @@
-import { filter, first, flatMap, forEach, hasAtLeast, isEmpty, isPlainObject, keys, map, merge, mergeAll } from 'remeda';
-import { pick, pipe, prop, take, unique, values } from 'remeda';
+import { filter, first, flatMap, forEach, hasAtLeast, isEmpty, isPlainObject, keys, map, merge, reduce } from 'remeda';
+import { identity, pick, pipe, prop, take, unique, values } from 'remeda';
 import * as v from 'valibot';
 import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
@@ -76,12 +76,38 @@ export type CommandableGait = {
 /// True for a gait the app can command.
 export const isCommandable = (_gait: Gait): _gait is CommandableGait => 'enter' in GAITS[_gait];
 
+/// The gaits the app can command, in the order of `GAITS`.
+export const COMMANDABLE_GAITS = pipe(GAITS, keys(), filter(isCommandable));
+
+/// The two sides of each posture's toggle: the left one enters the posture, the right one leaves it.
+export const POSTURE_FACES = {
+    Sitting: ['Sit', 'Rise'],
+    Lying: ['Lie', 'Stand'],
+    Damp: ['Damp', 'Recover'],
+    Pose: ['Enter Pose', 'Exit Pose'],
+    JointLock: ['Lock', 'Unlock'],
+} as const satisfies Record<Posture, readonly [string, string]>;
+
 /// True for a target that is a posture; the other targets are gaits.
 const isPosture = (_target: CommandableGait | Posture): _target is Posture => _target in POSTURES;
 
-type Setting = {
-    [K in keyof typeof SETTINGS]: { name: K; value: RobotState[K] };
-}[keyof typeof SETTINGS];
+type SettingName = keyof typeof SETTINGS;
+
+type Setting = { [K in SettingName]: { name: K; value: RobotState[K] } }[SettingName];
+
+/// One field of `RobotState` set to a defined value.
+type Change = { [K in keyof RobotState]: Pick<RobotState, K> }[keyof RobotState];
+
+/// The change each setting makes. A table keyed by setting, so that a setting's field and value
+/// stay correlated without a cast.
+const SETTING_CHANGES: { [K in SettingName]: (_value: RobotState[K]) => Change } = {
+    headlight: (_headlight) => ({ headlight: _headlight }),
+    speed: (_speed) => ({ speed: _speed }),
+    obstacleAvoidance: (_on) => ({ obstacleAvoidance: _on }),
+};
+
+const settingChange = <K extends SettingName>(_setting: { name: K; value: RobotState[K] }) =>
+    SETTING_CHANGES[_setting.name](_setting.value);
 
 /// One message the relay sends to the robot, or a pause between two of them.
 type Step =
@@ -92,7 +118,7 @@ type Step =
 /// messages it sends, in order; `changes` are the fields it changes in `RobotState`, in order;
 /// `items` holds the cues a sequence was built from, and is empty for any other cue; `source` holds
 /// the constructor calls it runs, in order, so that it can be stored as data.
-export type Cue = { label: string; steps: Step[]; changes: Partial<RobotState>[]; items: Cue[]; source: Command[] };
+export type Cue = { label: string; steps: Step[]; changes: Change[]; items: Cue[]; source: Command[] };
 
 /// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
 const sportCommand = (_request: SportRequest, _flag = true): Step =>
@@ -109,7 +135,7 @@ export const enter = (_target: CommandableGait | Posture): Cue =>
     merge(
         isPosture(_target)
             ? { steps: pipe(POSTURES[_target].enter, map(stepCommand)), changes: [{ posture: _target }] }
-            : { steps: [sportCommand(GAITS[_target].enter)], changes: [{ gait: _target, posture: null }] },
+            : { steps: [sportCommand(GAITS[_target].enter)], changes: [{ gait: _target }, { posture: null }] },
         { label: _target, items: [], source: [{ name: 'enter', args: [_target] } satisfies Command] },
     );
 
@@ -143,7 +169,7 @@ export const set = (_setting: Setting): Cue => {
     return {
         label: command_name,
         steps: [{ kind: 'command', topic, api_id, command_name, parameter: { [argument]: _setting.value } }],
-        changes: [{ [_setting.name]: _setting.value }],
+        changes: [settingChange(_setting)],
         items: [],
         source: [{ name: 'set', args: [_setting] }],
     };
@@ -211,10 +237,9 @@ export type RobotState = {
 };
 
 /// The state the robot is in once the cue has run from `_state`: its changes merged in order.
-export const transition =
-    (_cue: Cue) =>
-    (_state: RobotState): RobotState =>
-        ({ ..._state, ...mergeAll(_cue.changes) });
+/// A fold of `merge`, because `mergeAll` over a list types every field as optional.
+export const transition = (_cue: Cue) => (_state: RobotState) =>
+    pipe(_cue.changes, reduce((_merged: RobotState, _change: Change) => merge(_merged, _change), _state));
 
 const RAW = { enter, leave, perform, recover, set, orient, dim, wait };
 
@@ -234,7 +259,7 @@ const amount = v.pipe(finite, v.minValue(0));
 /// Each command's arguments. The annotation ties each schema to its constructor's parameters, so a
 /// schema that drifts from its constructor fails the type check.
 const ARGS: { [K in keyof Params]: v.GenericSchema<unknown, Params[K]> } = {
-    enter: v.strictTuple([v.picklist([...pipe(GAITS, keys(), filter(isCommandable)), ...keys(POSTURES)])]),
+    enter: v.strictTuple([v.picklist([...COMMANDABLE_GAITS, ...keys(POSTURES)])]),
     leave: v.strictTuple([v.picklist(keys(POSTURES))]),
     perform: v.strictTuple([v.picklist(ACTIONS)]),
     recover: v.strictTuple([], 'recover takes no argument'),
@@ -306,7 +331,7 @@ const groupSchema: v.GenericSchema<unknown, Cell> = v.pipe(
 
 /// A stored cell is a group when it has `items`, and a leaf otherwise, so that each reports its
 /// own issues.
-const cellSchema: v.GenericSchema<unknown, Cell> = v.lazy((_input) =>
+export const cellSchema: v.GenericSchema<unknown, Cell> = v.lazy((_input) =>
     isPlainObject(_input) && 'items' in _input ? groupSchema : leafSchema,
 );
 
@@ -316,11 +341,16 @@ const flat = <T extends { items: T[] }>(_cells: T[]): T[] => pipe(_cells, flatMa
 /// The identifiers of `_cells` and of every cell nested in them.
 const ids = (_cells: Cell[]) => pipe(flat(_cells), map(prop('id')));
 
+/// Fails when two of the cells `_cellsOf` finds in the input, nested ones included, share an
+/// identifier.
+export const distinctIn = <T>(_cellsOf: (_input: T) => Cell[]) =>
+    v.check(
+        (_input: T) => pipe(ids(_cellsOf(_input)), (_ids) => unique(_ids).length === _ids.length),
+        'two cells share an identifier',
+    );
+
 /// A stored sheet: a non-empty list of cells, each identifier held by one cell only.
-export const sheetSchema = v.pipe(
-    cellsOf('a sheet needs at least one cell'),
-    v.check((_cells) => pipe(ids(_cells), (_ids) => unique(_ids).length === _ids.length), 'two cells share an identifier'),
-);
+export const sheetSchema = v.pipe(cellsOf('a sheet needs at least one cell'), distinctIn(identity()));
 
 /// `_cues` as cells numbered in pre-order from `_first`: every cell of the tree, nested ones
 /// included, gets its own identifier.

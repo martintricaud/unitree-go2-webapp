@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { entries, keys } from 'remeda';
+    import { entries } from 'remeda';
     import { onMount } from 'svelte';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
@@ -8,17 +8,8 @@
     import CueStrip from './components/CueStrip.svelte';
     import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import {
-        ACTIONS,
-        GAITS,
-        POSTURES,
-        enter,
-        isCommandable,
-        perform,
-        recover,
-        set,
-    } from './lib/utils/commands';
-    import type { Cue } from './lib/utils/commands';
+    import { POSTURE_FACES, leave, set, transition } from './lib/utils/commands';
+    import type { Cell, Cue } from './lib/utils/commands';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
@@ -38,6 +29,9 @@
     let drawerOpen = $state(false);
 
     let shown = $derived(displayed(robot.current.state));
+    /// The state the robot would settle in from its settled state once `_cell` has run: a pane
+    /// button is ticked when its cell would change nothing.
+    const after = (_cell: Cell) => transition(_cell)(robot.current.state.settled);
     /// The gait and posture controls wait until the robot has stated its gait or its posture.
     let motionUnknown = $derived(
         !robot.current.robotConnected || !(robot.current.reported.gait || robot.current.reported.posture),
@@ -110,53 +104,57 @@
     <section>
         <h2>Actions</h2>
         <div class="button-grid">
-            {#each ACTIONS as action}
-                <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(perform(action))}>
-                    {action}
-                </button>
+            {#each cueSheet.state.pane.actions as cell (cell.id)}
+                <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(cell)}>{cell.label}</button>
             {/each}
-            <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
         </div>
     </section>
     <!-- The gait stays ticked during a posture, as the gait the robot returns to when it leaves it. -->
     <section>
         <h2>Gaits</h2>
         <div class="button-grid">
-            {#each keys(GAITS).filter(isCommandable) as target}
+            {#each cueSheet.state.pane.gaits as cell (cell.id)}
                 <Radio
-                    optionName={target}
-                    selected={robot.current.state.settled.gait === target}
-                    spinning={robot.current.state.pending.gait?.value === target}
+                    optionName={cell.label}
+                    selected={robot.current.state.settled.gait === after(cell).gait}
+                    spinning={robot.current.state.pending.gait?.value === after(cell).gait}
                     disabled={motionUnknown}
-                    callback={() => sendToRobot(enter(target))}
+                    callback={() => sendToRobot(cell)}
                 />
             {/each}
         </div>
     </section>
+    <!-- Each posture is one toggle: the left side enters it, the right side leaves it. The side
+         matching the robot's settled posture is drawn pressed. -->
     <section>
         <h2>Postures</h2>
         <div class="button-grid">
-            {#each keys(POSTURES) as target}
-                <Radio
-                    optionName={target}
-                    selected={robot.current.state.settled.posture === target}
-                    spinning={robot.current.state.pending.posture?.value === target}
-                    disabled={motionUnknown}
-                    callback={() => sendToRobot(enter(target))}
-                />
+            {#each cueSheet.state.pane.postures as cell (cell.id)}
+                {@const posture = after(cell).posture}
+                {#if posture}
+                    {@const inPosture = robot.current.state.settled.posture === posture}
+                    <div class="posture-toggle">
+                        <button class:active={inPosture} disabled={motionUnknown} onclick={() => sendToRobot(cell)}>
+                            {POSTURE_FACES[posture][0]}
+                        </button>
+                        <button class:active={!inPosture} disabled={motionUnknown} onclick={() => sendToRobot(leave(posture))}>
+                            {POSTURE_FACES[posture][1]}
+                        </button>
+                    </div>
+                {/if}
             {/each}
         </div>
     </section>
     <section>
         <h2>Light</h2>
         <div class="button-grid">
-            {#each COLOURS as colour}
+            {#each cueSheet.state.pane.lights as cell (cell.id)}
                 <Radio
-                    optionName={colour}
-                    selected={robot.current.state.settled.headlight === colour}
-                    spinning={robot.current.state.pending.headlight?.value === colour}
+                    optionName={after(cell).headlight}
+                    selected={robot.current.state.settled.headlight === after(cell).headlight}
+                    spinning={robot.current.state.pending.headlight?.value === after(cell).headlight}
                     disabled={!robot.current.robotConnected}
-                    callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
+                    callback={() => sendToRobot(cell)}
                 />
             {/each}
         </div>

@@ -1,5 +1,7 @@
-import { dim, enter, leave, perform, sequence, set, wait } from '../utils/commands';
+import { concat, keys, map, pipe } from 'remeda';
+import { ACTIONS, COMMANDABLE_GAITS, POSTURES, dim, enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
+import { COLOURS } from './settings';
 
 /// The Sabbat dance, whose cues open the cue sheet one by one.
 const DANSE_DU_SABBAT: [Cue, ...Cue[]] = [
@@ -85,3 +87,14 @@ export const CONDUITE: [Cue, ...Cue[]] = [
     sequence('Salto', perform('LeftFlip'), enter('FreeWalk')),
     ...MONOLOGUE,
 ];
+
+/// The default pane: the buttons of each group, in the order they are drawn.
+export const PANE = {
+    actions: pipe(ACTIONS, map(perform), concat([recover()])),
+    gaits: pipe(COMMANDABLE_GAITS, map(enter)),
+    postures: pipe(POSTURES, keys(), map(enter)),
+    lights: pipe(COLOURS, map((_colour) => set({ name: 'headlight', value: _colour }))),
+};
+
+/// The pane's groups.
+export const PANE_GROUPS = keys(PANE);
