@@ -2,7 +2,7 @@
     import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
     /// Each button stands for the keyboard key `key`, and occupies one cell of a 3×3 grid, given as
-    /// "row / column".
+    /// "row / column". The face buttons sit as on an 8BitDo Micro held rotated by 90°.
     const DIRECTIONS = [
         { name: 'up', key: 'ArrowUp', label: '▲', area: '1 / 2' },
         { name: 'left', key: 'ArrowLeft', label: '◀', area: '2 / 1' },
@@ -11,8 +11,8 @@
     ] as const;
     const FACE_BUTTONS = [
         { name: 'Y', key: 'y', label: 'Y', area: '1 / 2' },
-        { name: 'X', key: 'x', label: 'X', area: '2 / 1' },
-        { name: 'B', key: 'b', label: 'B', area: '2 / 3' },
+        { name: 'B', key: 'b', label: 'B', area: '2 / 1' },
+        { name: 'X', key: 'x', label: 'X', area: '2 / 3' },
         { name: 'A', key: 'a', label: 'A', area: '3 / 2' },
     ] as const;
 
