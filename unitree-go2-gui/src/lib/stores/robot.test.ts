@@ -78,7 +78,6 @@ describe('the store', () => {
             channelOpen: false,
             robotConnected: false,
             lidarOn: false,
-            monitoringOn: false,
             state: {
                 settled: {
                     gait: 'FreeWalk',
@@ -111,12 +110,10 @@ describe('the store', () => {
         const { robot, socket } = openRobot();
         socket.receive(robotState(true));
         robot.setLidar(true);
-        robot.setMonitoring(true);
         expect(robot.current).toMatchObject({
             channelOpen: true,
             robotConnected: true,
             lidarOn: true,
-            monitoringOn: true,
         });
     });
 
@@ -165,26 +162,23 @@ describe('connectRobot and disconnectRobot', () => {
     });
 });
 
-describe.each([
-    ['setLidar', 'lidar', 'lidarOn'],
-    ['setMonitoring', 'subscribe', 'monitoringOn'],
-] as const)('%s', (_method, _commandName, _flag) => {
+describe('setLidar', () => {
     it('sends the switch and records it once the message has left the browser', () => {
         const { robot, socket } = openRobot();
-        robot[_method](true);
-        expect(socket.written).toEqual([{ command_name: _commandName, switch: true }]);
-        expect(robot.current[_flag]).toBe(true);
-        robot[_method](false);
-        expect(socket.written[1]).toEqual({ command_name: _commandName, switch: false });
-        expect(robot.current[_flag]).toBe(false);
+        robot.setLidar(true);
+        expect(socket.written).toEqual([{ command_name: 'lidar', switch: true }]);
+        expect(robot.current.lidarOn).toBe(true);
+        robot.setLidar(false);
+        expect(socket.written[1]).toEqual({ command_name: 'lidar', switch: false });
+        expect(robot.current.lidarOn).toBe(false);
     });
 
     it('keeps the flag when the channel is closed', () => {
         const { robot, socket } = openRobot();
         socket.readyState = CLOSED;
-        robot[_method](true);
+        robot.setLidar(true);
         expect(socket.frames).toEqual([]);
-        expect(robot.current[_flag]).toBe(false);
+        expect(robot.current.lidarOn).toBe(false);
     });
 });
 

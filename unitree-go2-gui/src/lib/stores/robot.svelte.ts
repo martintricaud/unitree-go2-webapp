@@ -120,9 +120,6 @@ export class Robot {
         robotConnected: boolean;
         /// Whether the relay was last told to stream the lidar. The relay sends no verdict on it.
         lidarOn: boolean;
-        /// Whether the relay was last told to forward the robot's state stream. The relay sends no
-        /// verdict on it.
-        monitoringOn: boolean;
         /// The robot's settled values, and the changes that wait for the relay's verdict.
         state: Confirmable<RobotState>;
         /// The fields the robot has stated since the robot was last lost, each marked true.
@@ -134,7 +131,6 @@ export class Robot {
         channelOpen: false,
         robotConnected: false,
         lidarOn: false,
-        monitoringOn: false,
         state: {
             settled: {
                 /// The robot boots in FreeWalk, in no posture.
@@ -289,12 +285,6 @@ export class Robot {
         }
     };
 
-    /// Tells the relay to switch `_command` on or off, and records in `_flag` what it was told once
-    /// the message has left the browser.
-    #switchRelay = (_command: string, _flag: 'lidarOn' | 'monitoringOn') => (_on: boolean) => {
-        if (this.#send({ command_name: _command, switch: _on })) this.#update(set(_flag, _on));
-    };
-
     /// Sends a cue as one sequence of its steps, named by its label, and shows each field the cue
     /// changes as pending until the relay's verdict settles or drops it. Returns at once a promise
     /// of the verdict, which resolves once the robot's state holds it.
@@ -358,8 +348,11 @@ export class Robot {
         void this.request(isDeepEqual(transition(cue)(state.settled), state.settled) ? TOGGLES[_field](previous[_field]) : cue);
     };
 
-    setLidar = this.#switchRelay('lidar', 'lidarOn');
-    setMonitoring = this.#switchRelay('subscribe', 'monitoringOn');
+    /// Tells the relay to stream the lidar or to stop, and records what it was told once the
+    /// message has left the browser.
+    setLidar = (_on: boolean) => {
+        if (this.#send({ command_name: 'lidar', switch: _on })) this.#update(set('lidarOn', _on));
+    };
 }
 
 /// The app's robot, which talks to the relay on this machine.
