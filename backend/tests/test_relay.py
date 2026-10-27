@@ -767,22 +767,6 @@ def stream_frames(ws):
     return [message for message in ws.sent if message.get("type") == "state_stream"]
 
 
-class FakeOscClient:
-    def __init__(self):
-        self.sent = []
-
-    def send_message(self, address, value):
-        self.sent.append((address, value))
-
-
-@pytest.fixture
-def osc(monkeypatch):
-    """The OSC client the monitor output writes to, so no test sends UDP."""
-    client = FakeOscClient()
-    monkeypatch.setattr(main, "osc_client", client)
-    return client
-
-
 async def test_a_successful_connect_asks_the_motion_mode_and_subscribes_the_mode_report_once(monkeypatch, session, pub_sub):
     await connect_through_driver(monkeypatch, session, pub_sub)
     requests = [sent for sent in pub_sub.sent if sent["topic"] == MOTION_SWITCHER]
@@ -824,40 +808,28 @@ async def test_a_repeated_mode_report_is_not_forwarded_again(monkeypatch, sessio
     {"topic": SPORT_MOD_STATE},
     "not a message",
 ])
-@pytest.mark.parametrize("monitoring", [False, True])
-async def test_an_unreadable_mode_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, osc, caplog, message, monitoring):
-    """With monitoring on, the monitor output still forwards the raw message as state_stream."""
+async def test_an_unreadable_mode_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, caplog, message):
     await connect_through_driver(monkeypatch, session, pub_sub)
-    await session.subscribe_to_robotstate(monitoring)
     await deliver(pub_sub, message, topic=SPORT_MOD_STATE)
-    assert sport_frames(gui) == []
-    if not monitoring:
-        assert gui.sent == []
+    assert gui.sent == []
     assert any("rt/lf/sportmodestate" in record.getMessage() for record in caplog.records)
 
 
-async def test_monitoring_is_off_until_switched_on(monkeypatch, session, pub_sub, gui, osc):
+async def test_every_readable_mode_report_is_forwarded_whole_as_state_stream(monkeypatch, session, pub_sub, gui):
+    """No switch is needed, and a repeated report is streamed again."""
     await connect_through_driver(monkeypatch, session, pub_sub)
-    await deliver(pub_sub, sport_report(error_code=1013), topic=SPORT_MOD_STATE)
-    assert stream_frames(gui) == []
-    assert osc.sent == []
-
-    await session.subscribe_to_robotstate(True)
-    report = sport_report(error_code=1013)
-    await deliver(pub_sub, report, topic=SPORT_MOD_STATE)
-    assert stream_frames(gui) == [{"type": "state_stream", "data": report["data"]}]
-    assert osc.sent == [("/go2/data", report["data"])]
+    reports = [sport_report(error_code=1013), sport_report(error_code=1013), sport_report(error_code=2008)]
+    for report in reports:
+        await deliver(pub_sub, report, topic=SPORT_MOD_STATE)
+    assert stream_frames(gui) == [{"type": "state_stream", "data": report["data"]} for report in reports]
 
 
-async def test_switching_monitoring_off_keeps_the_mode_report_subscribed(monkeypatch, session, pub_sub, gui, osc):
-    await connect_through_driver(monkeypatch, session, pub_sub)
-    await session.subscribe_to_robotstate(True)
-    await session.subscribe_to_robotstate(False)
-    assert pub_sub.subscriptions[SPORT_MOD_STATE] == session.note_sport_state
-    assert pub_sub.subscribe_calls.count(SPORT_MOD_STATE) == 1
-    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
-    assert len(sport_frames(gui)) == 1
-    assert stream_frames(gui) == []
+async def test_a_subscribe_frame_from_an_older_browser_is_logged_as_unknown_and_answered_with_nothing(relay, caplog):
+    ws = FakeWebSocket([json.dumps({"command_name": "subscribe", "switch": True})])
+    with caplog.at_level(logging.WARNING):
+        await main.ws_api(ws)
+    assert "Unknown message type" in caplog.text
+    assert ws.sent == []
 
 
 @pytest.mark.parametrize("script", [

@@ -10,7 +10,6 @@ elif version==118:
     from unitree_webrtc_connect.constants import RTC_TOPIC
     from unitree_webrtc_connect.util import get_nested_field
 
-from pythonosc import udp_client
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 from collections import deque
@@ -20,7 +19,6 @@ from aiortc import MediaStreamTrack
 import av
 av.logging.set_level(av.logging.ERROR)
 
-osc_client = udp_client.SimpleUDPClient("192.168.1.130", 6000)
 broadcaster = FrameBroadcaster()
 
 # The sport service replies once it accepts a command, before the motion plays: Unitree's SDK
@@ -109,9 +107,6 @@ class RobotSession:
         # The (motionMode, mode, errorCode) triple the browser was last sent, so sport_state is
         # sent on a change and not on every message. None means it has been sent none.
         self.reported_sport_state: tuple | None = None
-        # Whether the "Monitor State" switch is on: each rt/lf/sportmodestate message is then
-        # also printed, sent over OSC and forwarded whole as state_stream.
-        self.monitoring = False
         self.channel_open_since: float | None = None
         self.watcher: asyncio.Task | None = None
 
@@ -139,7 +134,7 @@ class RobotSession:
             self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["MULTIPLE_STATE"], self.note_settings)
             self.motion_mode = await self.request_motion_mode()
             # The driver keeps one callback per topic, so this is the only subscription to
-            # rt/lf/sportmodestate; the "Monitor State" switch only sets self.monitoring.
+            # rt/lf/sportmodestate.
             self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["LF_SPORT_MOD_STATE"], self.note_sport_state)
             # The channel is reported by watch_robot rather than here: the driver's validation
             # callback may not have run yet, so reading data_channel_opened at this moment can
@@ -241,11 +236,6 @@ class RobotSession:
             except Exception:
                 logging.exception("Failed to report the robot's state")
 
-    async def subscribe_to_robotstate(self, switch):
-        """Turn the monitor output of rt/lf/sportmodestate on or off. The topic stays
-        subscribed either way, because the mode report depends on it."""
-        self.monitoring = bool(switch)
-
     async def request_motion_mode(self):
         """Ask the motion switcher which motion-control mode the robot runs. Any failure
         returns None and leaves the connection as it is: the mode report then carries no
@@ -264,24 +254,11 @@ class RobotSession:
         logging.info("The robot runs the motion-control mode %r", name)
         return name
 
-    def monitor_sport_state(self, message):
-        """The "Monitor State" output: print the message, send it over OSC and forward it whole."""
-        try:
-            print(message)
-            osc_client.send_message("/go2/data", message.get('data'))
-            asyncio.get_running_loop().create_task(
-                notify_frontend({'type': 'state_stream', 'data': message.get('data')})
-            )
-        except Exception:
-            logging.exception("Failed to monitor an rt/lf/sportmodestate message")
-
     def note_sport_state(self, message):
-        """Forward the mode the robot reports on rt/lf/sportmodestate, with the motion-control
-        mode that gives it its meaning, when the triple differs from what the browser was last
-        sent. The topic publishes at 20-50 Hz, so an unchanged report is dropped. The driver
-        calls this synchronously, so the send is scheduled as a task."""
-        if self.monitoring:
-            self.monitor_sport_state(message)
+        """Forward each rt/lf/sportmodestate message whole as state_stream, and the mode it
+        reports, with the motion-control mode that gives it its meaning, as sport_state when
+        that triple differs from what the browser was last sent. The topic publishes at
+        20-50 Hz. The driver calls this synchronously, so the sends are scheduled as tasks."""
         try:
             data = message["data"]
             if not isinstance(data, dict):
@@ -290,21 +267,21 @@ class RobotSession:
         except Exception:
             logging.exception("Ignoring an unreadable rt/lf/sportmodestate message: %r", message)
             return
-        if sport_state == self.reported_sport_state:
-            return
-        motion_mode, mode, error_code = sport_state
         try:
-            asyncio.get_running_loop().create_task(
-                notify_frontend({
-                    "type": "sport_state",
-                    "motionMode": motion_mode,
-                    "mode": mode,
-                    "errorCode": error_code,
-                })
-            )
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_frontend({"type": "state_stream", "data": data}))
+            if sport_state == self.reported_sport_state:
+                return
+            motion_mode, mode, error_code = sport_state
+            loop.create_task(notify_frontend({
+                "type": "sport_state",
+                "motionMode": motion_mode,
+                "mode": mode,
+                "errorCode": error_code,
+            }))
             self.reported_sport_state = sport_state
         except Exception:
-            logging.exception("Failed to schedule the sport-state notification")
+            logging.exception("Failed to schedule the rt/lf/sportmodestate notifications")
 
     def note_settings(self, message):
         """Forward the speed level and obstacle-avoidance switch the robot reports on
@@ -563,8 +540,6 @@ async def ws_api(ws: WebSocket):
                         await robot.connect(ip)
                     case {"command_name": "disconnect"}:
                         await robot.disconnect()
-                    case {"command_name": "subscribe", "switch": _}:
-                        await robot.subscribe_to_robotstate(msg["switch"])
                     case {"command_name": "joystick"}:
                         await robot.test_joystick()
                     case {"kind": _}:
