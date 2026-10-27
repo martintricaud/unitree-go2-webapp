@@ -1,4 +1,4 @@
-import { constant, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys, mapValues, merge, pickBy, piped, set, values } from 'remeda';
+import { constant, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, mapValues, merge, pickBy, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
 import { enter, isCommandable, leave, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
@@ -142,9 +142,7 @@ export class Robot {
     #log: OutcomeLog;
     #socket: Socket | undefined;
     /// The requests awaiting the relay's verdict, by request id.
-    #awaiting: Partial<
-        Record<number, { resolve: (_outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }>
-    > = {};
+    #awaiting = new Map<number, { resolve: (_outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }>();
     #lastRequestId = 0;
     /// Holds each unknown sport_state code already logged, so each is logged once.
     #warnedCodes = new Set<number>();
@@ -188,10 +186,10 @@ export class Robot {
     /// Records `_verdict` as the outcome of request `_reqId` if it is still awaited, settles or drops
     /// what the request proposed, and resolves the request's promise.
     #finish = (_verdict: Verdict) => (_reqId: number) => {
-        const request = this.#awaiting[_reqId];
+        const request = this.#awaiting.get(_reqId);
         if (!request) return;
         clearTimeout(request.timer);
-        delete this.#awaiting[_reqId];
+        this.#awaiting.delete(_reqId);
         const outcome = stamp(_reqId, request.label, _verdict);
         this.#log.record(outcome);
         this.#changeState(resolve(_reqId, outcome));
@@ -262,7 +260,7 @@ export class Robot {
                     code: msg.code,
                     detail: msg.detail ?? '',
                 };
-                if (this.#awaiting[msg.reqId]) this.#finish(verdict)(msg.reqId);
+                if (this.#awaiting.has(msg.reqId)) this.#finish(verdict)(msg.reqId);
                 // No awaiting request: the verdict arrived after the backstop.
                 else this.#log.record(stamp(msg.reqId, msg.command_name ?? 'command', verdict));
                 return;
@@ -298,7 +296,7 @@ export class Robot {
         if (!isEmpty(changed)) this.#changeState(propose(changed, reqId));
         return new Promise<Outcome>((_resolve) => {
             const timer = setTimeout(() => this.#finish(RELAY_SILENT)(reqId), REPLY_BACKSTOP_MS);
-            this.#awaiting[reqId] = { resolve: _resolve, timer, label };
+            this.#awaiting.set(reqId, { resolve: _resolve, timer, label });
         });
     };
 
@@ -313,7 +311,8 @@ export class Robot {
         opened.onclose = () => {
             this.#update(piped(lost, set('channelOpen', false)));
             this.#show(null);
-            forEach(keys(this.#awaiting), piped(Number, this.#finish(CHANNEL_CLOSED)));
+            // The ids are copied first, because `#finish` deletes each one from the map.
+            forEach([...this.#awaiting.keys()], this.#finish(CHANNEL_CLOSED));
         };
         opened.onmessage = (_event) => this.#received(_event.data);
         this.#socket = opened;
