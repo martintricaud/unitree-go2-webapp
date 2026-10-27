@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evolve, filter, flat, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
+import { evolve, filter, flat, forEach, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
@@ -21,13 +21,17 @@ const memoryStorage = (_entries = new Map<string, string>()) => ({
 });
 
 /** A cue sheet of its own on `_storage`, on a fresh robot whose open socket the relay never answers,
- * so every cue sent stays pending. `sent` reads each cue the robot wrote, as `asSent` shows it. */
-const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage()) => {
+ * so every cue sent stays pending. Unless `_connected` is false, the relay reports the robot
+ * connected in its boot gait, so every pane button can send. `sent` reads each cue the robot wrote,
+ * as `asSent` shows it. */
+const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage(), _connected = true) => {
   const frames: string[] = [];
   const send = (_frame: string) => void frames.push(_frame);
   const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null as ((_event: { data: string }) => void) | null };
   const robot = new Robot({ openSocket: () => socket, outcomeLog: new OutcomeLog() });
   robot.connect();
+  const reports = [{ type: 'robot_state', connected: true }, { type: 'sport_state', motionMode: 'mcf', errorCode: 0 }];
+  forEach(_connected ? reports : [], (_report) => socket.onmessage?.({ data: JSON.stringify(_report) }));
   const cueSheet = new CueSheet(_cues, robot, _storage);
   const sent = () => map(frames, (_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
   /** Confirms the latest request, as the relay would. */
@@ -126,10 +130,20 @@ describe('cueSheet keys', () => {
     ['b', enter('Leaping')],
     ['x', enter('Sitting')],
     ['y', presets.dance],
-  ] as const)('sends the cue %s is linked to in the default document, and leaves the pointer', (_key, _cue) => {
+  ] as const)('sends the cue %s is linked to in the default document, draws it pressed, and leaves the pointer', (_key, _cue) => {
     const { cueSheet, sent } = setup(CONDUITE);
     cueSheet.press(_key);
-    expect([sent(), position(cueSheet)]).toEqual([asSent(_cue), { pointer: 0, pressed: null }]);
+    expect([sent(), position(cueSheet)]).toEqual([asSent(_cue), { pointer: 0, pressed: cueSheet.linked(_key)?.id }]);
+  });
+
+  it('draws the Dance cell pressed while y is held, and ends it on the release of y only', () => {
+    const { cueSheet } = setup(CONDUITE);
+    const dance = filter(cueSheet.state.saved.sheet, (_cell) => _cell.label === presets.dance.label)[0];
+    cueSheet.press('y');
+    cueSheet.release('a');
+    expect(cueSheet.isPressed(dance)).toBe(true);
+    cueSheet.release('y');
+    expect(cueSheet.state.pressed).toBeNull();
   });
 
   it('does nothing on an unbound key, nor on a key whose default cue the sheet lacks', () => {
@@ -448,11 +462,25 @@ describe('cueSheet key assignment', () => {
     expect(targets()).toEqual([]);
   });
 
-  it('lets a pane button that waits for the robot accept a click under Assign only', () => {
+  it('records the pane light a held key is linked to as pressed', () => {
     const { cueSheet } = setup();
-    expect(cueSheet.usable(false)).toBe(false);
+    const red = paneCell(cueSheet, 'lights', 'red');
     cueSheet.choose('Assign');
-    expect(cueSheet.usable(false)).toBe(true);
+    cueSheet.press('b');
+    cueSheet.use(red);
+    cueSheet.save();
+    cueSheet.press('b');
+    expect(cueSheet.isPressed(red)).toBe(true);
+  });
+
+  it('greys and ignores the pane buttons while no robot is connected, except for a click under Assign', () => {
+    const { cueSheet, sent } = setup(CONDUITE, memoryStorage(), false);
+    const red = paneCell(cueSheet, 'lights', 'red');
+    cueSheet.use(red);
+    cueSheet.press('a');
+    expect([sent(), cueSheet.usable(red)]).toEqual([[], false]);
+    cueSheet.choose('Assign');
+    expect(cueSheet.usable(red)).toBe(true);
   });
 
   it('sends the side a pane button names under Fire', () => {

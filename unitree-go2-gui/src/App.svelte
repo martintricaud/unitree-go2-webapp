@@ -32,10 +32,6 @@
     /// The state the robot would settle in from its settled state once `_cell` has run: a pane
     /// button is ticked when its cell would change nothing.
     const after = (_cell: Cell) => transition(_cell)(robot.current.state.settled);
-    /// The gait and posture controls wait until the robot has stated its gait or its posture.
-    let motionUnknown = $derived(
-        !robot.current.robotConnected || !(robot.current.reported.gait || robot.current.reported.posture),
-    );
 
     onMount(() => {
         robot.connect();
@@ -105,7 +101,8 @@
         <h2>Actions</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.actions as cell (cell.id)}
-                <button class:swept={cueSheet.isTarget(cell)} disabled={!cueSheet.usable(robot.current.robotConnected)} onclick={() => cueSheet.use(cell)}>
+                <button class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)} class:greyed={!cueSheet.usable(cell)}
+                    aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)}>
                     {cell.label}
                 </button>
             {/each}
@@ -116,11 +113,11 @@
         <h2>Gaits</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.gaits as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)}><Radio
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.gait === after(cell).gait}
                     spinning={robot.current.state.pending.gait?.value === after(cell).gait}
-                    disabled={!cueSheet.usable(!motionUnknown)}
+                    greyed={!cueSheet.usable(cell)}
                     callback={() => cueSheet.use(cell)}
                 /></div>
             {/each}
@@ -136,12 +133,12 @@
                 {#if posture}
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
-                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
-                        <button class:active={inPosture} disabled={!cueSheet.usable(!motionUnknown)} onclick={() => cueSheet.use(cell)}>
+                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}>
+                        <button class:active={inPosture} class:greyed={!cueSheet.usable(cell)} aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)}>
                             {POSTURE_FACES[posture][0]}
                             {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
-                        <button class:active={!inPosture} disabled={!cueSheet.usable(!motionUnknown)} onclick={() => cueSheet.use(cell, leave(posture))}>
+                        <button class:active={!inPosture} class:greyed={!cueSheet.usable(cell)} aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell, leave(posture))}>
                             {POSTURE_FACES[posture][1]}
                             {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
@@ -154,11 +151,11 @@
         <h2>Light</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.lights as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)}><Radio
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.headlight === after(cell).headlight}
                     spinning={robot.current.state.pending.headlight?.value === after(cell).headlight}
-                    disabled={!cueSheet.usable(robot.current.robotConnected)}
+                    greyed={!cueSheet.usable(cell)}
                     callback={() => cueSheet.use(cell)}
                 /></div>
             {/each}

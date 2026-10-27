@@ -6,18 +6,22 @@
         selected: boolean;
         /// Whether a command proposing this option is waiting for the robot's verdict.
         spinning: boolean;
-        disabled: boolean;
+        /// A disabled option takes no click; a greyed one is drawn as disabled and still takes clicks,
+        /// which its owner ignores while the option has no effect.
+        disabled?: boolean;
+        greyed?: boolean;
         callback: () => void;
     } = $props();
 </script>
 
-<button disabled={props.disabled} onclick={props.callback}>
+<button disabled={props.disabled} class:greyed={props.greyed} aria-disabled={props.greyed} onclick={props.callback}>
     {props.optionName}
     {#if props.spinning}<span class="spinner" aria-label="waiting for the robot"></span>{:else if props.selected}✅{/if}
 </button>
 
 <style>
-    button:disabled {
+    button:disabled,
+    button.greyed {
         cursor: not-allowed;
         opacity: 0.5;
     }

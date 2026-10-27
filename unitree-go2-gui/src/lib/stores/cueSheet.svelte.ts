@@ -1,4 +1,4 @@
-import { clamp, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
+import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
 import { identity, isEmpty, isIncludedIn, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
 import { prop, range, reduce, set, sortBy, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
@@ -74,22 +74,38 @@ const numberedDocument = (_cues: Cue[]) => {
 /// pane posture, gait or light switches to the value its cell reaches and back.
 const send = (_robot: typeof robot, _cell: Cell) => void _robot.request(_cell);
 const reached = (_robot: typeof robot, _cell: Cell) => transition(_cell)(_robot.current.state.settled);
-const PANE_KEYS: Record<PaneGroup, (_robot: typeof robot, _cell: Cell) => void> = {
-    actions: send,
-    postures: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
-    gaits: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
-    lights: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight),
+
+/// Whether the robot can take a cell: a sheet cell always; a pane cell once the robot is connected,
+/// and a gait or a posture once it has also reported its gait or its posture.
+const connected = (_robot: typeof robot) => _robot.current.robotConnected;
+const motionKnown = (_robot: typeof robot) =>
+    connected(_robot) && Boolean(_robot.current.reported.gait || _robot.current.reported.posture);
+
+const PANE_KEYS: Record<PaneGroup, { act: (_robot: typeof robot, _cell: Cell) => void; ready: (_robot: typeof robot) => boolean }> = {
+    actions: { act: send, ready: connected },
+    postures: {
+        act: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
+        ready: motionKnown,
+    },
+    gaits: {
+        act: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
+        ready: motionKnown,
+    },
+    lights: { act: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight), ready: connected },
 };
 
-/// Each drawn cell of `_document`, with what a key linked to it does.
+/// Each drawn cell of `_document`, with what a key linked to it does and when the robot can take it.
 const targets = ({ sheet, pane }: Document) => [
-    ...map(sheet, (_cell) => ({ act: send, cell: _cell })),
-    ...pipe(PANE_GROUPS, flatMap((_group) => map(pane[_group], (_cell) => ({ act: PANE_KEYS[_group], cell: _cell })))),
+    ...map(sheet, (_cell) => ({ act: send, ready: constant(true), cell: _cell })),
+    ...pipe(PANE_GROUPS, flatMap((_group) => map(pane[_group], (_cell) => merge(PANE_KEYS[_group], { cell: _cell })))),
 ];
 
+/// The target of `_document` whose cell has identifier `_id`, as zero or one.
+const targetOf = (_document: Document, _id: Cell['id'] | undefined) =>
+    pipe(targets(_document), filter(({ cell }) => cell.id === _id));
+
 /// The target of `_document` that `_key` is linked to, as zero or one.
-const linksOf = (_document: Document, _key: Key) =>
-    pipe(targets(_document), filter(({ cell }) => cell.id === _document.bindings[_key]));
+const linksOf = (_document: Document, _key: Key) => targetOf(_document, _document.bindings[_key]);
 
 /// The strip's tools, which edit the sheet.
 export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup'] as const;
@@ -113,7 +129,7 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     saved: _document, // the document Save last stored
     shown: _document, // the document shown; equal to `saved` under Fire
     pointer: 0,
-    pressed: null as number | null,
+    pressed: null as Cell['id'] | null, // the identifier of the cell a held key fired
     instrument: _instrument,
     renaming: null as number | null,
     key: null as Key | null, // the key Assign links to the next cell chosen
@@ -264,9 +280,19 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
     fire = (_steps: number) => {
         this.send(this.state.pointer);
-        this.update((_state) => set(_state, 'pressed', _state.pointer));
+        this.#press(this.state.shown.sheet[this.state.pointer]);
         this.move(_steps);
     };
+
+    /// Draws `_cell` pressed until the key that fired it is released.
+    #press = ({ id }: Cell) => this.update(set('pressed', id));
+
+    /// Ends the pressed drawing of the cell with identifier `_id`, and keeps any other drawn.
+    #unpress = (_id: Cell['id'] | null) =>
+        this.update((_state) => (_state.pressed === _id ? set(_state, 'pressed', null) : _state));
+
+    /// Whether `_cell` is drawn pressed.
+    isPressed = ({ id }: Cell) => this.state.pressed === id;
 
     /// Links the selected key to `_cell` in the shown document; does nothing while no key is
     /// selected.
@@ -276,10 +302,16 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
             return key === null ? _state : evolve(_state, { shown: { bindings: (_links) => set(_links, key, id) } });
         });
 
+    /// The target of `_cell` in the shown document while the robot can take it, as zero or one.
+    #ready = ({ id }: Cell) => pipe(targetOf(this.state.shown, id), filter(({ ready }) => ready(this.#robot)));
+
     /// What a pane button does with its cell: Assign links the selected key to `_cell`; every other
-    /// instrument sends `_cue`, the cell itself unless the button sends another side of it.
+    /// instrument sends `_cue`, the cell itself unless the button sends another side of it, once the
+    /// robot can take the cell.
     use = (_cell: Cell, _cue: Cue = _cell) =>
-        this.state.instrument === 'Assign' ? this.#bind(_cell) : void this.#robot.request(_cue);
+        this.state.instrument === 'Assign'
+            ? this.#bind(_cell)
+            : forEach(this.#ready(_cell), () => void this.#robot.request(_cue));
 
     /// The cell `_key` is linked to in the shown document, if any.
     linked = (_key: Key) => pipe(linksOf(this.state.shown, _key), map(prop('cell')), first());
@@ -288,40 +320,53 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// pane draw highlighted.
     isTarget = ({ id }: Cell) => this.state.key !== null && this.linked(this.state.key)?.id === id;
 
-    /// Whether a pane button accepts a click: when `_ready`, the robot condition it sends under, or
-    /// under Assign, which sends nothing.
-    usable = (_ready: boolean) => _ready || this.state.instrument === 'Assign';
+    /// Whether a pane button has an effect, which the pane draws greyed when it has none: under
+    /// Assign it links the selected key; under every other instrument it sends once the robot can
+    /// take its cell.
+    usable = (_cell: Cell) => this.state.instrument === 'Assign' || !isEmpty(this.#ready(_cell));
 
-    /// A face key selects itself under Assign; under every other instrument it acts on the cell it is
-    /// linked to in the saved document, and an unassigned key does nothing.
+    /// A face key selects itself under Assign; under every other instrument it draws the cell it is
+    /// linked to in the saved document pressed, and acts on it once the robot can take it. An
+    /// unassigned key does nothing.
     #trigger = (_key: Key) =>
         this.state.instrument === 'Assign'
             ? this.update(set('key', _key))
-            : forEach(linksOf(this.state.saved, _key), ({ act, cell }) => act(this.#robot, cell));
+            : forEach(linksOf(this.state.saved, _key), ({ act, ready, cell }) => {
+                  this.#press(cell);
+                  if (ready(this.#robot)) act(this.#robot, cell);
+              });
 
-    /// Ends the pressed drawing of the cell a released key fired.
-    #unpress = () => this.update(set('pressed', null));
+    /// Ends the pressed drawing of the cell a released arrow or Enter fired.
+    #released = () => this.#unpress(this.state.pressed);
 
     /// What the arrows and Enter do when pressed and when released; they press only under Fire.
     /// `label` names each for the operator.
     arrows = {
-        ArrowRight: { label: 'Fire, then next cue', press: () => this.fire(1), release: this.#unpress },
-        ArrowLeft: { label: 'Fire, then previous cue', press: () => this.fire(-1), release: this.#unpress },
+        ArrowRight: { label: 'Fire, then next cue', press: () => this.fire(1), release: this.#released },
+        ArrowLeft: { label: 'Fire, then previous cue', press: () => this.fire(-1), release: this.#released },
         ArrowDown: { label: 'Next cue', press: () => this.move(1), release: doNothing() },
         ArrowUp: { label: 'Previous cue', press: () => this.move(-1), release: doNothing() },
-        Enter: { label: 'Fire', press: () => this.fire(0), release: this.#unpress },
+        Enter: { label: 'Fire', press: () => this.fire(0), release: this.#released },
     };
 
     /// The arrow named `_key`, as zero or one entry.
     #arrow = (_key: string) => pipe(this.arrows, entries(), filter(([_name]) => _name === _key), map(([, _arrow]) => _arrow));
 
+    /// The face key named `_key`, as zero or one.
+    #face = (_key: string) => pipe(KEYS, filter(isStrictEqual(_key)));
+
     /// Runs the press of `_key`: an arrow's under Fire, a face key's always. Any other key matches nothing.
     press = (_key: string) => {
         forEach(this.state.instrument === 'Fire' ? this.#arrow(_key) : [], (_arrow) => _arrow.press());
-        pipe(KEYS, filter(isStrictEqual(_key)), forEach(this.#trigger));
+        forEach(this.#face(_key), this.#trigger);
     };
 
-    release = (_key: string) => forEach(this.#arrow(_key), (_arrow) => _arrow.release());
+    /// Runs the release of `_key`: an arrow's, and for a face key the end of its linked cell's
+    /// pressed drawing.
+    release = (_key: string) => {
+        forEach(this.#arrow(_key), (_arrow) => _arrow.release());
+        forEach(this.#face(_key), (_face) => forEach(linksOf(this.state.saved, _face), ({ cell }) => this.#unpress(cell.id)));
+    };
 }
 
 /// The app's cue sheet, the show's running order or the sheet last saved in the browser, sent to

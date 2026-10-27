@@ -73,7 +73,7 @@
         </div>
     {/if}
     {#each shown as cell, i}
-        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={i === cueSheet.state.pressed}
+        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={cueSheet.isPressed(cell)}
             class:swept={isIncludedIn(i, swept) || cueSheet.isTarget(cell)}>
             {#if cueSheet.state.renaming === i}
                 <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
@@ -199,8 +199,11 @@
         cursor: cell;
     }
 
-    /* A cell fired by a key, or held under the pointer in play mode, looks pressed. */
+    /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks
+       pressed. */
     .pressed,
+    :global(button.pressed),
+    :global(.pressed > button),
     [data-instrument='Fire'] .cell:active {
         border-style: inset;
     }
