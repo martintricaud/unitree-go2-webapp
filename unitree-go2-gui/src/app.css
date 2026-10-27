@@ -138,8 +138,10 @@ button:focus-visible {
   display: flex;
 }
 
+/* Each side takes exactly half of the pair, whatever its label. */
 .posture-toggle>button {
-  flex: 1;
+  flex: 0 0 50%;
+  min-width: 0;
 }
 
 /* The two sides are two transitions, divided by one grooved line. */
