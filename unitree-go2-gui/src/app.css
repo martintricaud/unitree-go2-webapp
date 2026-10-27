@@ -121,12 +121,14 @@ button:focus-visible {
 }
 
 
+/* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
+   size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,
+   so only the template rows need a size. */
 .button-grid {
   column-fill: balance;
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(auto-fill, 3em);
-  grid-auto-rows: 3em;
+  grid-template-rows: repeat(auto-fill, 2.7em);
   height: calc(100% - 0.5em);
 }
 
