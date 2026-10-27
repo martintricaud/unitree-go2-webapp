@@ -132,8 +132,8 @@ button:focus-visible {
   min-height: 0;
 }
 
-/* A posture's toggle: its entry and its exit side by side, the side matching the robot's
-   settled posture drawn pressed. */
+/* A posture's pair: its entry and its exit side by side, two transitions; neither side shows the
+   robot's state. */
 .posture-toggle {
   display: flex;
 }
@@ -142,9 +142,13 @@ button:focus-visible {
   flex: 1;
 }
 
-.posture-toggle>.active {
-  border-style: inset;
-  font-weight: bold;
+/* The two sides are two transitions, divided by one grooved line. */
+.posture-toggle>button:first-child {
+  border-right-style: groove;
+}
+
+.posture-toggle>button:last-child {
+  border-left: none;
 }
 
 

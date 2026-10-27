@@ -94,7 +94,8 @@ const PANE_KEYS: Record<PaneGroup, { act: (_robot: typeof robot, _cell: Cell) =>
     actions: { act: send, ready: connected },
     postures: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
-        ready: motionKnown,
+        // Each side is a transition the robot accepts or refuses, so no known state is needed.
+        ready: connected,
     },
     gaits: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
