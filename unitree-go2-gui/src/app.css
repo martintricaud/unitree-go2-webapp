@@ -6,7 +6,9 @@
   --button-border: 4px;
   /* The line between two areas of the screen, and between two columns of the pane. */
   --divider: 2px groove rgb(200, 200, 200);
-  font-size: small;
+  /* The interface's base size, a little under the browsers' `small` (13px), so that the UI pane's
+     columns fit a 1366px-wide window. Every size in em or rem follows it. */
+  font-size: 12px;
   line-height: 1.5;
   color-scheme: light;
   font-synthesis: none;
@@ -21,7 +23,7 @@ body {
   width: 100vw;
   overflow: hidden;
   background: solid rgb(230, 230, 230);
-  font-size: small;
+  font-size: 1rem;
 }
 
 
@@ -111,7 +113,6 @@ button:focus-visible {
   flex-wrap: nowrap;
   flex-direction: row;
   overflow-y: hidden;
-  gap: 0.5em;
   grid-area: bottomleft;
   border-top: var(--divider);
 }
@@ -121,14 +122,14 @@ button:focus-visible {
   flex-shrink: 0;
   width: max-content;
   height: 100%;
-  /* Equal at the top and the bottom. */
+  /* Equal at the top and the bottom; 1em on each side, so a line between two columns sits centred. */
   padding-block: 0.8em;
+  padding-inline: 1em;
 }
 
-/* A thin grooved line between two neighbouring columns of the pane, centred in the gap. */
+/* A thin grooved line between two neighbouring columns of the pane, between their 1em paddings. */
 .ui-pane>*+* {
   border-left: var(--divider);
-  padding-left: 0.5em;
 }
 
 /* A group of the pane: its heading above its button grid, which takes the height left. */
