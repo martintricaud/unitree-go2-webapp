@@ -202,11 +202,16 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     #edit = (_change: Updater<CueSheet['state']>) =>
         this.update(piped(_change, set('renaming', null), set('problem', null)));
 
-    /// Makes `_instrument` the active one, and ends any renaming. The strip's Edit is
-    /// `choose('Move')`, the controller's is `choose('Assign')`.
-    /// Every choice deselects the key being assigned.
-    choose = (_instrument: CueSheet['state']['instrument']) =>
-        this.#edit(piped(set('instrument', _instrument), set('key', null)));
+    /// Makes `_instrument` the active one with `_key` selected, and ends any renaming.
+    #enter = (_instrument: CueSheet['state']['instrument'], _key: Key | null) =>
+        this.#edit(piped(set('instrument', _instrument), set('key', _key)));
+
+    /// Makes `_instrument` the active one, with no key selected. The status strip's Edit is
+    /// `choose('Move')`.
+    choose = (_instrument: CueSheet['state']['instrument']) => this.#enter(_instrument, null);
+
+    /// Makes Assign the active one, with `_key` selected for linking to the next cell chosen.
+    selectKey = (_key: Key) => this.#enter('Assign', _key);
 
     /// Makes the label of cell `_index` editable.
     startRenaming = (_index: number) => this.update(set('renaming', _index));
@@ -345,16 +350,16 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// take its cell.
     usable = (_cell: Cell) => this.state.instrument === 'Assign' || !isEmpty(this.#ready(_cell));
 
-    /// A face key selects itself under Assign; under every other instrument it draws the cell it is
-    /// linked to in the saved document pressed, and acts on it once the robot can take it. An
-    /// unassigned key does nothing.
+    /// A face key under Fire draws the cell it is linked to in the saved document pressed, and acts
+    /// on it once the robot can take it; an unassigned key does nothing. Under every edit
+    /// instrument it selects itself under Assign.
     #trigger = (_key: Key) =>
-        this.state.instrument === 'Assign'
-            ? this.update(set('key', _key))
-            : forEach(linksOf(this.state.saved, _key), ({ act, ready, cell }) => {
+        this.state.instrument === 'Fire'
+            ? forEach(linksOf(this.state.saved, _key), ({ act, ready, cell }) => {
                   this.#press(cell);
                   if (ready(this.#robot)) act(this.#robot, cell);
-              });
+              })
+            : this.selectKey(_key);
 
     /// Ends the pressed drawing of the cell a released arrow or Enter fired.
     #released = () => this.#unpress(this.state.pressed);

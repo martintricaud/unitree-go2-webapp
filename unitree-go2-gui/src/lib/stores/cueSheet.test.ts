@@ -4,7 +4,7 @@ import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { CueSheet, documentSchema } from './cueSheet.svelte';
+import { CueSheet, documentSchema, SHEET_TOOLS } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
 import { Robot } from './robot.svelte';
 
@@ -175,11 +175,18 @@ describe('cueSheet keys', () => {
     },
   );
 
-  it('still toggles Pose on a while editing', () => {
+  it('selects b under Assign from Move, and sends nothing', () => {
     const { cueSheet, sent } = setup();
+    cueSheet.choose('Move');
+    cueSheet.press('b');
+    expect([sent(), pick(cueSheet.state, ['instrument', 'key'])]).toEqual([[], { instrument: 'Assign', key: 'b' }]);
+  });
+
+  it('deselects the key when Group is chosen from Assign', () => {
+    const { cueSheet } = setup();
+    cueSheet.selectKey('b');
     cueSheet.choose('Group');
-    cueSheet.press('a');
-    expect(sent()).toEqual(asSent(ENTER_POSE));
+    expect(pick(cueSheet.state, ['instrument', 'key'])).toEqual({ instrument: 'Group', key: null });
   });
 });
 
@@ -384,6 +391,15 @@ describe('cueSheet in storage', () => {
     expect(reloaded.state.shown.sheet).toEqual(cueSheet.state.shown.sheet);
     expect(reloaded.state.shown.pane).toEqual(cueSheet.state.shown.pane);
     expect(reloaded.state.shown.sheet).not.toEqual(CELLS);
+  });
+
+  it.each([...SHEET_TOOLS, 'Assign'] as const)('stores the shown document on Save under %s, and returns to Fire', (_instrument) => {
+    const storage = memoryStorage();
+    const { cueSheet } = editing(_instrument, 0, SHEET, storage);
+    cueSheet.rename(0, 'Saved');
+    cueSheet.save();
+    expect(setup(SHEET, storage).cueSheet.state.shown.sheet[0].label).toBe('Saved');
+    expect(cueSheet.state.instrument).toBe('Fire');
   });
 
   it('rejects a pane group holding a cell of another kind, at that cell', () => {

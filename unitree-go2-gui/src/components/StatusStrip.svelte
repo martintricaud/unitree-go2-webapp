@@ -2,6 +2,7 @@
     import { robot } from '../lib/stores/robot.svelte';
     import { outcomeLog } from '../lib/stores/outcomes.svelte';
     import type { Outcome } from '../lib/stores/outcomes.svelte';
+    import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
     /// Whether the log popover is open. The browser owns the popover; its toggle event keeps this in step.
     let logOpen = $state(false);
@@ -11,6 +12,26 @@
         drawerOpen: boolean;
         callback: (next: boolean) => void;
     } = $props();
+
+    /// The hidden file input Import opens.
+    let picker: HTMLInputElement;
+
+    /// Imports the file chosen in the picker, then empties the picker, so that choosing the same
+    /// file again imports it again.
+    const importChosen = async () => {
+        const text = await picker.files?.[0]?.text();
+        picker.value = '';
+        if (text !== undefined) cueSheet.import(text);
+    };
+
+    /// Downloads the shown document as `cue-sheet.json`.
+    const exportShown = () => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([cueSheet.exported()], { type: 'application/json' }));
+        link.download = 'cue-sheet.json';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    };
 </script>
 
 {#snippet summary(entry: Outcome)}
@@ -29,6 +50,22 @@
         <button class="toggle" onclick={() => props.callback(!props.drawerOpen)}>
             {props.drawerOpen ? 'Hide' : 'Show'} controller
         </button>
+        <!-- Edit mode is any instrument but Fire; the strip's Edit enters it with Move. -->
+        {#if cueSheet.state.instrument === 'Fire'}
+            <button class="toggle" onclick={() => cueSheet.choose('Move')}>Edit</button>
+        {:else}
+            <span class="edit">
+                <button class="toggle" onclick={() => cueSheet.save()}>Save</button>
+                <button class="toggle" onclick={() => cueSheet.reset()}>Reset</button>
+                <button class="toggle" onclick={() => cueSheet.cancel()}>Cancel</button>
+                <button class="toggle" onclick={() => picker.click()}>Import</button>
+                <button class="toggle" onclick={exportShown}>Export</button>
+            </span>
+            {#if cueSheet.state.problem !== null}
+                <span class="problem" title={cueSheet.state.problem}>{cueSheet.state.problem}</span>
+            {/if}
+        {/if}
+        <input type="file" accept=".json,application/json" hidden bind:this={picker} onchange={importChosen} />
         <span>Websocket {robot.current.channelOpen ? '✅' : '❌'}</span>
         <span>Robot {robot.current.robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={outcomeLog.last?.detail ?? ''}>
@@ -90,6 +127,21 @@
         flex: 1 1 auto;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .edit {
+        display: flex;
+        gap: 0.4em;
+    }
+
+    /* Valibot's message fits the line: its line break shows as a space, and its full text is in
+       the title. */
+    .problem {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: rgb(160, 0, 0);
     }
 
     .toggle {

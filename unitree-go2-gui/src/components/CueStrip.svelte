@@ -52,26 +52,6 @@
         _span.focus();
         getSelection()?.selectAllChildren(_span);
     };
-
-    /// The hidden file input Import opens.
-    let picker: HTMLInputElement;
-
-    /// Imports the file chosen in the picker, then empties the picker, so that choosing the same
-    /// file again imports it again.
-    const importChosen = async () => {
-        const text = await picker.files?.[0]?.text();
-        picker.value = '';
-        if (text !== undefined) cueSheet.import(text);
-    };
-
-    /// Downloads the shown document as `cue-sheet.json`.
-    const exportShown = () => {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([cueSheet.exported()], { type: 'application/json' }));
-        link.download = 'cue-sheet.json';
-        link.click();
-        URL.revokeObjectURL(link.href);
-    };
 </script>
 
 <svelte:window onpointerup={() => (sweeps = [])} />
@@ -86,7 +66,7 @@
     onpointerup={(event) => forEach(sweeps, ({ a }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b)))}
 >
     {#if cueSheet.state.instrument !== 'Fire'}
-        <div class="bar top">
+        <div class="bar">
             {#each SHEET_TOOLS as name}
                 <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
             {/each}
@@ -105,32 +85,13 @@
             {/if}
         </div>
     {/each}
-    <div class="bar bottom">
-        {#if cueSheet.state.instrument === 'Fire'}
-            <button onclick={() => cueSheet.choose('Move')}>Edit</button>
-        {:else}
-            <div class="row">
-                <button onclick={() => cueSheet.save()}>Save</button>
-                <button onclick={() => cueSheet.reset()}>Reset</button>
-                <button onclick={() => cueSheet.cancel()}>Cancel</button>
-            </div>
-            <div class="row">
-                <button onclick={() => picker.click()}>Import</button>
-                <button onclick={exportShown}>Export</button>
-            </div>
-            {#if cueSheet.state.problem !== null}
-                <p class="problem">{cueSheet.state.problem}</p>
-            {/if}
-        {/if}
-        <input type="file" accept=".json,application/json" hidden bind:this={picker} onchange={importChosen} />
-    </div>
 </div>
 
 <style>
     /* The width fits the four tool buttons of the top bar on one line, and does not change between
        modes or with the labels. No text is selected during a sweep; Safari needs the prefixed
        property. Safari bounces a scroll container at either end of its range, and the bounce moves
-       the sticky bars with the cells; overscroll-behavior turns the bounce off. */
+       the sticky bar with the cells; overscroll-behavior turns the bounce off. */
     .actionsequence {
         -webkit-user-select: none;
         user-select: none;
@@ -142,9 +103,10 @@
         overscroll-behavior-y: none;
     }
 
-    /* The bars stay at the top and the bottom of the scrolled strip; cells scroll under them. */
+    /* The bar stays at the top of the scrolled strip; cells scroll under it. */
     .bar {
         position: sticky;
+        top: 0;
         z-index: 1;
         display: flex;
         background: rgb(230, 230, 230);
@@ -152,29 +114,6 @@
 
     .bar button {
         flex: 1 1 auto;
-    }
-
-    .top {
-        top: 0;
-    }
-
-    /* The top margin keeps the bar at the bottom of a strip shorter than the sidebar. */
-    .bottom {
-        bottom: 0;
-        margin-top: auto;
-        flex-direction: column;
-    }
-
-    .row {
-        display: flex;
-    }
-
-    /* Valibot's message keeps its line break before the issue's location. */
-    .problem {
-        margin: 0;
-        padding: 0.25rem 0.5rem;
-        white-space: pre-line;
-        color: rgb(160, 0, 0);
     }
 
     .bar .active {

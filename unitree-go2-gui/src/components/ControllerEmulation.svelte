@@ -37,8 +37,8 @@
     </button>
 {/snippet}
 
-<!-- A face button's title names the cell its key is linked to. Under Assign, a click on a face
-     button selects its key, drawn pressed in. -->
+<!-- A face button's title names the cell its key is linked to. In edit mode, a click on a face
+     button selects its key under Assign, drawn pressed in. -->
 <div class="controller">
     <div class="block dpad">
         {#each DIRECTIONS as button}
@@ -51,19 +51,6 @@
         {/each}
     </div>
 </div>
-<!-- Both sets of controls take the same cell, the inactive one hidden, so that the bar, and with
-     it the drawer, keeps one size under every instrument: the size of the wider set. -->
-<div class="bar">
-    <div class="controls" class:hidden={cueSheet.state.instrument === 'Assign'}>
-        <button onclick={() => cueSheet.choose('Assign')}>Edit</button>
-    </div>
-    <div class="controls" class:hidden={cueSheet.state.instrument !== 'Assign'}>
-        <button onclick={() => cueSheet.save()}>Save</button>
-        <button onclick={() => cueSheet.reset()}>Reset</button>
-        <button onclick={() => cueSheet.cancel()}>Cancel</button>
-    </div>
-</div>
-
 
 <style>
     /* Every size inside is a fraction of this element's width, so the emulator scales with its
@@ -116,23 +103,6 @@
         border-style: inset;
         border-width: 0.15em;
         background-color: #bbb;
-    }
-
-    .bar {
-        display: grid;
-        margin-top: 0.6em;
-    }
-
-    .controls {
-        grid-area: 1 / 1;
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: 1fr;
-        gap: 0.4em;
-    }
-
-    .hidden {
-        visibility: hidden;
     }
 
     .dpad button {
