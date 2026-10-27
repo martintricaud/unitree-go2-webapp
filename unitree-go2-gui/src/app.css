@@ -117,6 +117,12 @@ button:focus-visible {
   padding-bottom: 1em;
 }
 
+/* A thin grooved line between two neighbouring columns of the pane, centred in the gap. */
+.ui-pane>*+* {
+  border-left: 2px groove rgb(200, 200, 200);
+  padding-left: 1em;
+}
+
 /* A group of the pane: its heading above its button grid, which takes the height left. */
 .ui-pane>section {
   display: flex;

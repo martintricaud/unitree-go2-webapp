@@ -161,9 +161,6 @@
             {/each}
         </div>
     </section>
-    <div id="actionsequence" style="width:max-content">
-
-    </div>
     <section>
         <h2>Speed</h2>
         <div class="button-grid">
