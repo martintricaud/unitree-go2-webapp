@@ -5,8 +5,9 @@ import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
-import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
-import { postureChange, sheetSchema, stored, transition } from '../utils/commands';
+import { COMMANDABLE_GAITS, POSTURES, cells, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
+import { postureChange, sheetSchema, transition } from '../utils/commands';
+import { nextId, opened } from '../utils/trees';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
 
@@ -69,8 +70,8 @@ const numberedDocument = (_cues: Cue[]) => {
         PANE_GROUPS,
         reduce(
             (_document: Document, _group) =>
-                merge(_document, { pane: set(_document.pane, _group, numbered(PANE[_group], nextId(cellsOf(_document)))) }),
-            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
+                merge(_document, { pane: set(_document.pane, _group, cells(PANE[_group], nextId(cellsOf(_document)))) }),
+            { sheet: cells(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
         ),
     );
     const pairs = zip(cellsOf({ sheet: _cues, pane: PANE }), cellsOf(document));
@@ -255,18 +256,18 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     };
 
     /// Gives cell `_index` the label `_label`, and ends any renaming.
-    rename = (_index: number, _label: string) => this.#replace(_index, _index, map(set('label', _label)));
+    rename = (_index: number, _label: string) => this.#replace(_index, _index, map(merge({ label: _label })));
 
     /// Replaces the cells from `_a` to `_b` by one group of them, labelled with its first and last
     /// labels, under an identifier no shown cell holds. A range of one cell stays as it is.
     group = (_a: number, _b: number) =>
         this.#replace(_a, _b, (_run, { shown }) =>
-            hasAtLeast(_run, 2) ? [grouped(nextId(cellsOf(shown)), `${first(_run).label} → ${last(_run).label}`, _run)] : _run,
+            hasAtLeast(_run, 2) ? [{ id: nextId(cellsOf(shown)), label: `${first(_run).label} → ${last(_run).label}`, items: _run }] : _run,
         );
 
     /// Replaces every cell from `_a` to `_b` by its constituents; a cell without any stays as it is.
     ungroup = (_a: number, _b: number) =>
-        this.#replace(_a, _b, flatMap((_cell) => (isEmpty(_cell.items) ? [_cell] : _cell.items)));
+        this.#replace(_a, _b, flatMap(opened<Cell>));
 
     /// Moves cell `_from` to position `_to`, and ends any renaming. The pointer keeps its cell: the
     /// same move, applied to the indices, says where each cell lands.
@@ -288,8 +289,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
 
     /// The shown document as JSON text, as storage and an exported file hold it.
     exported = () => {
-        const { sheet, pane, bindings } = this.state.shown;
-        return JSON.stringify({ version: 2, sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings }, null, 2);
+        return JSON.stringify(merge({ version: 2 }, this.state.shown), null, 2);
     };
 
     /// Shows the document of the JSON text `_text` until Save or Cancel. When `_text` holds no valid

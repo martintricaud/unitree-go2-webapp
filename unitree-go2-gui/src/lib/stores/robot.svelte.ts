@@ -1,7 +1,7 @@
-import { constant, filter, flatMap, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys } from 'remeda';
+import { constant, filter, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys } from 'remeda';
 import { mapValues, merge, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { enter, isCommandable, postureChange, set as setting, transition } from '../utils/commands';
+import { compiled, enter, isCommandable, postureChange, set as setting, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
@@ -301,7 +301,7 @@ export class Robot {
     request = (_cue: Cue): Promise<Outcome> => {
         const reqId = (this.#lastRequestId += 1);
         const { label } = _cue;
-        if (!this.#send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
+        if (!this.#send({ kind: 'sequence', command_name: label, sequence: compiled(_cue).steps, reqId })) {
             const outcome = stamp(reqId, label, CHANNEL_CLOSED);
             this.#log.record(outcome);
             return Promise.resolve(outcome);
@@ -354,7 +354,7 @@ export class Robot {
     toggleTo = <F extends keyof Toggled>(_field: F, _value: Toggled[F]) => {
         const { state, previous } = this.#current;
         const cue = TOGGLES[_field](_value);
-        const waiting = pipe(cue.changes, flatMap(keys()), filter((_toggled) => state.pending[_toggled] !== undefined));
+        const waiting = pipe(compiled(cue).change, keys(), filter((_toggled) => state.pending[_toggled] !== undefined));
         if (!isEmpty(waiting)) return;
         void this.request(isDeepEqual(transition(cue)(state.settled), state.settled) ? TOGGLES[_field](previous[_field]) : cue);
     };

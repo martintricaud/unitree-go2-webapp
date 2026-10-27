@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
+    import { flatMap, forEach, isIncludedIn, last, map, reduce } from 'remeda';
     import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import { commandsOf } from '../lib/utils/commands';
     import type { Cell, Cue } from '../lib/utils/commands';
@@ -27,7 +27,7 @@
 
     /// The number of robot commands a group cell sends, counting its nested groups and not its
     /// waits; 0 for a cell that is not a group, so only a group shows a count.
-    const commandCount = (_cell: Cue) => (isEmpty(_cell.items) ? 0 : commandsOf(_cell).length);
+    const commandCount = (_cell: Cue) => (_cell.items === undefined ? 0 : commandsOf(_cell).length);
 
     /// Makes `_span` the editable label of cell `_index`. It takes the focus with its text selected,
     /// so typing replaces the label, and no typed key reaches the window shortcuts. Moving the focus

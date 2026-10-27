@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { evolve, filter, flat, flatMap, forEach, keys, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
+import { evolve, filter, flat, flatMap, forEach, keys, map, merge, omit, pick, pipe, prop, set, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
-import { POSTURES, enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
+import { POSTURES, cells as numbered, compiled, enter, leave, perform, sequence, set as setting, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
+import { nextId, opened } from '../utils/trees';
 import { CueSheet, documentSchema, SHEET_TOOLS } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
 import { Robot } from './robot.svelte';
@@ -11,7 +12,7 @@ import { Robot } from './robot.svelte';
 const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 
 /** The label and steps of each cue, as the robot writes them to the relay. */
-const asSent = (..._cues: Cue[]) => map(_cues, (_cue) => ({ command_name: _cue.label, sequence: _cue.steps }));
+const asSent = (..._cues: Cue[]) => map(_cues, (_cue) => ({ command_name: _cue.label, sequence: compiled(_cue).steps }));
 
 /** A storage that keeps its entries in `entries`, as `localStorage` keeps them across reloads. */
 const memoryStorage = (_entries = new Map<string, string>()) => ({
@@ -250,7 +251,7 @@ describe('cueSheet sweeps', () => {
   it('groups a sweep made in either direction into one sequence with a new identifier, and leaves a sweep of one cell', () => {
     // The new identifier is above the pane's, which are numbered after the sheet's.
     const id = nextId([...CELLS, ...pipe(editing('Group').cueSheet.state.shown.pane, values(), flat())]);
-    const expected = [CELLS[0], grouped(id, 'Pose → Hello', [CELLS[1], CELLS[2], CELLS[3]]), ...CELLS.slice(4)];
+    const expected = [CELLS[0], { id, label: 'Pose → Hello', items: [CELLS[1], CELLS[2], CELLS[3]] }, ...CELLS.slice(4)];
     times(2, (_reverse) => {
       const { cueSheet, state } = editing('Group');
       cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
@@ -279,7 +280,7 @@ describe('cueSheet sweeps', () => {
     const { cueSheet, state } = editing('Ungroup', 0, cues);
     cueSheet.sweep(3, 1);
     const cells = numbered(cues, 0);
-    expect(state().shown.sheet).toEqual([cells[0], ...cells[1].items, cells[2], ...cells[3].items, cells[4]]);
+    expect(state().shown.sheet).toEqual([cells[0], ...opened(cells[1]), cells[2], ...opened(cells[3]), cells[4]]);
   });
 
   it.each([
@@ -354,7 +355,7 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.rename(1, 'X');
     cueSheet.save();
-    const renamed = set(CELLS[1], 'label', 'X');
+    const renamed = merge(CELLS[1], { label: 'X' });
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
     expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
     cueSheet.sweep(1, 1);
@@ -411,7 +412,7 @@ describe('cueSheet in storage', () => {
   it('rejects a pane group holding a cell of another kind, at that cell', () => {
     const { cueSheet } = setup();
     const { sheet, pane } = cueSheet.state.shown;
-    const document = { sheet: map(sheet, stored), pane: mapValues(set(pane, 'gaits', [pane.postures[0]]), map(stored)), bindings: {} };
+    const document = { sheet, pane: set(pane, 'gaits', [pane.postures[0]]), bindings: {} };
     const parsed = v.safeParse(documentSchema, JSON.parse(JSON.stringify(document)));
     expect(map(parsed.issues ?? [], (_issue) => v.getDotPath(_issue))).toEqual(['pane.gaits.0.args.0']);
   });
@@ -434,7 +435,7 @@ describe('cueSheet in storage', () => {
   it.each([
     ['cueSheet.v1', JSON.stringify(SHEET)],
     ['cueSheet.v2', 'not json'],
-    ['cueSheet.v2', JSON.stringify(map(numbered([wait(2)], 0), stored))],
+    ['cueSheet.v2', JSON.stringify(numbered([wait(2)], 0))],
   ])('starts from the given cues, numbered from 0, when %s holds %s', (_key, _stored) => {
     const { cueSheet } = setup(SHEET, memoryStorage(new Map([[_key, _stored]])));
     expect(cueSheet.state.shown.sheet).toEqual(CELLS);
@@ -583,7 +584,7 @@ describe('cueSheet key assignment', () => {
   it('drops a stored link to an identifier no drawn cell holds', () => {
     const { cueSheet } = setup(SHEET);
     const { sheet, pane } = cueSheet.state.shown;
-    const document = { sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings: { a: 999, b: 0, x: 3 } };
+    const document = { sheet, pane, bindings: { a: 999, b: 0, x: 3 } };
     const reloaded = setup(SHEET, memoryStorage(new Map([['cueSheet.v2', JSON.stringify(document)]]))).cueSheet;
     expect(reloaded.state.saved.bindings).toEqual({ b: 0 });
   });
@@ -592,7 +593,7 @@ describe('cueSheet key assignment', () => {
 describe('cueSheet import and export', () => {
   /** The JSON text of a file holding `_sheet` as its stored cells, and the pane of `_cueSheet`. */
   const file = (_cueSheet: CueSheet, _sheet: unknown[]) =>
-    JSON.stringify({ version: 2, sheet: _sheet, pane: mapValues(_cueSheet.state.shown.pane, map(stored)), bindings: {} });
+    JSON.stringify({ version: 2, sheet: _sheet, pane: _cueSheet.state.shown.pane, bindings: {} });
 
   /** One stored leaf, numbered above every identifier of the default document. */
   const ONE = { id: 1000, label: 'Sit', name: 'enter', args: ['Sitting'] };

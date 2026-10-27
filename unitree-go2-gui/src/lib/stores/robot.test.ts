@@ -3,7 +3,7 @@ import { map, prop, range, reverse, times } from 'remeda';
 import { Robot } from './robot.svelte';
 import { OutcomeLog } from './outcomes.svelte';
 import type { Outcome } from './outcomes.svelte';
-import { enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
+import { compiled, enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue, RobotState } from '../utils/commands';
 import { displayed } from '../utils/confirmable';
 
@@ -199,7 +199,7 @@ describe('request', () => {
         expect(socket.written[0]).toEqual({
             kind: 'sequence',
             command_name: 'Hello',
-            sequence: HELLO.steps,
+            sequence: compiled(HELLO).steps,
             reqId: expect.any(Number),
         });
         socket.receive(verdict(socket.reqId(), 'confirmed', 0));
@@ -730,7 +730,7 @@ describe('request and the robot state', () => {
         const { robot, socket, reply } = connectedRobot();
         const answer = robot.request(SABOTS);
 
-        expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Sabots', sequence: SABOTS.steps })]);
+        expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Sabots', sequence: compiled(SABOTS).steps })]);
         expect(robot.current.state.pending).toEqual({
             gait: { value: 'Backstand', reqId: expect.any(Number) },
             headlight: { value: 'blue', reqId: expect.any(Number) },
@@ -782,7 +782,7 @@ describe('request and the robot state', () => {
         const cue = set({ name: 'headlight', value: displayed(robot.current.state).headlight });
         const before = robot.current.state;
         const answer = robot.request(cue);
-        expect(socket.written).toEqual([expect.objectContaining({ command_name: cue.label, sequence: cue.steps })]);
+        expect(socket.written).toEqual([expect.objectContaining({ command_name: cue.label, sequence: compiled(cue).steps })]);
         expect(robot.current.state).toBe(before);
         reply('confirmed');
         expect((await answer).outcome).toBe('confirmed');
@@ -922,7 +922,7 @@ describe('previous', () => {
 
 /** The cues `_cues` as the relay receives them. */
 const asSent = (..._cues: Cue[]) =>
-    _cues.map((_cue) => expect.objectContaining({ command_name: _cue.label, sequence: _cue.steps }));
+    _cues.map((_cue) => expect.objectContaining({ command_name: _cue.label, sequence: compiled(_cue).steps }));
 
 /** Runs each press on a connected robot and confirms what it sent, as the relay would. Returns
  * every frame the presses wrote. */
