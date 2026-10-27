@@ -114,6 +114,23 @@ button:focus-visible {
   padding-bottom: 1em;
 }
 
+/* A group of the pane: its heading above its button grid, which takes the height left. */
+.ui-pane>section {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-pane h2 {
+  font-size: 0.9em;
+  font-weight: bold;
+  margin-bottom: 0.3em;
+}
+
+.ui-pane>section>.button-grid {
+  flex: 1;
+  min-height: 0;
+}
+
 
 /* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
    size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,

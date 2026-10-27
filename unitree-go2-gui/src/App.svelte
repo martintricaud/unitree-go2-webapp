@@ -107,49 +107,60 @@
             callback={(next: boolean) => (FACE_DETECTION = next)}
         />
     </div>
-    <div class="button-grid">
-        {#each ACTIONS as action}
-            <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(perform(action))}>
-                {action}
-            </button>
-        {/each}
-        <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
-    </div>
+    <section>
+        <h2>Actions</h2>
+        <div class="button-grid">
+            {#each ACTIONS as action}
+                <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(perform(action))}>
+                    {action}
+                </button>
+            {/each}
+            <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
+        </div>
+    </section>
     <!-- The gait stays ticked during a posture, as the gait the robot returns to when it leaves it. -->
-    <div class="button-grid">
-        {#each keys(GAITS).filter(isCommandable) as target}
-            <Radio
-                optionName={target}
-                selected={robot.current.state.settled.gait === target}
-                spinning={robot.current.state.pending.gait?.value === target}
-                disabled={motionUnknown}
-                callback={() => sendToRobot(enter(target))}
-            />
-        {/each}
-    </div>
-    <div class="button-grid">
-        {#each keys(POSTURES) as target}
-            <Radio
-                optionName={target}
-                selected={robot.current.state.settled.posture === target}
-                spinning={robot.current.state.pending.posture?.value === target}
-                disabled={motionUnknown}
-                callback={() => sendToRobot(enter(target))}
-            />
-        {/each}
-    </div>
-
-    <div class="button-grid">
-        {#each COLOURS as colour}
-            <Radio
-                optionName={colour}
-                selected={robot.current.state.settled.headlight === colour}
-                spinning={robot.current.state.pending.headlight?.value === colour}
-                disabled={!robot.current.robotConnected}
-                callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
-            />
-        {/each}
-    </div>
+    <section>
+        <h2>Gaits</h2>
+        <div class="button-grid">
+            {#each keys(GAITS).filter(isCommandable) as target}
+                <Radio
+                    optionName={target}
+                    selected={robot.current.state.settled.gait === target}
+                    spinning={robot.current.state.pending.gait?.value === target}
+                    disabled={motionUnknown}
+                    callback={() => sendToRobot(enter(target))}
+                />
+            {/each}
+        </div>
+    </section>
+    <section>
+        <h2>Postures</h2>
+        <div class="button-grid">
+            {#each keys(POSTURES) as target}
+                <Radio
+                    optionName={target}
+                    selected={robot.current.state.settled.posture === target}
+                    spinning={robot.current.state.pending.posture?.value === target}
+                    disabled={motionUnknown}
+                    callback={() => sendToRobot(enter(target))}
+                />
+            {/each}
+        </div>
+    </section>
+    <section>
+        <h2>Light</h2>
+        <div class="button-grid">
+            {#each COLOURS as colour}
+                <Radio
+                    optionName={colour}
+                    selected={robot.current.state.settled.headlight === colour}
+                    spinning={robot.current.state.pending.headlight?.value === colour}
+                    disabled={!robot.current.robotConnected}
+                    callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
+                />
+            {/each}
+        </div>
+    </section>
     <div id="actionsequence" style="width:max-content">
 
     </div>
