@@ -98,8 +98,9 @@
 
 <style>
     /* The width fits the four tool buttons of the top bar on one line, and does not change between
-       modes or with the labels. */
-    /* No text is selected during a sweep; Safari needs the prefixed property. */
+       modes or with the labels. No text is selected during a sweep; Safari needs the prefixed
+       property. Safari bounces a scroll container at either end of its range, and the bounce moves
+       the sticky bars with the cells; overscroll-behavior turns the bounce off. */
     .actionsequence {
         -webkit-user-select: none;
         user-select: none;
@@ -108,6 +109,7 @@
         flex-direction: column;
         max-height: 100%;
         overflow-y: auto;
+        overscroll-behavior-y: none;
     }
 
     /* The bars stay at the top and the bottom of the scrolled strip; cells scroll under them. */
