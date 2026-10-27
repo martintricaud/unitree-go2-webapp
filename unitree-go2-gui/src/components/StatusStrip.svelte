@@ -4,9 +4,6 @@
     import type { Outcome } from '../lib/stores/outcomes.svelte';
     import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
-    /// Whether the log popover is open. The browser owns the popover; its toggle event keeps this in step.
-    let logOpen = $state(false);
-
     let props: {
         /// Whether the controller sidebar is open. App.svelte owns it; this strip only asks to flip it.
         drawerOpen: boolean;
@@ -71,19 +68,15 @@
         <span class="last" title={outcomeLog.last?.detail ?? ''}>
             {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
         </span>
-        <span>
-            {outcomeLog.counts.failed + outcomeLog.counts.rejected} failed, {outcomeLog.counts.unknown} unknown,
-            {outcomeLog.counts.confirmed} confirmed
-        </span>
+        <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
         <button class="toggle" popovertarget="outcome-log">
-            {logOpen ? 'Hide' : 'Show'} log ({outcomeLog.entries.length})
+            Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌)
         </button>
     </div>
     <ol
         id="outcome-log"
         class="log"
         popover="auto"
-        ontoggle={(event) => (logOpen = event.newState === 'open')}
     >
         <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
              duplicate key would take the whole strip down mid-performance. -->
@@ -123,10 +116,12 @@
         overflow-x: auto;
     }
 
+    /* Takes the spare width, its text set against the log button it summarises. */
     .last {
         flex: 1 1 auto;
         overflow: hidden;
         text-overflow: ellipsis;
+        text-align: right;
     }
 
     .edit {
