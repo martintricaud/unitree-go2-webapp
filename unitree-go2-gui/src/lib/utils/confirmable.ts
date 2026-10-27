@@ -1,5 +1,5 @@
 import { keys, mapValues } from 'remeda';
-import type { Outcome } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes.svelte';
 
 /// Each field waits on its own request, so a verdict on one field leaves the others pending.
 /// A field whose pending entry is undefined shows `settled`, so clearing an entry restores the

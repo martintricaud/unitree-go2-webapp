@@ -1,7 +1,7 @@
 <script lang="ts">
     import { robot } from '../lib/stores/robot';
-    import { lastOutcome, outcomeCounts, outcomeLog } from '../lib/stores/outcomes';
-    import type { Outcome } from '../lib/stores/outcomes';
+    import { outcomeLog } from '../lib/stores/outcomes.svelte';
+    import type { Outcome } from '../lib/stores/outcomes.svelte';
 
     /// Whether the log popover is open. The browser owns the popover; its toggle event keeps this in step.
     let logOpen = $state(false);
@@ -31,15 +31,15 @@
         </button>
         <span>Websocket {$robot.channelOpen ? '✅' : '❌'}</span>
         <span>Robot {$robot.robotConnected ? '✅' : '❌'}</span>
-        <span class="last" title={$lastOutcome?.detail ?? ''}>
-            {#if $lastOutcome === null}no command sent yet{:else}{@render summary($lastOutcome)}{/if}
+        <span class="last" title={outcomeLog.last?.detail ?? ''}>
+            {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
         </span>
         <span>
-            {$outcomeCounts.failed + $outcomeCounts.rejected} failed, {$outcomeCounts.unknown} unknown,
-            {$outcomeCounts.confirmed} confirmed
+            {outcomeLog.counts.failed + outcomeLog.counts.rejected} failed, {outcomeLog.counts.unknown} unknown,
+            {outcomeLog.counts.confirmed} confirmed
         </span>
         <button class="toggle" popovertarget="outcome-log">
-            {logOpen ? 'Hide' : 'Show'} log ({$outcomeLog.length})
+            {logOpen ? 'Hide' : 'Show'} log ({outcomeLog.entries.length})
         </button>
     </div>
     <ol
@@ -50,7 +50,7 @@
     >
         <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
              duplicate key would take the whole strip down mid-performance. -->
-        {#each $outcomeLog as entry}
+        {#each outcomeLog.entries as entry}
             <li>
                 <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
                 <span>{@render summary(entry)}</span>

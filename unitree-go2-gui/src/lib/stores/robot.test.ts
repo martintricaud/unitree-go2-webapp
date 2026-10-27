@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { get, writable } from 'svelte/store';
+import { map, prop, range, reverse, times } from 'remeda';
+import { get } from 'svelte/store';
 import { createRobot } from './robot';
-import { lastOutcome, outcomeCounts, outcomeLog, recorded } from './outcomes';
-import type { Outcome } from './outcomes';
+import { OutcomeLog } from './outcomes.svelte';
+import type { Outcome } from './outcomes.svelte';
 import { enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { displayed } from '../utils/confirmable';
@@ -56,19 +57,20 @@ const verdict = (reqId: number, outcome: string, code: number | null, detail = '
 
 const robotState = (connected: boolean) => JSON.stringify({ type: 'robot_state', connected });
 
-/** A robot whose channel is open on a fake socket. Its outcome log is `_log`, by default one no
- * other test writes, so a test that reads it depends on no earlier test. */
-const openRobot = (_log = writable<Outcome[]>([])) => {
+/** A robot whose channel is open on a fake socket. Its outcome log is one no other test writes, so
+ * a test that reads it depends on no earlier test. */
+const openRobot = () => {
     const socket = new FakeSocket();
-    const robot = createRobot({ openSocket: () => socket, outcomeLog: _log });
+    const log = new OutcomeLog();
+    const robot = createRobot({ openSocket: () => socket, outcomeLog: log });
     robot.connect();
     socket.onopen?.();
-    return { robot, socket, log: _log };
+    return { robot, socket, log };
 };
 
 describe('the store', () => {
     it('starts with the channel closed, no robot, nothing told, and the robot settled on its boot state', () => {
-        expect(get(createRobot({ openSocket: () => new FakeSocket(), outcomeLog: writable([]) }))).toEqual({
+        expect(get(createRobot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() }))).toEqual({
             channelOpen: false,
             robotConnected: false,
             lidarOn: false,
@@ -108,7 +110,7 @@ describe('the store', () => {
             opened.push(socket);
             return socket;
         };
-        const robot = createRobot({ openSocket, outcomeLog: writable([]) });
+        const robot = createRobot({ openSocket, outcomeLog: new OutcomeLog() });
         robot.connect();
         robot.connect();
         expect(opened).toHaveLength(1);
@@ -269,7 +271,7 @@ describe('request', () => {
     });
 
     it('resolves failed at once before the channel was ever opened', async () => {
-        const robot = createRobot({ openSocket: () => new FakeSocket(), outcomeLog: writable([]) });
+        const robot = createRobot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() });
         expect((await robot.request(HELLO)).outcome).toBe('failed');
     });
 
@@ -321,41 +323,32 @@ describe('request', () => {
         expect((await answer).outcome).toBe('confirmed');
 
         socket.receive(verdict(socket.reqId(), 'failed', 3203));
-        expect(get(log).map((entry) => entry.outcome)).toEqual(['failed', 'confirmed']);
+        expect(map(log.entries, prop('outcome'))).toEqual(['failed', 'confirmed']);
     });
 });
 
 describe('the outcome log', () => {
-    // `lastOutcome` and `outcomeCounts` derive from the app's log, so these robots write to it.
     beforeEach(() => {
         vi.useRealTimers();
     });
 
     it('records the newest outcome first and keeps at most 200', () => {
-        const outcome = (_reqId: number): Outcome => ({
-            outcome: 'confirmed',
-            code: 0,
-            detail: '',
-            reqId: _reqId,
-            label: '',
-            at: 0,
-        });
-        const full = Array.from({ length: 200 }, (_value, _index) => outcome(_index));
-        const log = recorded(outcome(200))(full);
-        expect(log).toHaveLength(200);
-        expect(log[0].reqId).toBe(200);
-        expect(log.at(-1)?.reqId).toBe(198);
+        const log = new OutcomeLog();
+        times(201, (_reqId) =>
+            log.record({ outcome: 'confirmed', code: 0, detail: '', reqId: _reqId, label: '', at: 0 }),
+        );
+        expect(map(log.entries, prop('reqId'))).toEqual(reverse(range(1, 201)));
     });
 
     it('labels an entry with the command the browser sent', () => {
-        const { robot, socket } = openRobot(outcomeLog);
+        const { robot, socket, log } = openRobot();
         void robot.request(DANCE);
         socket.receive(verdict(socket.reqId(), 'confirmed', 0));
-        expect(get(lastOutcome)).toMatchObject({ label: 'Dance', outcome: 'confirmed', code: 0 });
+        expect(log.last).toMatchObject({ label: 'Dance', outcome: 'confirmed', code: 0 });
     });
 
     it('drops a result that carries no request id, since this browser always sends one', () => {
-        const { socket } = openRobot(outcomeLog);
+        const { socket, log } = openRobot();
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         socket.receive(
             JSON.stringify({
@@ -367,13 +360,13 @@ describe('the outcome log', () => {
                 detail: 'status.code=3203',
             }),
         );
-        expect(get(outcomeLog)).toEqual([]);
+        expect(log.entries).toEqual([]);
         expect(warn).toHaveBeenCalledOnce();
         warn.mockRestore();
     });
 
     it('counts every outcome, and reports zero for the names nothing landed on', () => {
-        const { robot, socket } = openRobot(outcomeLog);
+        const { robot, socket, log } = openRobot();
         void robot.request(HELLO);
         void robot.request(HELLO);
         void robot.request(HELLO);
@@ -381,7 +374,7 @@ describe('the outcome log', () => {
         socket.receive(verdict(socket.reqId(1), 'failed', 3203));
         socket.receive(verdict(socket.reqId(2), 'rejected', null));
 
-        expect(get(outcomeCounts)).toEqual({
+        expect(log.counts).toEqual({
             confirmed: 1,
             failed: 1,
             rejected: 1,
@@ -390,15 +383,15 @@ describe('the outcome log', () => {
     });
 
     it('starts again when the control channel opens', () => {
-        const { robot, socket } = openRobot(outcomeLog);
+        const { robot, socket, log } = openRobot();
         void robot.request(HELLO);
         socket.receive(verdict(socket.reqId(), 'failed', 3203));
-        expect(get(outcomeLog)).toHaveLength(1);
+        expect(log.entries).toHaveLength(1);
 
         socket.onopen?.();
-        expect(get(outcomeLog)).toEqual([]);
-        expect(get(outcomeCounts)).toEqual({ confirmed: 0, failed: 0, rejected: 0, unknown: 0 });
-        expect(get(lastOutcome)).toBeNull();
+        expect(log.entries).toEqual([]);
+        expect(log.counts).toEqual({ confirmed: 0, failed: 0, rejected: 0, unknown: 0 });
+        expect(log.last).toBeNull();
     });
 });
 
@@ -431,7 +424,7 @@ describe('robot state', () => {
         socket.receive('null');
         socket.receive(JSON.stringify({ type: 'pirouette', connected: false }));
         expect(get(robot).robotConnected).toBe(true);
-        expect(get(log)).toEqual([]);
+        expect(log.entries).toEqual([]);
         expect(warn).toHaveBeenCalledTimes(2);
         warn.mockRestore();
     });

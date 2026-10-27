@@ -3,7 +3,7 @@ import { pipe } from 'remeda';
 import * as confirmable from './confirmable';
 import { displayed } from './confirmable';
 import type { Confirmable } from './confirmable';
-import type { Outcome } from '../stores/outcomes';
+import type { Outcome } from '../stores/outcomes.svelte';
 
 const verdict = (_outcome: Outcome['outcome']): Outcome => ({
     reqId: 0,

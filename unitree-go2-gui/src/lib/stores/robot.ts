@@ -5,8 +5,8 @@ import { enter, isCommandable, leave, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
-import { OUTCOMES, outcomeLog, recorded } from './outcomes';
-import type { Outcome } from './outcomes';
+import { OUTCOMES, outcomeLog } from './outcomes.svelte';
+import type { Outcome, OutcomeLog } from './outcomes.svelte';
 
 /// Every JSON message the relay sends. Video frames arrive separately, as binary.
 type RelayMessage =
@@ -98,7 +98,7 @@ export const createRobot = ({
     outcomeLog: log,
 }: {
     openSocket: () => Pick<WebSocket, 'readyState' | 'send' | 'onopen' | 'onclose' | 'onmessage'>;
-    outcomeLog: typeof outcomeLog;
+    outcomeLog: OutcomeLog;
 }) => {
     /// The store's `set` and `update` stay inside this function, so no reader can show a value that
     /// neither the operator asked for nor the relay or the robot stated.
@@ -188,7 +188,7 @@ export const createRobot = ({
         if (!request) return;
         clearTimeout(request.timer);
         awaiting.delete(_outcome.reqId);
-        log.update(recorded(_outcome));
+        log.record(_outcome);
         changeState(resolve(_outcome.reqId, _outcome));
         request.resolve(_outcome);
     };
@@ -264,7 +264,7 @@ export const createRobot = ({
                     detail: msg.detail ?? '',
                 });
                 if (request) finish(outcome);
-                else log.update(recorded(outcome));
+                else log.record(outcome);
                 return;
             }
             case 'state_stream':
@@ -289,7 +289,7 @@ export const createRobot = ({
         const { label } = _cue;
         if (!send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
             const outcome = stamp(reqId, label, CHANNEL_CLOSED);
-            log.update(recorded(outcome));
+            log.record(outcome);
             return Promise.resolve(outcome);
         }
         const shown = displayed(get(store).state);
@@ -311,7 +311,7 @@ export const createRobot = ({
             const opened = openSocket();
             opened.onopen = () => {
                 store.update((_robot) => ({ ..._robot, channelOpen: true }));
-                log.set([]);
+                log.clear();
             };
             opened.onclose = () => {
                 store.update((_robot) => ({ ..._robot, channelOpen: false, robotConnected: false, reported: {} }));
