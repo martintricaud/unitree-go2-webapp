@@ -112,10 +112,4 @@
     .switch.knob-right .spinner {
         left: calc((var(--switch-width) - var(--slider-size)) / 2);
     }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
 </style>

@@ -133,12 +133,15 @@
                 {@const posture = after(cell).posture}
                 {#if posture}
                     {@const inPosture = robot.current.state.settled.posture === posture}
+                    {@const pending = robot.current.state.pending.posture}
                     <div class="posture-toggle">
                         <button class:active={inPosture} disabled={motionUnknown} onclick={() => sendToRobot(cell)}>
                             {POSTURE_FACES[posture][0]}
+                            {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
                         <button class:active={!inPosture} disabled={motionUnknown} onclick={() => sendToRobot(leave(posture))}>
                             {POSTURE_FACES[posture][1]}
+                            {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
                     </div>
                 {/if}

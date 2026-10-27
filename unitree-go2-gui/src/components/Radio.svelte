@@ -22,21 +22,4 @@
         opacity: 0.5;
     }
 
-    .spinner {
-        display: inline-block;
-        width: 0.8em;
-        height: 0.8em;
-        margin-left: 0.3em;
-        vertical-align: middle;
-        border: 2px solid currentColor;
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
 </style>
