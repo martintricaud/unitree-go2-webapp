@@ -1,6 +1,6 @@
 <script lang="ts">
-    import { drop, filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
-    import { cueSheet, INSTRUMENTS } from '../lib/stores/cueSheet.svelte';
+    import { filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
+    import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import type { Cell, Cue } from '../lib/utils/commands';
 
     /// The strip's root element, whose drawn cells give each cell its index.
@@ -13,7 +13,7 @@
 
     /// The active instrument, and the cells it shows and highlights during the sweep in progress.
     let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
-    let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.cells));
+    let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.shown.sheet));
     let swept = $derived(flatMap(sweeps, ({ a, b }) => instrument.swept(a, b)));
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
@@ -67,14 +67,14 @@
 >
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar top">
-            {#each drop(INSTRUMENTS, 1) as name}
+            {#each SHEET_TOOLS as name}
                 <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
             {/each}
         </div>
     {/if}
     {#each shown as cell, i}
-        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.cells[cueSheet.state.pointer]} class:pressed={i === cueSheet.state.pressed}
-            class:swept={isIncludedIn(i, swept)}>
+        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={i === cueSheet.state.pressed}
+            class:swept={isIncludedIn(i, swept) || cueSheet.isTarget(cell)}>
             {#if cueSheet.state.renaming === i}
                 <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
             {:else}
@@ -168,7 +168,12 @@
         border-color: rgb(0, 218, 163);
     }
 
-    .swept {
+    /* A swept cell, and under Assign the cell or the pane button the selected key is linked to.
+       The pane's buttons share the look through the global selectors; a pane button may sit
+       inside the highlighted element. */
+    .swept,
+    :global(button.swept),
+    :global(.swept > button) {
         background: rgb(170, 200, 240);
     }
 

@@ -10,7 +10,7 @@
     // import Lidar from './components/Lidar.svelte';
     import { POSTURE_FACES, leave, set, transition } from './lib/utils/commands';
     import type { Cell, Cue } from './lib/utils/commands';
-    import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
+    import { SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
     import { displayed } from './lib/utils/confirmable';
@@ -104,8 +104,10 @@
     <section>
         <h2>Actions</h2>
         <div class="button-grid">
-            {#each cueSheet.state.pane.actions as cell (cell.id)}
-                <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(cell)}>{cell.label}</button>
+            {#each cueSheet.state.shown.pane.actions as cell (cell.id)}
+                <button class:swept={cueSheet.isTarget(cell)} disabled={!cueSheet.usable(robot.current.robotConnected)} onclick={() => cueSheet.use(cell)}>
+                    {cell.label}
+                </button>
             {/each}
         </div>
     </section>
@@ -113,14 +115,14 @@
     <section>
         <h2>Gaits</h2>
         <div class="button-grid">
-            {#each cueSheet.state.pane.gaits as cell (cell.id)}
-                <Radio
+            {#each cueSheet.state.shown.pane.gaits as cell (cell.id)}
+                <div class="target" class:swept={cueSheet.isTarget(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.gait === after(cell).gait}
                     spinning={robot.current.state.pending.gait?.value === after(cell).gait}
-                    disabled={motionUnknown}
-                    callback={() => sendToRobot(cell)}
-                />
+                    disabled={!cueSheet.usable(!motionUnknown)}
+                    callback={() => cueSheet.use(cell)}
+                /></div>
             {/each}
         </div>
     </section>
@@ -129,17 +131,17 @@
     <section>
         <h2>Postures</h2>
         <div class="button-grid">
-            {#each cueSheet.state.pane.postures as cell (cell.id)}
+            {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
                 {#if posture}
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
-                    <div class="posture-toggle">
-                        <button class:active={inPosture} disabled={motionUnknown} onclick={() => sendToRobot(cell)}>
+                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
+                        <button class:active={inPosture} disabled={!cueSheet.usable(!motionUnknown)} onclick={() => cueSheet.use(cell)}>
                             {POSTURE_FACES[posture][0]}
                             {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
-                        <button class:active={!inPosture} disabled={motionUnknown} onclick={() => sendToRobot(leave(posture))}>
+                        <button class:active={!inPosture} disabled={!cueSheet.usable(!motionUnknown)} onclick={() => cueSheet.use(cell, leave(posture))}>
                             {POSTURE_FACES[posture][1]}
                             {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
@@ -151,14 +153,14 @@
     <section>
         <h2>Light</h2>
         <div class="button-grid">
-            {#each cueSheet.state.pane.lights as cell (cell.id)}
-                <Radio
-                    optionName={after(cell).headlight}
+            {#each cueSheet.state.shown.pane.lights as cell (cell.id)}
+                <div class="target" class:swept={cueSheet.isTarget(cell)}><Radio
+                    optionName={cell.label}
                     selected={robot.current.state.settled.headlight === after(cell).headlight}
                     spinning={robot.current.state.pending.headlight?.value === after(cell).headlight}
-                    disabled={!robot.current.robotConnected}
-                    callback={() => sendToRobot(cell)}
-                />
+                    disabled={!cueSheet.usable(robot.current.robotConnected)}
+                    callback={() => cueSheet.use(cell)}
+                /></div>
             {/each}
         </div>
     </section>
@@ -199,6 +201,11 @@
 
     .drawer > :global(*) {
         pointer-events: auto;
+    }
+
+    /* Wraps a Radio so that the highlight reaches its button; the wrapper takes no box of its own. */
+    .target {
+        display: contents;
     }
 
     .drawer.open {

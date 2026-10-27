@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { flat, map, mapValues, pick, pipe, set, times, values } from 'remeda';
+import { evolve, filter, flat, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
-import { enter, grouped, nextId, numbered, perform, sequence, stored, wait } from '../utils/commands';
+import { enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { CueSheet, documentSchema } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
@@ -25,13 +25,21 @@ const memoryStorage = (_entries = new Map<string, string>()) => ({
 const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage()) => {
   const frames: string[] = [];
   const send = (_frame: string) => void frames.push(_frame);
-  const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null };
+  const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null as ((_event: { data: string }) => void) | null };
   const robot = new Robot({ openSocket: () => socket, outcomeLog: new OutcomeLog() });
   robot.connect();
   const cueSheet = new CueSheet(_cues, robot, _storage);
   const sent = () => map(frames, (_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
-  return { cueSheet, robot, sent };
+  /** Confirms the latest request, as the relay would. */
+  const confirm = () =>
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'command_result', reqId: JSON.parse(frames[frames.length - 1]).reqId, outcome: 'confirmed', code: 0, detail: null, command_name: null }),
+    });
+  return { cueSheet, robot, sent, confirm };
 };
+
+/** The state of `_cueSheet`, with the saved and the shown document each reduced to its sheet. */
+const sheets = (_cueSheet: CueSheet) => evolve(_cueSheet.state, { saved: prop('sheet'), shown: prop('sheet') });
 
 /** The pointer and the pressed cell of `_cueSheet`. */
 const position = (_cueSheet: CueSheet) => pick(_cueSheet.state, ['pointer', 'pressed']);
@@ -56,7 +64,7 @@ describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
     const cells = numbered(CUES, 0);
-    expect(cueSheet.state).toEqual({ saved: cells, cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, pane: expect.any(Object) });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, key: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -118,24 +126,20 @@ describe('cueSheet keys', () => {
     ['b', enter('Leaping')],
     ['x', enter('Sitting')],
     ['y', presets.dance],
-  ] as const)('sends the cue of %s, and leaves the pointer', (_key, _cue) => {
-    expect(pressOnce(_key)).toEqual({ sent: asSent(_cue), pointer: 0, pressed: null });
+  ] as const)('sends the cue %s is linked to in the default document, and leaves the pointer', (_key, _cue) => {
+    const { cueSheet, sent } = setup(CONDUITE);
+    cueSheet.press(_key);
+    expect([sent(), position(cueSheet)]).toEqual([asSent(_cue), { pointer: 0, pressed: null }]);
   });
 
-  it('does nothing on an unbound key', () => {
+  it('does nothing on an unbound key, nor on a key whose default cue the sheet lacks', () => {
     expect(pressOnce('z')).toEqual({ sent: [], pointer: 0, pressed: null });
     expect(pressOnce('toString')).toEqual({ sent: [], pointer: 0, pressed: null });
+    expect(pressOnce('y')).toEqual({ sent: [], pointer: 0, pressed: null });
   });
 
-  it('runs the binding a key was rebound to', () => {
-    const { cueSheet, sent } = setup();
-    cueSheet.bindings = set(cueSheet.bindings, 'a', cueSheet.bindings.y);
-    cueSheet.press('a');
-    expect(sent()).toEqual(asSent(presets.dance));
-  });
-
-  it('sends nothing for a toggle whose fields wait for a verdict, and still sends a preset', () => {
-    const { cueSheet, robot, sent } = setup();
+  it('sends nothing for a toggle whose fields wait for a verdict, and still sends a sheet cell', () => {
+    const { cueSheet, robot, sent } = setup(CONDUITE);
     cueSheet.press('a');
     expect(robot.current.state.pending.posture).toBeDefined();
     // Pose, Sit and Leaping all toggle the posture, which waits.
@@ -196,15 +200,15 @@ const editing = (
   const { cueSheet, sent } = setup(_cues, _storage);
   tap(cueSheet, 'ArrowDown', _pointer);
   cueSheet.choose(_instrument);
-  return { cueSheet, sent, shown: () => cueSheet.state };
+  return { cueSheet, sent, state: () => cueSheet.state };
 };
 
 describe('cueSheet sweeps', () => {
   it('moves cell 0 of CONDUITE to position 2, and keeps the pointer on its cell', () => {
-    const { cueSheet, shown } = editing('Move', 1, CONDUITE);
+    const { cueSheet, state } = editing('Move', 1, CONDUITE);
     cueSheet.sweep(0, 2);
-    expect(map(shown().cells.slice(0, 3), (_cell) => _cell.label)).toEqual(['Pose', 'Sabots', 'FreeWalk']);
-    expect(shown().cells[shown().pointer]).toEqual(numbered(CONDUITE, 0)[1]);
+    expect(map(state().shown.sheet.slice(0, 3), (_cell) => _cell.label)).toEqual(['Pose', 'Sabots', 'FreeWalk']);
+    expect(state().shown.sheet[state().pointer]).toEqual(numbered(CONDUITE, 0)[1]);
   });
 
   it.each([
@@ -212,29 +216,29 @@ describe('cueSheet sweeps', () => {
     [4, 1],
   ])('moves only cell %i to position %i, and keeps the pointer on its cell wherever it is', (_from, _to) => {
     times(SHEET.length, (_pointer) => {
-      const { cueSheet, shown } = editing('Move', _pointer);
+      const { cueSheet, state } = editing('Move', _pointer);
       cueSheet.sweep(_from, _to);
-      expect(shown().cells[_to]).toEqual(CELLS[_from]);
-      expect(shown().cells[shown().pointer]).toEqual(CELLS[_pointer]);
+      expect(state().shown.sheet[_to]).toEqual(CELLS[_from]);
+      expect(state().shown.sheet[state().pointer]).toEqual(CELLS[_pointer]);
     });
-    const { cueSheet, shown } = editing('Move');
+    const { cueSheet, state } = editing('Move');
     cueSheet.sweep(_from, _to);
-    expect(shown().cells).toEqual(map(_from < _to ? [0, 2, 3, 4, 1, 5] : [0, 4, 1, 2, 3, 5], (_index) => CELLS[_index]));
+    expect(state().shown.sheet).toEqual(map(_from < _to ? [0, 2, 3, 4, 1, 5] : [0, 4, 1, 2, 3, 5], (_index) => CELLS[_index]));
   });
 
   it('groups a sweep made in either direction into one sequence with a new identifier, and leaves a sweep of one cell', () => {
     // The new identifier is above the pane's, which are numbered after the sheet's.
-    const id = nextId([...CELLS, ...pipe(editing('Group').cueSheet.state.pane, values(), flat())]);
+    const id = nextId([...CELLS, ...pipe(editing('Group').cueSheet.state.shown.pane, values(), flat())]);
     const expected = [CELLS[0], grouped(id, 'Pose → Hello', [CELLS[1], CELLS[2], CELLS[3]]), ...CELLS.slice(4)];
     times(2, (_reverse) => {
-      const { cueSheet, shown } = editing('Group');
+      const { cueSheet, state } = editing('Group');
       cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
-      expect(shown().cells).toEqual(expected);
+      expect(state().shown.sheet).toEqual(expected);
     });
-    const { cueSheet, shown } = editing('Group');
-    const before = shown();
+    const { cueSheet, state } = editing('Group');
+    const before = state();
     cueSheet.sweep(2, 2);
-    expect(shown()).toEqual(before);
+    expect(state()).toEqual(before);
   });
 
   it.each([
@@ -244,17 +248,17 @@ describe('cueSheet sweeps', () => {
     ['on hi', 3, 1],
     ['after hi', 5, 3],
   ])('moves the pointer %s of a Group of cells 1 to 3', (_where, _pointer, _after) => {
-    const { cueSheet, shown } = editing('Group', _pointer);
+    const { cueSheet, state } = editing('Group', _pointer);
     cueSheet.sweep(3, 1);
-    expect(shown().pointer).toBe(_after);
+    expect(state().pointer).toBe(_after);
   });
 
   it('replaces both groups of a swept range by their constituents, and keeps its plain cell', () => {
     const cues: [Cue, ...Cue[]] = [enter('FreeWalk'), SABOTS, perform('Hello'), BYE, wait(1)];
-    const { cueSheet, shown } = editing('Ungroup', 0, cues);
+    const { cueSheet, state } = editing('Ungroup', 0, cues);
     cueSheet.sweep(3, 1);
     const cells = numbered(cues, 0);
-    expect(shown().cells).toEqual([cells[0], ...cells[1].items, cells[2], ...cells[3].items, cells[4]]);
+    expect(state().shown.sheet).toEqual([cells[0], ...cells[1].items, cells[2], ...cells[3].items, cells[4]]);
   });
 
   it.each([
@@ -262,95 +266,95 @@ describe('cueSheet sweeps', () => {
     ['on the cell', 2, 2],
     ['after the cell', 4, 6],
   ])('moves the pointer %s on an Ungroup of cell 2 into 3 cells', (_where, _pointer, _after) => {
-    const { cueSheet, shown } = editing('Ungroup', _pointer);
+    const { cueSheet, state } = editing('Ungroup', _pointer);
     cueSheet.sweep(2, 2);
-    expect(shown().pointer).toBe(_after);
+    expect(state().pointer).toBe(_after);
   });
 
   it('starts renaming the cell a Rename sweep ends on, and sends nothing', () => {
-    const { cueSheet, sent, shown } = editing('Rename');
+    const { cueSheet, sent, state } = editing('Rename');
     cueSheet.sweep(0, 2);
-    expect(shown()).toMatchObject({ cells: CELLS, renaming: 2, instrument: 'Rename' });
+    expect(sheets(cueSheet)).toMatchObject({ shown: CELLS, renaming: 2, instrument: 'Rename' });
     expect(sent()).toEqual([]);
   });
 });
 
 describe('cueSheet sweeps in progress', () => {
   it('previews a Move as its release will leave the cells, and highlights only the moved cell', () => {
-    const { cueSheet, shown } = editing('Move');
-    const preview = cueSheet.instruments.Move.shown(1, 4)(shown().cells);
+    const { cueSheet, state } = editing('Move');
+    const preview = cueSheet.instruments.Move.shown(1, 4)(state().shown.sheet);
     expect(cueSheet.instruments.Move.swept(1, 4)).toEqual([4]);
     cueSheet.sweep(1, 4);
-    expect(preview).toEqual(shown().cells);
+    expect(preview).toEqual(state().shown.sheet);
   });
 
   it('highlights nothing under Fire, and shows the cells unchanged', () => {
-    const { cueSheet, shown } = editing('Fire');
+    const { cueSheet, state } = editing('Fire');
     expect(cueSheet.instruments.Fire.swept(1, 4)).toEqual([]);
-    expect(cueSheet.instruments.Fire.shown(1, 4)(shown().cells)).toEqual(shown().cells);
+    expect(cueSheet.instruments.Fire.shown(1, 4)(state().shown.sheet)).toEqual(state().shown.sheet);
   });
 
   it.each(['Rename', 'Group', 'Ungroup'] as const)('highlights the swept range in either direction under %s', (_name) => {
-    const { cueSheet, shown } = editing(_name);
+    const { cueSheet, state } = editing(_name);
     expect(cueSheet.instruments[_name].swept(3, 1)).toEqual([1, 2, 3]);
-    expect(cueSheet.instruments[_name].shown(3, 1)(shown().cells)).toEqual(shown().cells);
+    expect(cueSheet.instruments[_name].shown(3, 1)(state().shown.sheet)).toEqual(state().shown.sheet);
   });
 });
 
 describe('cueSheet edits', () => {
   it('renames a cell and ends the rename, keeps the label on stopRenaming, and ends a rename on another change', () => {
-    const { cueSheet, shown } = editing('Rename');
+    const { cueSheet, state } = editing('Rename');
     cueSheet.sweep(2, 2);
     cueSheet.stopRenaming();
-    expect(shown()).toMatchObject({ renaming: null, instrument: 'Rename' });
-    expect(shown().cells[2].label).toBe('Sabots');
+    expect(state()).toMatchObject({ renaming: null, instrument: 'Rename' });
+    expect(state().shown.sheet[2].label).toBe('Sabots');
     cueSheet.sweep(2, 2);
     cueSheet.rename(2, 'ay b');
-    expect(shown()).toMatchObject({ renaming: null, instrument: 'Rename' });
-    expect(shown().cells[2]).toEqual(set(CELLS[2], 'label', 'ay b'));
+    expect(state()).toMatchObject({ renaming: null, instrument: 'Rename' });
+    expect(state().shown.sheet[2]).toEqual(set(CELLS[2], 'label', 'ay b'));
     cueSheet.sweep(3, 3);
     cueSheet.reorder(1, 3);
-    expect(shown().renaming).toBeNull();
+    expect(state().renaming).toBeNull();
     cueSheet.sweep(3, 3);
     cueSheet.choose('Move');
-    expect(shown().renaming).toBeNull();
+    expect(state().renaming).toBeNull();
   });
 
   it('saves the shown cells, clears the pressed cell, returns to Fire, and sends a renamed cell under its new label', () => {
     const { cueSheet, sent } = setup(SHEET);
-    const shown = () => cueSheet.state;
+    const state = () => cueSheet.state;
     cueSheet.press('ArrowRight');
     cueSheet.choose('Rename');
     cueSheet.rename(1, 'X');
     cueSheet.save();
     const renamed = set(CELLS[1], 'label', 'X');
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
-    expect(shown()).toEqual({ saved: cells, cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, pane: expect.any(Object) });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null });
     cueSheet.sweep(1, 1);
     expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
 
   it('restores the saved cells on Cancel, returns to Fire, and keeps the pointer index, clamped to the saved length', () => {
-    const { cueSheet, shown } = editing('Group', 4);
+    const { cueSheet, state } = editing('Group', 4);
     cueSheet.sweep(0, 3);
-    expect(shown().pointer).toBe(1);
+    expect(state().pointer).toBe(1);
     cueSheet.cancel();
-    expect(shown()).toEqual({ saved: CELLS, cells: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, pane: expect.any(Object) });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null });
 
-    const { cueSheet: grown, shown: grownShown } = editing('Ungroup', 5);
+    const { cueSheet: grown, state: grownState } = editing('Ungroup', 5);
     grown.sweep(2, 2);
-    expect(grownShown().pointer).toBe(7);
+    expect(grownState().pointer).toBe(7);
     grown.cancel();
-    expect(grownShown()).toMatchObject({ cells: CELLS, pointer: SHEET.length - 1, instrument: 'Fire' });
+    expect(sheets(grown)).toMatchObject({ shown: CELLS, pointer: SHEET.length - 1, instrument: 'Fire' });
   });
 
   it('shows the saved cells again on Reset, keeps the instrument, and ends any rename', () => {
-    const { cueSheet, shown } = editing('Ungroup', 5);
+    const { cueSheet, state } = editing('Ungroup', 5);
     cueSheet.sweep(2, 2);
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(shown()).toEqual({ saved: CELLS, cells: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, pane: expect.any(Object) });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, key: null });
   });
 });
 
@@ -363,15 +367,15 @@ describe('cueSheet in storage', () => {
     cueSheet.save();
     expect([...storage.entries.keys()]).toEqual(['cueSheet.v2']);
     const { cueSheet: reloaded } = setup(SHEET, storage);
-    expect(reloaded.state.cells).toEqual(cueSheet.state.cells);
-    expect(reloaded.state.pane).toEqual(cueSheet.state.pane);
-    expect(reloaded.state.cells).not.toEqual(CELLS);
+    expect(reloaded.state.shown.sheet).toEqual(cueSheet.state.shown.sheet);
+    expect(reloaded.state.shown.pane).toEqual(cueSheet.state.shown.pane);
+    expect(reloaded.state.shown.sheet).not.toEqual(CELLS);
   });
 
   it('rejects a pane group holding a cell of another kind, at that cell', () => {
     const { cueSheet } = setup();
-    const { cells, pane } = cueSheet.state;
-    const document = { sheet: map(cells, stored), pane: mapValues(set(pane, 'gaits', [pane.postures[0]]), map(stored)) };
+    const { sheet, pane } = cueSheet.state.shown;
+    const document = { sheet: map(sheet, stored), pane: mapValues(set(pane, 'gaits', [pane.postures[0]]), map(stored)), bindings: {} };
     const parsed = v.safeParse(documentSchema, JSON.parse(JSON.stringify(document)));
     expect(map(parsed.issues ?? [], (_issue) => v.getDotPath(_issue))).toEqual(['pane.gaits.0.args.0']);
   });
@@ -397,7 +401,7 @@ describe('cueSheet in storage', () => {
     ['cueSheet.v2', JSON.stringify(map(numbered([wait(2)], 0), stored))],
   ])('starts from the given cues, numbered from 0, when %s holds %s', (_key, _stored) => {
     const { cueSheet } = setup(SHEET, memoryStorage(new Map([[_key, _stored]])));
-    expect(cueSheet.state.cells).toEqual(CELLS);
+    expect(cueSheet.state.shown.sheet).toEqual(CELLS);
   });
 
   it('works in memory on a storage that throws on every access', () => {
@@ -405,11 +409,97 @@ describe('cueSheet in storage', () => {
       throw new Error('Storage is forbidden.');
     };
     const { cueSheet } = editing('Rename', 0, SHEET, { getItem: refuse, setItem: refuse });
-    expect(cueSheet.state.cells).toEqual(CELLS);
+    expect(cueSheet.state.shown.sheet).toEqual(CELLS);
     expect(() => {
       cueSheet.rename(1, 'X');
       cueSheet.save();
     }).not.toThrow();
-    expect(cueSheet.state.cells).toEqual([CELLS[0], set(CELLS[1], 'label', 'X'), ...CELLS.slice(2)]);
+    expect(cueSheet.state.shown.sheet).toEqual([CELLS[0], set(CELLS[1], 'label', 'X'), ...CELLS.slice(2)]);
+  });
+});
+
+/** The pane cell of `_cueSheet`'s shown document labelled `_label`, in `_group`. */
+const paneCell = (_cueSheet: CueSheet, _group: keyof CueSheet['state']['shown']['pane'], _label: string) =>
+  filter(_cueSheet.state.shown.pane[_group], (_cell) => _cell.label === _label)[0];
+
+describe('cueSheet key assignment', () => {
+  it('links the key selected under Assign to a pane light, which then toggles that colour and the previous one', () => {
+    const { cueSheet, sent, confirm } = setup();
+    cueSheet.choose('Assign');
+    cueSheet.press('b');
+    cueSheet.use(paneCell(cueSheet, 'lights', 'red'));
+    expect([sent(), cueSheet.state.key]).toEqual([[], 'b']);
+    cueSheet.save();
+    cueSheet.press('b');
+    confirm();
+    cueSheet.press('b');
+    expect(sent()).toEqual(asSent(setting({ name: 'headlight', value: 'red' }), setting({ name: 'headlight', value: 'green' })));
+  });
+
+  it('marks as target only the cell the selected key is linked to, and nothing for an unassigned key', () => {
+    const { cueSheet } = setup();
+    const cells = [...cueSheet.state.shown.sheet, ...pipe(cueSheet.state.shown.pane, values(), flat())];
+    const targets = () => map(filter(cells, cueSheet.isTarget), (_cell) => _cell.label);
+    cueSheet.choose('Assign');
+    expect(targets()).toEqual([]);
+    cueSheet.press('x');
+    expect(targets()).toEqual(['Sitting']);
+    cueSheet.press('y');
+    expect(targets()).toEqual([]);
+  });
+
+  it('lets a pane button that waits for the robot accept a click under Assign only', () => {
+    const { cueSheet } = setup();
+    expect(cueSheet.usable(false)).toBe(false);
+    cueSheet.choose('Assign');
+    expect(cueSheet.usable(false)).toBe(true);
+  });
+
+  it('sends the side a pane button names under Fire', () => {
+    const { cueSheet, sent } = setup();
+    cueSheet.use(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
+    expect(sent()).toEqual(asSent(leave('Sitting')));
+  });
+
+  it('links a key to the sheet cell a sweep ends on, and unassigns it when Ungroup removes that cell', () => {
+    const { cueSheet } = editing('Assign');
+    cueSheet.press('y');
+    cueSheet.sweep(0, 2);
+    expect(cueSheet.linked('y')).toEqual(CELLS[2]);
+    cueSheet.choose('Ungroup');
+    cueSheet.sweep(2, 2);
+    expect(cueSheet.linked('y')).toBeUndefined();
+  });
+
+  it('unassigns a key linked to a cell Group folds into a group, and keeps the other links', () => {
+    const { cueSheet } = editing('Assign');
+    cueSheet.press('a');
+    cueSheet.sweep(3, 3);
+    const before = cueSheet.state.shown.bindings;
+    cueSheet.choose('Group');
+    cueSheet.sweep(3, 4);
+    expect(cueSheet.state.shown.bindings).toEqual(omit(before, ['a']));
+  });
+
+  it('keeps a saved link across a reload, and discards an unsaved one on Cancel', () => {
+    const storage = memoryStorage();
+    const { cueSheet } = editing('Assign', 0, SHEET, storage);
+    cueSheet.press('b');
+    cueSheet.sweep(0, 0);
+    cueSheet.save();
+    expect(setup(SHEET, storage).cueSheet.linked('b')).toEqual(CELLS[0]);
+    cueSheet.choose('Assign');
+    cueSheet.press('b');
+    cueSheet.sweep(1, 1);
+    cueSheet.cancel();
+    expect([cueSheet.linked('b'), cueSheet.state.key]).toEqual([CELLS[0], null]);
+  });
+
+  it('drops a stored link to an identifier no drawn cell holds', () => {
+    const { cueSheet } = setup(SHEET);
+    const { sheet, pane } = cueSheet.state.shown;
+    const document = { sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings: { a: 999, b: 0, x: 3 } };
+    const reloaded = setup(SHEET, memoryStorage(new Map([['cueSheet.v2', JSON.stringify(document)]]))).cueSheet;
+    expect(reloaded.state.saved.bindings).toEqual({ b: 0 });
   });
 });

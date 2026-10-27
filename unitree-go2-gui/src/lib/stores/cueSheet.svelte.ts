@@ -1,10 +1,11 @@
-import { clamp, doNothing, drop, entries, evolve, filter, findIndex, first, flat, flatMap, forEach, hasAtLeast } from 'remeda';
-import { identity, isEmpty, isStrictEqual, keys, last, map, mapValues, merge, pipe, piped, range, reduce, set } from 'remeda';
-import { sortBy, splice, take, values } from 'remeda';
+import { clamp, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
+import { identity, isEmpty, isIncludedIn, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
+import { prop, range, reduce, set, sortBy, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
-import { CONDUITE, PANE, PANE_GROUPS, presets } from '../data/cues';
-import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, nextId, numbered, sheetSchema, stored } from '../utils/commands';
+import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
+import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
+import { sheetSchema, stored, transition } from '../utils/commands';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
 
@@ -12,46 +13,89 @@ import { robot } from './robot.svelte';
 /// documents stored in the old shape are ignored.
 const KEY = 'cueSheet.v2';
 
+type PaneGroup = (typeof PANE_GROUPS)[number];
+type Key = (typeof KEYS)[number];
+
 /// The cells each pane group accepts, checked on a stored cell before it is parsed. Each kind's
 /// output is unknown, so that `cellSchema` parses the checked input.
-const PANE_KINDS: Record<(typeof PANE_GROUPS)[number], v.GenericSchema> = {
+const PANE_KINDS: Record<PaneGroup, v.GenericSchema> = {
     actions: v.looseObject({ name: v.picklist(['perform', 'recover']) }),
     gaits: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(COMMANDABLE_GAITS)]) }),
     postures: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(keys(POSTURES))]) }),
     lights: v.looseObject({ name: v.literal('set'), args: v.tuple([v.looseObject({ name: v.literal('headlight') })]) }),
 };
 
-/// The document: the sheet the operator steps through, and the cells of the pane's buttons.
-type Document = { sheet: Cell[]; pane: Record<keyof typeof PANE_KINDS, Cell[]> };
+/// The document: the sheet the operator steps through, the cells of the pane's buttons, and the
+/// cell each controller key is linked to; an absent key is unassigned.
+type Document = { sheet: Cell[]; pane: Record<PaneGroup, Cell[]>; bindings: Partial<Record<Key, number>> };
 
-/// Every top-level cell of `_document`. Generic, so that `distinctIn` also takes it for a parsed
-/// document, whose sheet is typed non-empty.
-const cellsOf = <D extends Document>({ sheet, pane }: D) => [...sheet, ...pipe(pane, values(), flat())];
+/// The top-level cells of the sheet and of each pane group: the cells drawn as buttons. Generic,
+/// so that it also lists the default cues, and takes a parsed document, whose sheet is non-empty.
+const cellsOf = <T>({ sheet, pane }: { sheet: T[]; pane: Record<PaneGroup, T[]> }) => [...sheet, ...pipe(pane, values(), flat())];
 
-/// The stored document: the sheet and each pane group, as `stored` writes them, every identifier
-/// held by one cell only.
+/// `_document` without the links to identifiers no drawn cell holds, so that every key is either
+/// unassigned or linked to a button.
+const resolved = <D extends Document>(_document: D) =>
+    pipe(map(cellsOf(_document), prop('id')), (_drawn) =>
+        merge(_document, { bindings: pickBy(_document.bindings, (_id) => isIncludedIn(_id, _drawn)) }),
+    );
+
+/// The stored document: the sheet, each pane group as `stored` writes them, and the bindings,
+/// every identifier held by one cell only. A binding to a missing cell is dropped.
 export const documentSchema = v.pipe(
     v.strictObject({
         sheet: sheetSchema,
         pane: v.strictObject(mapValues(PANE_KINDS, (_kind) => v.array(v.pipe(_kind, cellSchema)))),
+        bindings: v.record(v.picklist(KEYS), v.number()),
     }),
     distinctIn(cellsOf),
+    v.transform(resolved),
 );
 
 /// The document of `_cues` and the default pane: the sheet numbered from 0, then each pane group
-/// above every identifier numbered before it.
-const numberedDocument = (_cues: Cue[]) =>
-    pipe(
+/// above every identifier numbered before it. Each key links to the cell numbered from its
+/// default cue, found by identity; a default cue missing from `_cues` leaves its key unassigned.
+const numberedDocument = (_cues: Cue[]) => {
+    const document = pipe(
         PANE_GROUPS,
         reduce(
             (_document: Document, _group) =>
                 merge(_document, { pane: set(_document.pane, _group, numbered(PANE[_group], nextId(cellsOf(_document)))) }),
-            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []) },
+            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
         ),
     );
+    const pairs = zip(cellsOf({ sheet: _cues, pane: PANE }), cellsOf(document));
+    const idOf = (_cue: Cue | undefined) =>
+        pipe(pairs, filter(([_default]) => _default === _cue), map(([, _cell]) => _cell.id), first());
+    return resolved(merge(document, { bindings: mapValues(KEYED, idOf) }));
+};
 
-/// The strip's instruments: Fire plays the sheet, the others edit it.
-export const INSTRUMENTS = ['Fire', 'Move', 'Rename', 'Group', 'Ungroup'] as const;
+/// What a key linked to a cell does, as the cell's button does: the cell is sent, except that a
+/// pane posture, gait or light switches to the value its cell reaches and back.
+const send = (_robot: typeof robot, _cell: Cell) => void _robot.request(_cell);
+const reached = (_robot: typeof robot, _cell: Cell) => transition(_cell)(_robot.current.state.settled);
+const PANE_KEYS: Record<PaneGroup, (_robot: typeof robot, _cell: Cell) => void> = {
+    actions: send,
+    postures: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
+    gaits: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
+    lights: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight),
+};
+
+/// Each drawn cell of `_document`, with what a key linked to it does.
+const targets = ({ sheet, pane }: Document) => [
+    ...map(sheet, (_cell) => ({ act: send, cell: _cell })),
+    ...pipe(PANE_GROUPS, flatMap((_group) => map(pane[_group], (_cell) => ({ act: PANE_KEYS[_group], cell: _cell })))),
+];
+
+/// The target of `_document` that `_key` is linked to, as zero or one.
+const linksOf = (_document: Document, _key: Key) =>
+    pipe(targets(_document), filter(({ cell }) => cell.id === _document.bindings[_key]));
+
+/// The strip's tools, which edit the sheet.
+export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup'] as const;
+
+/// The instruments: Fire plays the sheet, the sheet tools edit it, and Assign links keys to cells.
+const INSTRUMENTS = ['Fire', ...SHEET_TOOLS, 'Assign'] as const;
 
 /// Runs `_act`, or gives `_fallback` when it throws. Storage can be missing, full or forbidden,
 /// and the sheet must keep working in memory in every case.
@@ -65,14 +109,14 @@ const attempt = <T>(_act: () => T, _fallback: T) => {
 
 /// The state of a document that plays its sheet from the first cell, under `_instrument`. The
 /// parameter admits every instrument, so that `choose` can replace the one it starts on.
-const playing = ({ sheet, pane }: Document, _instrument: (typeof INSTRUMENTS)[number] = 'Fire') => ({
-    saved: sheet, // the sheet Save last stored
-    cells: sheet, // the cells shown; equal to `saved` under Fire
-    pane, // the pane's cells, by group
+const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] = 'Fire') => ({
+    saved: _document, // the document Save last stored
+    shown: _document, // the document shown; equal to `saved` under Fire
     pointer: 0,
     pressed: null as number | null,
     instrument: _instrument,
     renaming: null as number | null,
+    key: null as Key | null, // the key Assign links to the next cell chosen
 });
 
 /// The cells from `_a` to `_b` as the lowest and the highest index: the only place a sweep's
@@ -90,9 +134,9 @@ const move = (_from: number, _to: number) => <T>(_items: T[]) =>
     pipe(_items, splice<T>(_from, 1, []), splice(_to, 0, [_items[_from]]));
 
 /// The cue sheet the operator steps through, sending cues and toggles to a robot. Under Fire it
-/// plays the saved cells; under the other instruments the operator edits the shown cells, which
-/// Save makes the saved sheet and writes to storage. Indices name drawn cells: the strip hands
-/// over no other.
+/// plays the saved document; under the other instruments the operator edits the shown document,
+/// its sheet or its key links, which Save makes the saved one and writes to storage. Indices name
+/// drawn cells: the strip hands over no other.
 export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'update'> {
     #robot: typeof robot;
     #storage: Pick<Storage, 'getItem' | 'setItem'>;
@@ -113,8 +157,9 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     };
 
     /// What a sweep from cell `a` to cell `b` does under each instrument: the cells shown and the
-    /// cells highlighted while the pointer is down, and the effect on release. Fire highlights nothing. Move shows the cells as its release will leave them, and highlights
-    /// only the moved cell, which follows the pointer.
+    /// cells highlighted while the pointer is down, and the effect on release. Fire and Assign
+    /// highlight nothing. Move shows the cells as its release will leave them, and highlights only
+    /// the moved cell, which follows the pointer.
     instruments: Record<
         CueSheet['state']['instrument'],
         {
@@ -128,6 +173,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         Rename: { shown: () => identity(), swept: covered, release: (_a, _b) => this.startRenaming(_b) },
         Group: { shown: () => identity(), swept: covered, release: (_a, _b) => this.group(_a, _b) },
         Ungroup: { shown: () => identity(), swept: covered, release: (_a, _b) => this.ungroup(_a, _b) },
+        Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
     };
 
     /// Applies the sweep from cell `_a` to cell `_b` with the active instrument.
@@ -136,8 +182,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Replaces the state by `_change` of it, and ends any renaming.
     #edit = (_change: Updater<CueSheet['state']>) => this.update(piped(_change, set('renaming', null)));
 
-    /// Makes `_instrument` the active one, and ends any renaming. Edit is `choose('Move')`.
-    choose = (_instrument: CueSheet['state']['instrument']) => this.#edit(set('instrument', _instrument));
+    /// Makes `_instrument` the active one, and ends any renaming. The strip's Edit is
+    /// `choose('Move')`, the controller's is `choose('Assign')`.
+    /// Every choice deselects the key being assigned.
+    choose = (_instrument: CueSheet['state']['instrument']) =>
+        this.#edit(piped(set('instrument', _instrument), set('key', null)));
 
     /// Makes the label of cell `_index` editable.
     startRenaming = (_index: number) => this.update(set('renaming', _index));
@@ -147,14 +196,14 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
 
     /// Replaces the cells from `_a` to `_b`, in either order, by `_change` of them and of the state,
     /// and ends any renaming. A pointer on a replaced cell lands on the first new one; a pointer after them
-    /// keeps its cell.
+    /// keeps its cell. A key linked to a cell the change removes from the top level is unassigned.
     #replace = (_a: number, _b: number, _change: (_run: Cell[], _state: CueSheet['state']) => Cell[]) => {
         const [lo, hi] = span(_a, _b);
         const count = hi - lo + 1;
         this.#edit((_state) => {
-            const made = _change(pipe(_state.cells, drop(lo), take(count)), _state);
+            const made = _change(pipe(_state.shown.sheet, drop(lo), take(count)), _state);
             return evolve(_state, {
-                cells: splice(lo, count, made),
+                shown: (_shown) => resolved(evolve(_shown, { sheet: splice(lo, count, made) })),
                 pointer: (_at) => (_at > hi ? _at + made.length - count : clamp(_at, { max: lo })),
             });
         });
@@ -164,11 +213,10 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     rename = (_index: number, _label: string) => this.#replace(_index, _index, map(set('label', _label)));
 
     /// Replaces the cells from `_a` to `_b` by one group of them, labelled with its first and last
-    /// labels, under an identifier no shown cell and no pane cell holds. A range of one cell stays as
-    /// it is.
+    /// labels, under an identifier no shown cell holds. A range of one cell stays as it is.
     group = (_a: number, _b: number) =>
-        this.#replace(_a, _b, (_run, { cells, pane }) =>
-            hasAtLeast(_run, 2) ? [grouped(nextId(cellsOf({ sheet: cells, pane })), `${first(_run).label} → ${last(_run).label}`, _run)] : _run,
+        this.#replace(_a, _b, (_run, { shown }) =>
+            hasAtLeast(_run, 2) ? [grouped(nextId(cellsOf(shown)), `${first(_run).label} → ${last(_run).label}`, _run)] : _run,
         );
 
     /// Replaces every cell from `_a` to `_b` by its constituents; a cell without any stays as it is.
@@ -180,15 +228,15 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     reorder = (_from: number, _to: number) =>
         this.#edit((_state) =>
             merge(_state, {
-                cells: move(_from, _to)(_state.cells),
-                pointer: pipe(range(0, _state.cells.length), move(_from, _to), findIndex(isStrictEqual(_state.pointer))),
+                shown: merge(_state.shown, { sheet: move(_from, _to)(_state.shown.sheet) }),
+                pointer: pipe(range(0, _state.shown.sheet.length), move(_from, _to), findIndex(isStrictEqual(_state.pointer))),
             }),
         );
 
-    /// Shows the saved cells again, keeps the instrument, and ends any renaming. The pointer keeps
-    /// its index, moved onto the last cell when the saved cells are fewer.
+    /// Shows the saved document again, keeps the instrument, and ends any renaming. The pointer
+    /// keeps its index, moved onto the last cell when the saved cells are fewer.
     reset = () =>
-        this.#edit((_state) => merge(_state, { cells: _state.saved, pointer: within(_state.saved, _state.pointer) }));
+        this.#edit((_state) => merge(_state, { shown: _state.saved, pointer: within(_state.saved.sheet, _state.pointer) }));
 
     /// Discards the edits and returns to play mode.
     cancel = () => {
@@ -196,22 +244,22 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         this.choose('Fire');
     };
 
-    /// Makes the shown cells the saved sheet, writes it to storage, and returns to play mode with
+    /// Makes the shown document the saved one, writes it to storage, and returns to play mode with
     /// no cell pressed.
     save = () => {
-        const { cells, pane } = this.state;
-        const json = JSON.stringify({ sheet: map(cells, stored), pane: mapValues(pane, map(stored)) });
+        const { sheet, pane, bindings } = this.state.shown;
+        const json = JSON.stringify({ sheet: map(sheet, stored), pane: mapValues(pane, map(stored)), bindings });
         attempt(() => this.#storage.setItem(KEY, json), undefined);
-        this.update((_state) => merge(_state, { saved: _state.cells, pressed: null }));
+        this.update((_state) => merge(_state, { saved: _state.shown, pressed: null }));
         this.choose('Fire');
     };
 
     /// Moves the pointer by `_steps`, and keeps it on the first and the last cell.
     move = (_steps: number) =>
-        this.update((_state) => evolve(_state, { pointer: (_at) => within(_state.cells, _at + _steps) }));
+        this.update((_state) => evolve(_state, { pointer: (_at) => within(_state.shown.sheet, _at + _steps) }));
 
     /// Sends the cue of cell `_index`.
-    send = (_index: number) => void this.#robot.request(this.state.cells[_index]);
+    send = (_index: number) => void this.#robot.request(this.state.shown.sheet[_index]);
 
     /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
     fire = (_steps: number) => {
@@ -220,35 +268,60 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         this.move(_steps);
     };
 
-    /// `_act`, run only under Fire: the keys that fire and move do nothing while the sheet is edited.
-    #playing = (_act: () => void) => () => this.state.instrument === 'Fire' && _act();
+    /// Links the selected key to `_cell` in the shown document; does nothing while no key is
+    /// selected.
+    #bind = ({ id }: Cell) =>
+        this.update((_state) => {
+            const { key } = _state;
+            return key === null ? _state : evolve(_state, { shown: { bindings: (_links) => set(_links, key, id) } });
+        });
+
+    /// What a pane button does with its cell: Assign links the selected key to `_cell`; every other
+    /// instrument sends `_cue`, the cell itself unless the button sends another side of it.
+    use = (_cell: Cell, _cue: Cue = _cell) =>
+        this.state.instrument === 'Assign' ? this.#bind(_cell) : void this.#robot.request(_cue);
+
+    /// The cell `_key` is linked to in the shown document, if any.
+    linked = (_key: Key) => pipe(linksOf(this.state.shown, _key), map(prop('cell')), first());
+
+    /// Whether `_cell` is the one the key selected under Assign is linked to, which the strip and the
+    /// pane draw highlighted.
+    isTarget = ({ id }: Cell) => this.state.key !== null && this.linked(this.state.key)?.id === id;
+
+    /// Whether a pane button accepts a click: when `_ready`, the robot condition it sends under, or
+    /// under Assign, which sends nothing.
+    usable = (_ready: boolean) => _ready || this.state.instrument === 'Assign';
+
+    /// A face key selects itself under Assign; under every other instrument it acts on the cell it is
+    /// linked to in the saved document, and an unassigned key does nothing.
+    #trigger = (_key: Key) =>
+        this.state.instrument === 'Assign'
+            ? this.update(set('key', _key))
+            : forEach(linksOf(this.state.saved, _key), ({ act, cell }) => act(this.#robot, cell));
 
     /// Ends the pressed drawing of the cell a released key fired.
     #unpress = () => this.update(set('pressed', null));
 
-    /// What each key does when pressed and when released. `label` names it for the operator.
-    keyBindings = {
-        ArrowRight: { label: 'Fire, then next cue', press: this.#playing(() => this.fire(1)), release: this.#unpress },
-        ArrowLeft: { label: 'Fire, then previous cue', press: this.#playing(() => this.fire(-1)), release: this.#unpress },
-        ArrowDown: { label: 'Next cue', press: this.#playing(() => this.move(1)), release: doNothing() },
-        ArrowUp: { label: 'Previous cue', press: this.#playing(() => this.move(-1)), release: doNothing() },
-        Enter: { label: 'Fire', press: this.#playing(() => this.fire(0)), release: this.#unpress },
-        a: { label: 'Toggle Pose', press: () => this.#robot.togglePosture('Pose'), release: doNothing() },
-        b: { label: 'Toggle Leaping', press: () => this.#robot.toggleTo('gait', 'Leaping'), release: doNothing() },
-        x: { label: 'Toggle Sit', press: () => this.#robot.togglePosture('Sitting'), release: doNothing() },
-        y: { label: 'Dance', press: () => void this.#robot.request(presets.dance), release: doNothing() },
+    /// What the arrows and Enter do when pressed and when released; they press only under Fire.
+    /// `label` names each for the operator.
+    arrows = {
+        ArrowRight: { label: 'Fire, then next cue', press: () => this.fire(1), release: this.#unpress },
+        ArrowLeft: { label: 'Fire, then previous cue', press: () => this.fire(-1), release: this.#unpress },
+        ArrowDown: { label: 'Next cue', press: () => this.move(1), release: doNothing() },
+        ArrowUp: { label: 'Previous cue', press: () => this.move(-1), release: doNothing() },
+        Enter: { label: 'Fire', press: () => this.fire(0), release: this.#unpress },
     };
 
-    /// Every key starts on its binding in `keyBindings`; writing `bindings` rebinds a key while the
-    /// app runs, to any binding the table holds.
-    bindings = $state.raw<Record<keyof CueSheet['keyBindings'], CueSheet['keyBindings']['a']>>(this.keyBindings);
+    /// The arrow named `_key`, as zero or one entry.
+    #arrow = (_key: string) => pipe(this.arrows, entries(), filter(([_name]) => _name === _key), map(([, _arrow]) => _arrow));
 
-    /// Runs the `_phase` of the binding of `_key`. An unbound key matches no binding.
-    #run = (_phase: Exclude<keyof CueSheet['keyBindings']['a'], 'label'>) => (_key: string) =>
-        pipe(this.bindings, entries(), filter(([_bound]) => _bound === _key), forEach(([, _binding]) => _binding[_phase]()));
+    /// Runs the press of `_key`: an arrow's under Fire, a face key's always. Any other key matches nothing.
+    press = (_key: string) => {
+        forEach(this.state.instrument === 'Fire' ? this.#arrow(_key) : [], (_arrow) => _arrow.press());
+        pipe(KEYS, filter(isStrictEqual(_key)), forEach(this.#trigger));
+    };
 
-    press = this.#run('press');
-    release = this.#run('release');
+    release = (_key: string) => forEach(this.#arrow(_key), (_arrow) => _arrow.release());
 }
 
 /// The app's cue sheet, the show's running order or the sheet last saved in the browser, sent to

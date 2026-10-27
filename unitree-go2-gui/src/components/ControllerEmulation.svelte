@@ -24,22 +24,44 @@
 </script>
 
 
+{#snippet control(button: (typeof DIRECTIONS | typeof FACE_BUTTONS)[number], title: string, selected: boolean)}
+    <button
+        aria-label={button.name}
+        {title}
+        class:selected
+        style:grid-area={button.area}
+        onpointerdown={() => props.callback(button.key, true)}
+        onpointerup={() => props.callback(button.key, false)}
+        onpointerleave={(event) => event.buttons && props.callback(button.key, false)}>
+        {button.label}
+    </button>
+{/snippet}
+
+<!-- A face button's title names the cell its key is linked to. Under Assign, a click on a face
+     button selects its key, drawn pressed in. -->
 <div class="controller">
-    {#each [{ kind: 'dpad', buttons: DIRECTIONS }, { kind: 'actions', buttons: FACE_BUTTONS }] as block}
-        <div class="block {block.kind}">
-            {#each block.buttons as button}
-                <button
-                    aria-label={button.name}
-                    title={cueSheet.bindings[button.key].label}
-                    style:grid-area={button.area}
-                    onpointerdown={() => props.callback(button.key, true)}
-                    onpointerup={() => props.callback(button.key, false)}
-                    onpointerleave={(event) => event.buttons && props.callback(button.key, false)}>
-                    {button.label}
-                </button>
-            {/each}
-        </div>
-    {/each}
+    <div class="block dpad">
+        {#each DIRECTIONS as button}
+            {@render control(button, cueSheet.arrows[button.key].label, false)}
+        {/each}
+    </div>
+    <div class="block actions">
+        {#each FACE_BUTTONS as button}
+            {@render control(button, cueSheet.linked(button.key)?.label ?? 'unassigned', cueSheet.state.key === button.key)}
+        {/each}
+    </div>
+</div>
+<!-- Both sets of controls take the same cell, the inactive one hidden, so that the bar, and with
+     it the drawer, keeps one size under every instrument: the size of the wider set. -->
+<div class="bar">
+    <div class="controls" class:hidden={cueSheet.state.instrument === 'Assign'}>
+        <button onclick={() => cueSheet.choose('Assign')}>Edit</button>
+    </div>
+    <div class="controls" class:hidden={cueSheet.state.instrument !== 'Assign'}>
+        <button onclick={() => cueSheet.save()}>Save</button>
+        <button onclick={() => cueSheet.reset()}>Reset</button>
+        <button onclick={() => cueSheet.cancel()}>Cancel</button>
+    </div>
 </div>
 
 
@@ -74,7 +96,7 @@
 
     /* Overrides the global button rule's min-height, padding and border, which are in em and
        would not scale. */
-    button {
+    .controller button {
         min-height: 0;
         padding: 0;
         font-size: 10cqi;
@@ -86,8 +108,31 @@
         user-select: none;
     }
 
-    button:active {
+    .controller button:active {
         background-color: #bbb;
+    }
+
+    .controller button.selected {
+        border-style: inset;
+        border-width: 0.15em;
+        background-color: #bbb;
+    }
+
+    .bar {
+        display: grid;
+        margin-top: 0.6em;
+    }
+
+    .controls {
+        grid-area: 1 / 1;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        gap: 0.4em;
+    }
+
+    .hidden {
+        visibility: hidden;
     }
 
     .dpad button {

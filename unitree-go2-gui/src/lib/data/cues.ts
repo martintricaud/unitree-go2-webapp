@@ -1,4 +1,4 @@
-import { concat, keys, map, pipe } from 'remeda';
+import { concat, fromKeys, keys, map, merge, pipe, values } from 'remeda';
 import { ACTIONS, COMMANDABLE_GAITS, POSTURES, dim, enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { COLOURS } from './settings';
@@ -88,13 +88,30 @@ export const CONDUITE: [Cue, ...Cue[]] = [
     ...MONOLOGUE,
 ];
 
-/// The default pane: the buttons of each group, in the order they are drawn.
+/// The cue entering each gait the app can enter, and each posture.
+const GAIT_CUES = fromKeys(COMMANDABLE_GAITS, enter);
+const POSTURE_CUES = fromKeys(keys(POSTURES), enter);
+
+/// The default pane: the buttons of each group, in the order they are drawn. A light is labelled
+/// with its colour, which its button shows.
 export const PANE = {
     actions: pipe(ACTIONS, map(perform), concat([recover()])),
-    gaits: pipe(COMMANDABLE_GAITS, map(enter)),
-    postures: pipe(POSTURES, keys(), map(enter)),
-    lights: pipe(COLOURS, map((_colour) => set({ name: 'headlight', value: _colour }))),
+    gaits: values(GAIT_CUES),
+    postures: values(POSTURE_CUES),
+    lights: pipe(COLOURS, map((_colour) => merge(set({ name: 'headlight', value: _colour }), { label: _colour }))),
 };
 
 /// The pane's groups.
 export const PANE_GROUPS = keys(PANE);
+
+/// The controller's face keys, each linked to a cell of the document or unassigned.
+export const KEYS = ['a', 'b', 'x', 'y'] as const;
+
+/// The cue each key is linked to in the default document, if any: the same objects as in `PANE` and
+/// `CONDUITE`, so that the store finds their cells by identity.
+export const KEYED = {
+    a: POSTURE_CUES.Pose,
+    b: GAIT_CUES.Leaping,
+    x: POSTURE_CUES.Sitting,
+    y: presets.dance,
+} satisfies Partial<Record<(typeof KEYS)[number], Cue>>;
