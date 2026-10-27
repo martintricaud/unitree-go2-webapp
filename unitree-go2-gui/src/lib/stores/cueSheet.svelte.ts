@@ -1,8 +1,9 @@
 import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
 import { identity, isEmpty, isIncludedIn, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
-import { prop, range, reduce, set, sortBy, splice, take, values, zip } from 'remeda';
+import { prop, range, reduce, set, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
+import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
 import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
 import { sheetSchema, stored, transition } from '../utils/commands';
@@ -134,20 +135,6 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     renaming: null as number | null,
     key: null as Key | null, // the key Assign links to the next cell chosen
 });
-
-/// The cells from `_a` to `_b` as the lowest and the highest index: the only place a sweep's
-/// direction is dropped.
-const span = (_a: number, _b: number) => sortBy([_a, _b], identity());
-
-/// The indices of the cells from `_a` to `_b`, in either order.
-const covered = (_a: number, _b: number) => pipe(span(_a, _b), ([_lo, _hi]) => range(_lo, _hi + 1));
-
-/// `_index` moved onto the first or the last of `_cells` when it falls outside them.
-const within = (_cells: Cell[], _index: number) => clamp(_index, { min: 0, max: _cells.length - 1 });
-
-/// `_items` with the item at `_from` moved to position `_to`.
-const move = (_from: number, _to: number) => <T>(_items: T[]) =>
-    pipe(_items, splice<T>(_from, 1, []), splice(_to, 0, [_items[_from]]));
 
 /// The cue sheet the operator steps through, sending cues and toggles to a robot. Under Fire it
 /// plays the saved document; under the other instruments the operator edits the shown document,
