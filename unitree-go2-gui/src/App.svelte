@@ -126,7 +126,7 @@
     <!-- Each posture is one toggle: the left side enters it, the right side leaves it. The side
          matching the robot's settled posture is drawn pressed. -->
     <section>
-        <h2>Postures</h2>
+        <h2>Posture changes</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
