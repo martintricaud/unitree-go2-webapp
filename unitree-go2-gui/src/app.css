@@ -177,13 +177,13 @@ button:focus-visible {
   min-height: 0;
 }
 
-/* Two stacked buttons are divided by one grooved line: the upper button's bottom edge. A pressed
-   or held button keeps its inset border on every side. */
-.button-grid.single-column>.target+.target:not(.pressed) button:not(:active) {
+/* Two stacked buttons are divided by one grooved line: the upper button's bottom edge. The divider
+   belongs to both buttons, so a pressed button draws inset only on its other edges. */
+.button-grid.single-column>.target+.target button {
   border-top: none;
 }
 
-.button-grid.single-column>.target:not(.pressed):has(+ .target) button:not(:active) {
+.button-grid.single-column>.target:has(+ .target) button {
   border-bottom-style: groove;
 }
 

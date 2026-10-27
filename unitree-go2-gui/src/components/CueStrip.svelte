@@ -125,7 +125,8 @@
         border-right-style: groove;
     }
 
-    .bar .active {
+    /* `:where` keeps this below the dividers, so an active tool keeps its grooved edges. */
+    .bar :where(.active) {
         border-style: inset;
         font-weight: bold;
     }
@@ -146,16 +147,6 @@
         font-weight: 500;
         line-height: 1em;
         overflow-wrap: anywhere;
-    }
-
-    /* Two stacked cells are divided by one grooved line: the upper cell's bottom edge. A pressed
-       cell keeps its inset border on every side. */
-    .cell + .cell:not(.pressed) {
-        border-top: none;
-    }
-
-    .cell:not(.pressed):has(+ .cell) {
-        border-bottom-style: groove;
     }
 
     [contenteditable] {
@@ -207,5 +198,16 @@
     :global(.pressed > button),
     [data-instrument='Fire'] .cell:active {
         border-style: inset;
+    }
+
+    /* Two stacked cells are divided by one grooved line: the upper cell's bottom edge. The divider
+       belongs to both cells, so a pressed cell draws inset only on its other edges. These rules come
+       last and are scoped to the strip, so that they win over the pressed ones. */
+    .actionsequence .cell + .cell {
+        border-top: none;
+    }
+
+    .actionsequence .cell:has(+ .cell) {
+        border-bottom-style: groove;
     }
 </style>
