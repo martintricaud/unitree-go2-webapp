@@ -1,12 +1,12 @@
 import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
-import { identity, isEmpty, isIncludedIn, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
+import { identity, isDeepEqual, isEmpty, isIncludedIn, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
 import { prop, range, reduce, set, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
 import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
-import { sheetSchema, stored, transition } from '../utils/commands';
+import { postureChange, sheetSchema, stored, transition } from '../utils/commands';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
 
@@ -80,9 +80,14 @@ const numberedDocument = (_cues: Cue[]) => {
 };
 
 /// What a key linked to a cell does, as the cell's button does: the cell is sent, except that a
-/// pane posture, gait or light switches to the value its cell reaches and back.
+/// pane gait or light switches to the value its cell reaches and back, and a posture pair sends
+/// the side the robot's state allows.
 const send = (_robot: typeof robot, _cell: Cell) => void _robot.request(_cell);
 const reached = (_robot: typeof robot, _cell: Cell) => transition(_cell)(_robot.current.state.settled);
+
+/// The sides of a cell the robot's state allows, each the cue one of its buttons sends. Every cell
+/// but a posture pair has one side, itself, always allowed.
+const itself = (_robot: typeof robot, _cell: Cell) => [_cell];
 
 /// Whether the robot can take a cell: a sheet cell always; a pane cell once the robot is connected,
 /// and a gait or a posture once it has also reported its gait or its posture.
@@ -90,23 +95,35 @@ const connected = (_robot: typeof robot) => _robot.current.robotConnected;
 const motionKnown = (_robot: typeof robot) =>
     connected(_robot) && Boolean(_robot.current.reported.gait || _robot.current.reported.posture);
 
-const PANE_KEYS: Record<PaneGroup, { act: (_robot: typeof robot, _cell: Cell) => void; ready: (_robot: typeof robot) => boolean }> = {
-    actions: { act: send, ready: connected },
+const PANE_KEYS: Record<
+    PaneGroup,
+    {
+        act: (_robot: typeof robot, _cell: Cell) => void;
+        ready: (_robot: typeof robot) => boolean;
+        available: (_robot: typeof robot, _cell: Cell) => Cue[];
+    }
+> = {
+    actions: { act: send, ready: connected, available: itself },
+    // A posture pair has two sides, the posture's entry and its exit, and allows the one
+    // `postureChange` gives.
     postures: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
-        // Each side is a transition the robot accepts or refuses, so no known state is needed.
-        ready: connected,
+        ready: motionKnown,
+        available: (_robot, _cell) =>
+            pipe(reached(_robot, _cell).posture, (_posture) => (_posture ? postureChange(_posture)(_robot.current.state.settled) : [])),
     },
     gaits: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
         ready: motionKnown,
+        available: itself,
     },
-    lights: { act: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight), ready: connected },
+    lights: { act: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight), ready: connected, available: itself },
 };
 
-/// Each drawn cell of `_document`, with what a key linked to it does and when the robot can take it.
+/// Each drawn cell of `_document`, with what a key linked to it does, when the robot can take it,
+/// and which of its sides the robot's state allows.
 const targets = ({ sheet, pane }: Document) => [
-    ...map(sheet, (_cell) => ({ act: send, ready: constant(true), cell: _cell })),
+    ...map(sheet, (_cell) => ({ act: send, ready: constant(true), available: itself, cell: _cell })),
     ...pipe(PANE_GROUPS, flatMap((_group) => map(pane[_group], (_cell) => merge(PANE_KEYS[_group], { cell: _cell })))),
 ];
 
@@ -139,7 +156,7 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     saved: _document, // the document Save last stored
     shown: _document, // the document shown; equal to `saved` under Fire
     pointer: 0,
-    pressed: null as Cell['id'] | null, // the identifier of the cell a held key fired
+    pressed: null as { id: Cell['id']; cue: Cue } | null, // the cell a held key fired, and which of its sides
     instrument: _instrument,
     renaming: null as number | null,
     key: null as Key | null, // the key Assign links to the next cell chosen
@@ -308,15 +325,16 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         this.move(_steps);
     };
 
-    /// Draws `_cell` pressed until the key that fired it is released.
-    #press = ({ id }: Cell) => this.update(set('pressed', id));
+    /// Draws the side `_cue` of `_cell`, the cell itself unless given, pressed until the key that
+    /// fired it is released.
+    #press = (_cell: Cell, _cue: Cue = _cell) => this.update(set('pressed', { id: _cell.id, cue: _cue }));
 
     /// Ends the pressed drawing of the cell with identifier `_id`, and keeps any other drawn.
-    #unpress = (_id: Cell['id'] | null) =>
-        this.update((_state) => (_state.pressed === _id ? set(_state, 'pressed', null) : _state));
+    #unpress = (_id: Cell['id']) =>
+        this.update((_state) => (_state.pressed?.id === _id ? set(_state, 'pressed', null) : _state));
 
-    /// Whether `_cell` is drawn pressed.
-    isPressed = ({ id }: Cell) => this.state.pressed === id;
+    /// Whether the side `_cue` of `_cell`, the cell itself unless given, is drawn pressed.
+    isPressed = (_cell: Cell, _cue: Cue = _cell) => isDeepEqual(this.state.pressed, { id: _cell.id, cue: _cue });
 
     /// Links the selected key to `_cell` in the shown document; does nothing while no key is
     /// selected.
@@ -326,16 +344,21 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
             return key === null ? _state : evolve(_state, { shown: { bindings: (_links) => set(_links, key, id) } });
         });
 
-    /// The target of `_cell` in the shown document while the robot can take it, as zero or one.
-    #ready = ({ id }: Cell) => pipe(targetOf(this.state.shown, id), filter(({ ready }) => ready(this.#robot)));
+    /// The target of `_cell` in the shown document while the robot can take its side `_cue`, as zero
+    /// or one.
+    #ready = ({ id }: Cell, _cue: Cue) =>
+        pipe(
+            targetOf(this.state.shown, id),
+            filter(({ ready, available, cell }) => ready(this.#robot) && !isEmpty(filter(available(this.#robot, cell), isDeepEqual(_cue)))),
+        );
 
     /// What a pane button does with its cell: Assign links the selected key to `_cell`; every other
     /// instrument sends `_cue`, the cell itself unless the button sends another side of it, once the
-    /// robot can take the cell.
+    /// robot can take that side.
     use = (_cell: Cell, _cue: Cue = _cell) => {
         this.#dismiss();
         if (this.state.instrument === 'Assign') this.#bind(_cell);
-        else forEach(this.#ready(_cell), () => void this.#robot.request(_cue));
+        else forEach(this.#ready(_cell, _cue), () => void this.#robot.request(_cue));
     };
 
     /// The cell `_key` is linked to in the shown document, if any.
@@ -345,24 +368,27 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// pane draw highlighted.
     isTarget = ({ id }: Cell) => this.state.key !== null && this.linked(this.state.key)?.id === id;
 
-    /// Whether a pane button has an effect, which the pane draws greyed when it has none: under
-    /// Assign it links the selected key; under every other instrument it sends once the robot can
-    /// take its cell.
-    usable = (_cell: Cell) => this.state.instrument === 'Assign' || !isEmpty(this.#ready(_cell));
+    /// Whether the pane button sending the side `_cue` of `_cell` has an effect, which the pane
+    /// draws greyed when it has none: under Assign it links the selected key; under every other
+    /// instrument it sends once the robot can take that side.
+    usable = (_cell: Cell, _cue: Cue = _cell) => this.state.instrument === 'Assign' || !isEmpty(this.#ready(_cell, _cue));
 
-    /// A face key under Fire draws the cell it is linked to in the saved document pressed, and acts
-    /// on it once the robot can take it; an unassigned key does nothing. Under every edit
-    /// instrument it selects itself under Assign.
+    /// A face key under Fire draws pressed the side the robot's state allows of the cell it is
+    /// linked to in the saved document, and acts on the cell once the robot can take it; an
+    /// unassigned key, or a cell with no side allowed, does nothing. Under every edit instrument it
+    /// selects itself under Assign.
     #trigger = (_key: Key) =>
         this.state.instrument === 'Fire'
-            ? forEach(linksOf(this.state.saved, _key), ({ act, ready, cell }) => {
-                  this.#press(cell);
-                  if (ready(this.#robot)) act(this.#robot, cell);
-              })
+            ? forEach(linksOf(this.state.saved, _key), ({ act, ready, available, cell }) =>
+                  forEach(available(this.#robot, cell), (_side) => {
+                      this.#press(cell, _side);
+                      if (ready(this.#robot)) act(this.#robot, cell);
+                  }),
+              )
             : this.selectKey(_key);
 
     /// Ends the pressed drawing of the cell a released arrow or Enter fired.
-    #released = () => this.#unpress(this.state.pressed);
+    #released = () => this.update(set('pressed', null));
 
     /// What the arrows and Enter do when pressed and when released; they press only under Fire.
     /// `label` names each for the operator.

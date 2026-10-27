@@ -147,6 +147,11 @@ export const leave = (_posture: Posture): Cue => ({
     source: [{ name: 'leave', args: [_posture] }],
 });
 
+/// The side of `_posture`'s pair the robot can take from `_state`, as zero or one cue. In no
+/// posture the robot can enter any posture; in a posture it can only leave that posture.
+export const postureChange = (_posture: Posture) => ({ posture }: RobotState): Cue[] =>
+    posture === null ? [enter(_posture)] : posture === _posture ? [leave(_posture)] : [];
+
 export const perform = (_action: Action): Cue => ({
     label: _action,
     steps: [sportCommand(_action)],

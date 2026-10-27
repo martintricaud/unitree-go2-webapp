@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { evolve, filter, flat, forEach, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
+import { evolve, filter, flat, flatMap, forEach, keys, map, mapValues, omit, pick, pipe, prop, set, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
-import { enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
+import { POSTURES, enter, grouped, leave, nextId, numbered, perform, sequence, set as setting, stored, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { CueSheet, documentSchema, SHEET_TOOLS } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
@@ -45,8 +45,8 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
 /** The state of `_cueSheet`, with the saved and the shown document each reduced to its sheet. */
 const sheets = (_cueSheet: CueSheet) => evolve(_cueSheet.state, { saved: prop('sheet'), shown: prop('sheet') });
 
-/** The pointer and the pressed cell of `_cueSheet`. */
-const position = (_cueSheet: CueSheet) => pick(_cueSheet.state, ['pointer', 'pressed']);
+/** The pointer of `_cueSheet`, and the identifier of its pressed cell. */
+const position = (_cueSheet: CueSheet) => ({ pointer: _cueSheet.state.pointer, pressed: _cueSheet.state.pressed?.id ?? null });
 
 /** Presses and releases `_key` on `_cueSheet`, `_count` times. */
 const tap = (_cueSheet: CueSheet, _key: string, _count = 1) =>
@@ -499,10 +499,45 @@ describe('cueSheet key assignment', () => {
     expect(cueSheet.usable(red)).toBe(true);
   });
 
-  it('sends the side a pane button names under Fire', () => {
-    const { cueSheet, sent } = setup();
-    cueSheet.use(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
-    expect(sent()).toEqual(asSent(leave('Sitting')));
+  it('makes usable and sends only the side of a posture pair the settled posture allows', () => {
+    const { cueSheet, sent, confirm } = setup();
+    const usableSides = () =>
+      pipe(
+        keys(POSTURES),
+        flatMap((_posture) => filter([enter(_posture), leave(_posture)], (_side) => cueSheet.usable(paneCell(cueSheet, 'postures', _posture), _side))),
+        map(prop('label')),
+      );
+    const sitting = paneCell(cueSheet, 'postures', 'Sitting');
+    expect(usableSides()).toEqual(keys(POSTURES));
+    cueSheet.use(sitting, leave('Sitting'));
+    cueSheet.use(sitting, enter('Sitting'));
+    confirm();
+    expect(usableSides()).toEqual([leave('Sitting').label]);
+    cueSheet.use(paneCell(cueSheet, 'postures', 'Pose'), enter('Pose'));
+    cueSheet.use(sitting, leave('Sitting'));
+    expect(sent()).toEqual(asSent(enter('Sitting'), leave('Sitting')));
+  });
+
+  it('draws pressed and sends only the side of the posture pair a key is linked to that the settled posture allows', () => {
+    const { cueSheet, sent, confirm } = setup(CONDUITE);
+    const pose = paneCell(cueSheet, 'postures', 'Pose');
+    const pressedSides = () => filter([enter('Pose'), leave('Pose')], (_side) => cueSheet.isPressed(pose, _side));
+    cueSheet.press('a');
+    // The robot settles in Pose while a is held; the side drawn pressed stays the one a sent.
+    confirm();
+    expect(pressedSides()).toEqual([enter('Pose')]);
+    cueSheet.release('a');
+    cueSheet.press('a');
+    expect(pressedSides()).toEqual([leave('Pose')]);
+    expect(sent()).toEqual(asSent(enter('Pose'), leave('Pose')));
+  });
+
+  it('draws nothing pressed and sends nothing for a key linked to a posture pair while the robot is in another posture', () => {
+    const { cueSheet, sent, confirm } = setup(CONDUITE);
+    tap(cueSheet, 'x');
+    confirm();
+    cueSheet.press('a');
+    expect([sent(), cueSheet.state.pressed]).toEqual([asSent(enter('Sitting')), null]);
   });
 
   it('links a key to the sheet cell a sweep ends on, and unassigns it when Ungroup removes that cell', () => {

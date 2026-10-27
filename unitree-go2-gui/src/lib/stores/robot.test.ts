@@ -978,7 +978,7 @@ describe('the toggles', () => {
         expect(pressAll(connected, [() => connected.robot.togglePosture('Pose')])).toEqual(asSent(leave('Pose')));
     });
 
-    it("sends the target's own entry from a posture, without leaving the posture first", async () => {
+    it("sends a gait's entry from a posture, and nothing for another posture's toggle", async () => {
         const sitting = async () => {
             const connected = connectedRobot();
             await connected.confirm(enter('Sitting'));
@@ -987,7 +987,7 @@ describe('the toggles', () => {
         const b = await sitting();
         expect(pressAll(b, [() => b.robot.toggleTo('gait', 'Bound')])).toEqual(asSent(enter('Bound')));
         const a = await sitting();
-        expect(pressAll(a, [() => a.robot.togglePosture('Pose')])).toEqual(asSent(enter('Pose')));
+        expect(pressAll(a, [() => a.robot.togglePosture('Pose')])).toEqual([]);
     });
 
     it('x sits from a gait, then rises', () => {

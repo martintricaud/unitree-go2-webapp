@@ -8,7 +8,7 @@
     import CueStrip from './components/CueStrip.svelte';
     import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import { POSTURE_FACES, leave, set, transition } from './lib/utils/commands';
+    import { POSTURE_FACES, enter, leave, set, transition } from './lib/utils/commands';
     import type { Cell, Cue } from './lib/utils/commands';
     import { SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot.svelte';
@@ -123,22 +123,26 @@
             {/each}
         </div>
     </section>
-    <!-- Each posture is one toggle: the left side enters it, the right side leaves it. The side
-         matching the robot's settled posture is drawn pressed. -->
+    <!-- Each posture is one pair: the left side enters it, the right side leaves it. Only the side
+         the robot's settled posture allows is usable, and a key draws only that side pressed. -->
     <section>
         <h2>Posture changes</h2>
         <div class="button-grid pairs">
             {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
                 {#if posture}
+                    {@const entry = enter(posture)}
+                    {@const exit = leave(posture)}
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
-                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}>
-                        <button class:greyed={!cueSheet.usable(cell)} aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)}>
+                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
+                        <button class:pressed={cueSheet.isPressed(cell, entry)} class:greyed={!cueSheet.usable(cell, entry)}
+                            aria-disabled={!cueSheet.usable(cell, entry)} onclick={() => cueSheet.use(cell, entry)}>
                             {POSTURE_FACES[posture][0]}
                             {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
-                        <button class:greyed={!cueSheet.usable(cell)} aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell, leave(posture))}>
+                        <button class:pressed={cueSheet.isPressed(cell, exit)} class:greyed={!cueSheet.usable(cell, exit)}
+                            aria-disabled={!cueSheet.usable(cell, exit)} onclick={() => cueSheet.use(cell, exit)}>
                             {POSTURE_FACES[posture][1]}
                             {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>

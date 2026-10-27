@@ -1,7 +1,7 @@
 import { constant, filter, flatMap, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys } from 'remeda';
 import { mapValues, merge, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { enter, isCommandable, leave, set as setting, transition } from '../utils/commands';
+import { enter, isCommandable, postureChange, set as setting, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
@@ -340,11 +340,12 @@ export class Robot {
 
     /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
     /// next press asking for the same thing again. Each does nothing while a toggled field waits
-    /// for a verdict: the cue would read the pending value and queue the opposite command.
+    /// for a verdict: the cue would read the pending value and queue the opposite command. A
+    /// posture's toggle sends the side of its pair the settled state allows, so it does nothing
+    /// while the robot is in another posture.
     togglePosture = (_posture: Posture) => {
         const { pending, settled } = this.#current.state;
-        if (pending.posture !== undefined) return;
-        void this.request(settled.posture === _posture ? leave(_posture) : enter(_posture));
+        if (pending.posture === undefined) forEach(postureChange(_posture)(settled), (_cue) => void this.request(_cue));
     };
 
     /// Sends `_field` to `_value`, or back to its previous value when the robot already shows
