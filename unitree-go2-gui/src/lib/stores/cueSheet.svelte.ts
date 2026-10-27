@@ -5,7 +5,7 @@ import type { Updater, Writable } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { sequence } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { robot } from './robot';
+import { robot } from './robot.svelte';
 
 /// The storage key of the saved sheet. A change to the shape of `Cue` must change it, so that
 /// sheets stored in the old shape are ignored.

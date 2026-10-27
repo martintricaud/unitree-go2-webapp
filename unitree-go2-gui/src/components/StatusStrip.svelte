@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { robot } from '../lib/stores/robot';
+    import { robot } from '../lib/stores/robot.svelte';
     import { outcomeLog } from '../lib/stores/outcomes.svelte';
     import type { Outcome } from '../lib/stores/outcomes.svelte';
 
@@ -21,16 +21,16 @@
     <div class="line">
         <button
             class="toggle"
-            disabled={!$robot.channelOpen}
-            onclick={() => ($robot.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
+            disabled={!robot.current.channelOpen}
+            onclick={() => (robot.current.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
         >
-            {$robot.robotConnected ? 'Disconnect' : 'Connect'}
+            {robot.current.robotConnected ? 'Disconnect' : 'Connect'}
         </button>
         <button class="toggle" onclick={() => props.callback(!props.drawerOpen)}>
             {props.drawerOpen ? 'Hide' : 'Show'} controller
         </button>
-        <span>Websocket {$robot.channelOpen ? '✅' : '❌'}</span>
-        <span>Robot {$robot.robotConnected ? '✅' : '❌'}</span>
+        <span>Websocket {robot.current.channelOpen ? '✅' : '❌'}</span>
+        <span>Robot {robot.current.robotConnected ? '✅' : '❌'}</span>
         <span class="last" title={outcomeLog.last?.detail ?? ''}>
             {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
         </span>

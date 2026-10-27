@@ -60,8 +60,8 @@ describe('the import graph of src/', () => {
     const edges = flatMap(Object.entries(graph), ([_from, _to]) =>
       _to.map((_target) => `${relative(SRC, _from)} -> ${relative(SRC, _target)}`),
     );
-    expect(edges).toContain('lib/stores/robot.ts -> lib/utils/confirmable.ts');
-    expect(edges).toContain('App.svelte -> lib/stores/robot.ts');
+    expect(edges).toContain('lib/stores/robot.svelte.ts -> lib/utils/confirmable.ts');
+    expect(edges).toContain('App.svelte -> lib/stores/robot.svelte.ts');
   });
 
   it('has no cycle', () => {

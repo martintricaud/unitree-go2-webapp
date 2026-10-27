@@ -20,7 +20,7 @@
     } from './lib/utils/commands';
     import type { Cue } from './lib/utils/commands';
     import { COLOURS, SPEED_LEVELS } from './lib/data/settings';
-    import { robot } from './lib/stores/robot';
+    import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
     import { displayed } from './lib/utils/confirmable';
 
@@ -37,7 +37,11 @@
     /// Whether the left sidebar holding the controller emulator is open. It starts closed.
     let drawerOpen = $state(false);
 
-    let shown = $derived(displayed($robot.state));
+    let shown = $derived(displayed(robot.current.state));
+    /// The gait and posture controls wait until the robot has stated its gait or its posture.
+    let motionUnknown = $derived(
+        !robot.current.robotConnected || !(robot.current.reported.gait || robot.current.reported.posture),
+    );
 
     onMount(() => {
         robot.connect();
@@ -74,22 +78,22 @@
         </button> -->
         <Switch
             label={'Lidar'}
-            value={$robot.lidarOn}
-            disabled={!$robot.robotConnected}
+            value={robot.current.lidarOn}
+            disabled={!robot.current.robotConnected}
             callback={(next: boolean) => robot.setLidar(next)}
         />
         <Switch
             label={'Monitor State'}
-            value={$robot.monitoringOn}
-            disabled={!$robot.robotConnected}
+            value={robot.current.monitoringOn}
+            disabled={!robot.current.robotConnected}
             callback={(next: boolean) => robot.setMonitoring(next)}
         />
         <Switch
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
-            confirmed={$robot.state.settled.obstacleAvoidance}
-            spinning={$robot.state.pending.obstacleAvoidance !== undefined}
-            disabled={!$robot.robotConnected || !$robot.reported.obstacleAvoidance}
+            confirmed={robot.current.state.settled.obstacleAvoidance}
+            spinning={robot.current.state.pending.obstacleAvoidance !== undefined}
+            disabled={!robot.current.robotConnected || !robot.current.reported.obstacleAvoidance}
             callback={(next: boolean) => sendToRobot(set({ name: 'obstacleAvoidance', value: next }))}
         />
         <Switch
@@ -105,20 +109,20 @@
     </div>
     <div class="button-grid">
         {#each ACTIONS as action}
-            <button disabled={!$robot.robotConnected} onclick={() => sendToRobot(perform(action))}>
+            <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(perform(action))}>
                 {action}
             </button>
         {/each}
-        <button disabled={!$robot.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
+        <button disabled={!robot.current.robotConnected} onclick={() => sendToRobot(recover())}>RecoveryStand</button>
     </div>
     <!-- The gait stays ticked during a posture, as the gait the robot returns to when it leaves it. -->
     <div class="button-grid">
         {#each keys(GAITS).filter(isCommandable) as target}
             <Radio
                 optionName={target}
-                selected={$robot.state.settled.gait === target}
-                spinning={$robot.state.pending.gait?.value === target}
-                disabled={!$robot.robotConnected || !($robot.reported.gait || $robot.reported.posture)}
+                selected={robot.current.state.settled.gait === target}
+                spinning={robot.current.state.pending.gait?.value === target}
+                disabled={motionUnknown}
                 callback={() => sendToRobot(enter(target))}
             />
         {/each}
@@ -127,9 +131,9 @@
         {#each keys(POSTURES) as target}
             <Radio
                 optionName={target}
-                selected={$robot.state.settled.posture === target}
-                spinning={$robot.state.pending.posture?.value === target}
-                disabled={!$robot.robotConnected || !($robot.reported.gait || $robot.reported.posture)}
+                selected={robot.current.state.settled.posture === target}
+                spinning={robot.current.state.pending.posture?.value === target}
+                disabled={motionUnknown}
                 callback={() => sendToRobot(enter(target))}
             />
         {/each}
@@ -139,9 +143,9 @@
         {#each COLOURS as colour}
             <Radio
                 optionName={colour}
-                selected={$robot.state.settled.headlight === colour}
-                spinning={$robot.state.pending.headlight?.value === colour}
-                disabled={!$robot.robotConnected}
+                selected={robot.current.state.settled.headlight === colour}
+                spinning={robot.current.state.pending.headlight?.value === colour}
+                disabled={!robot.current.robotConnected}
                 callback={() => sendToRobot(set({ name: 'headlight', value: colour }))}
             />
         {/each}
@@ -153,9 +157,9 @@
         {#each entries(SPEED_LEVELS) as [speedName, level]}
             <Radio
                 optionName={speedName}
-                selected={$robot.state.settled.speed === level}
-                spinning={$robot.state.pending.speed?.value === level}
-                disabled={!$robot.robotConnected || !$robot.reported.speed}
+                selected={robot.current.state.settled.speed === level}
+                spinning={robot.current.state.pending.speed?.value === level}
+                disabled={!robot.current.robotConnected || !robot.current.reported.speed}
                 callback={() => sendToRobot(set({ name: 'speed', value: level }))}
             />
         {/each}

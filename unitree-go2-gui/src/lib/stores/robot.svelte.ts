@@ -1,5 +1,4 @@
-import { isDeepEqual, isEmpty, isIncludedIn, mapValues, pickBy, values } from 'remeda';
-import { get, readonly, writable } from 'svelte/store';
+import { constant, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys, mapValues, merge, pickBy, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
 import { enter, isCommandable, leave, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
@@ -84,33 +83,28 @@ const REPORTED: Partial<Record<number, Partial<RobotState>>> = {
 };
 
 /// The outcome of request `_reqId`, named `_label`, recorded now.
-const stamp = (_reqId: number, _label: string, _verdict: Verdict): Outcome => ({
-    ..._verdict,
-    reqId: _reqId,
-    label: _label,
-    at: Date.now(),
-});
+const stamp = (_reqId: number, _label: string, _verdict: Verdict): Outcome =>
+    merge(_verdict, { reqId: _reqId, label: _label, at: Date.now() });
 
-/// Creates the store of a relay not yet reached and of a robot in its boot state. `openSocket`
-/// opens the control channel to the relay; a test passes one that returns a fake socket.
-export const createRobot = ({
-    openSocket,
-    outcomeLog: log,
-}: {
-    openSocket: () => Pick<WebSocket, 'readyState' | 'send' | 'onopen' | 'onclose' | 'onmessage'>;
-    outcomeLog: OutcomeLog;
-}) => {
-    /// The store's `set` and `update` stay inside this function, so no reader can show a value that
-    /// neither the operator asked for nor the relay or the robot stated.
-    const store = writable<{
+/// Losing the robot clears `reported` and keeps the settled values.
+const lost = merge({ robotConnected: false, reported: {} });
+
+/// The control channel to the relay, as far as the robot uses it.
+type Socket = Pick<WebSocket, 'readyState' | 'send' | 'onopen' | 'onclose' | 'onmessage'>;
+
+/// A relay not yet reached and a robot in its boot state. Only the class's own methods write its
+/// state, so no reader can show a value that neither the operator asked for nor the relay or the
+/// robot stated.
+export class Robot {
+    #current = $state.raw<{
         /// Whether the browser's control channel to the relay is open.
         channelOpen: boolean;
         /// Whether the relay reports a live WebRTC session with the robot.
         robotConnected: boolean;
         /// Whether the relay was last told to stream the lidar. The relay sends no verdict on it.
         lidarOn: boolean;
-        /// Whether the relay was last told to subscribe to the robot's state stream. The relay sends
-        /// no verdict on it.
+        /// Whether the relay was last told to forward the robot's state stream. The relay sends no
+        /// verdict on it.
         monitoringOn: boolean;
         /// The robot's settled values, and the changes that wait for the relay's verdict.
         state: Confirmable<RobotState>;
@@ -140,40 +134,50 @@ export const createRobot = ({
         /// A toggle that leaves a gait before any other gait was settled returns to the boot gait.
         previousGait: 'FreeWalk',
     });
+    get current() { return this.#current; }
     /// The latest decoded frame of the robot's camera, or null before the first one arrives.
-    const frame = writable<ImageBitmap | null>(null);
-    let socket: ReturnType<typeof openSocket> | undefined;
+    #frame = $state.raw<ImageBitmap | null>(null);
+    get frame() { return this.#frame; }
+    #openSocket: () => Socket;
+    #log: OutcomeLog;
+    #socket: Socket | undefined;
     /// The requests awaiting the relay's verdict, by request id.
-    const awaiting = new Map<
-        number,
-        { resolve: (_outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }
-    >();
-    let lastRequestId = 0;
+    #awaiting: Partial<
+        Record<number, { resolve: (_outcome: Outcome) => void; timer: ReturnType<typeof setTimeout>; label: string }>
+    > = {};
+    #lastRequestId = 0;
     /// Holds each unknown sport_state code already logged, so each is logged once.
-    const warnedCodes = new Set<number>();
+    #warnedCodes = new Set<number>();
+
+    /// `openSocket` opens the control channel to the relay; a test passes one that returns a fake socket.
+    constructor({ openSocket, outcomeLog }: { openSocket: () => Socket; outcomeLog: OutcomeLog }) {
+        this.#openSocket = openSocket;
+        this.#log = outcomeLog;
+    }
+
+    #update = (_change: (_current: Robot['current']) => Robot['current']) => { this.#current = _change(this.#current); };
 
     /// Applies `_change` to the robot's state and marks the fields in `_reported`. A change of the
     /// settled gait records the gait it left as `previousGait`, if the app can enter that gait.
-    const changeState = (
+    #changeState = (
         _change: (_state: Confirmable<RobotState>) => Confirmable<RobotState>,
-        _reported: Partial<Record<keyof RobotState, true>> = {},
+        _reported: Robot['current']['reported'] = {},
     ) =>
-        store.update((_robot) => {
+        this.#update((_robot) => {
             const state = _change(_robot.state);
             const left = _robot.state.settled.gait;
-            return {
-                ..._robot,
+            return merge(_robot, {
                 state,
-                reported: { ..._robot.reported, ..._reported },
+                reported: merge(_robot.reported, _reported),
                 previousGait: state.settled.gait !== left && isCommandable(left) ? left : _robot.previousGait,
-            };
+            });
         });
 
     /// Never throws: a closed channel is an answer the caller must handle.
-    const send = (_msg: unknown) => {
-        if (socket?.readyState !== OPEN) return false;
+    #send = (_msg: unknown) => {
+        if (this.#socket?.readyState !== OPEN) return false;
         try {
-            socket.send(JSON.stringify(_msg));
+            this.#socket.send(JSON.stringify(_msg));
             return true;
         } catch (error) {
             console.error('Failed to write to the control channel:', error);
@@ -181,33 +185,36 @@ export const createRobot = ({
         }
     };
 
-    /// Records the outcome of a request still awaited, settles or drops what the request proposed,
-    /// and resolves its verdict.
-    const finish = (_outcome: Outcome) => {
-        const request = awaiting.get(_outcome.reqId);
+    /// Records `_verdict` as the outcome of request `_reqId` if it is still awaited, settles or drops
+    /// what the request proposed, and resolves the request's promise.
+    #finish = (_verdict: Verdict) => (_reqId: number) => {
+        const request = this.#awaiting[_reqId];
         if (!request) return;
         clearTimeout(request.timer);
-        awaiting.delete(_outcome.reqId);
-        log.record(_outcome);
-        changeState(resolve(_outcome.reqId, _outcome));
-        request.resolve(_outcome);
+        delete this.#awaiting[_reqId];
+        const outcome = stamp(_reqId, request.label, _verdict);
+        this.#log.record(outcome);
+        this.#changeState(resolve(_reqId, outcome));
+        request.resolve(outcome);
     };
 
     /// Settles exactly the fields a report states and marks them reported; a report that states
     /// nothing changes nothing.
-    const settleReport = (_report: Partial<RobotState>) => {
-        if (!isEmpty(_report)) changeState(settle(_report), mapValues(_report, () => true as const));
+    #settleReport = (_report: Partial<RobotState>) => {
+        if (!isEmpty(_report)) this.#changeState(settle(_report), mapValues(_report, constant(true as const)));
     };
 
-    const received = (_data: Blob | string) => {
+    /// A new frame closes the one it replaces, which nothing draws any more. A closed channel shows
+    /// null, so no reader is handed a closed bitmap.
+    #show = (_bitmap: ImageBitmap | null) => {
+        this.#frame?.close();
+        this.#frame = _bitmap;
+    };
+
+    #received = (_data: Blob | string) => {
         if (_data instanceof Blob) {
             createImageBitmap(_data)
-                .then((_bitmap) =>
-                    frame.update((_previous) => {
-                        _previous?.close();
-                        return _bitmap;
-                    }),
-                )
+                .then(this.#show)
                 .catch((_error) => console.error('Failed to decode video frame:', _error));
             return;
         }
@@ -221,31 +228,25 @@ export const createRobot = ({
         // JSON.parse reads "null" as null, which the default case drops.
         switch (msg?.type) {
             case 'robot_state':
-                // Losing the robot clears `reported` and keeps the settled values.
-                store.update((_robot) => ({
-                    ..._robot,
-                    robotConnected: msg.connected,
-                    reported: msg.connected ? _robot.reported : {},
-                }));
+                this.#update(msg.connected ? set('robotConnected', true) : lost);
                 return;
             case 'robot_settings': {
                 const { speedLevel, obstacleAvoidance } = msg;
                 const isLevel = isIncludedIn(speedLevel, values(SPEED_LEVELS));
                 if (!isLevel) console.warn('Ignoring a speed level outside SPEED_LEVELS:', speedLevel);
-                settleReport({
-                    ...(isLevel ? { speed: speedLevel } : {}),
-                    ...(typeof obstacleAvoidance === 'boolean' ? { obstacleAvoidance } : {}),
-                });
+                const speed = isLevel ? speedLevel : null;
+                const avoids = isBoolean(obstacleAvoidance) ? obstacleAvoidance : null;
+                this.#settleReport(pickBy({ speed, obstacleAvoidance: avoids }, isNonNullish));
                 return;
             }
             case 'sport_state': {
                 // REPORTED covers only "mcf", so a report outside "mcf" states nothing.
                 if (msg.motionMode !== 'mcf' || msg.errorCode === null) return;
                 const report = REPORTED[msg.errorCode];
-                if (report !== undefined) settleReport(report);
+                if (report !== undefined) this.#settleReport(report);
                 // An unknown code states nothing and is logged once, so each missing code can be collected.
-                else if (!warnedCodes.has(msg.errorCode)) {
-                    warnedCodes.add(msg.errorCode);
+                else if (!this.#warnedCodes.has(msg.errorCode)) {
+                    this.#warnedCodes.add(msg.errorCode);
                     console.warn('Ignoring a sport_state code that REPORTED does not list:', msg.errorCode);
                 }
                 return;
@@ -255,16 +256,15 @@ export const createRobot = ({
                     console.warn('Dropping a verdict on a command this browser did not send:', msg);
                     return;
                 }
-                // No awaiting request: the verdict arrived after the backstop.
-                const request = awaiting.get(msg.reqId);
-                const outcome = stamp(msg.reqId, request?.label ?? msg.command_name ?? 'command', {
+                const verdict = {
                     // An outcome this browser does not know reads as `unknown`, never as a confirmation.
                     outcome: isIncludedIn(msg.outcome, OUTCOMES) ? msg.outcome : 'unknown',
                     code: msg.code,
                     detail: msg.detail ?? '',
-                });
-                if (request) finish(outcome);
-                else log.record(outcome);
+                };
+                if (this.#awaiting[msg.reqId]) this.#finish(verdict)(msg.reqId);
+                // No awaiting request: the verdict arrived after the backstop.
+                else this.#log.record(stamp(msg.reqId, msg.command_name ?? 'command', verdict));
                 return;
             }
             case 'state_stream':
@@ -277,73 +277,72 @@ export const createRobot = ({
 
     /// Tells the relay to switch `_command` on or off, and records in `_flag` what it was told once
     /// the message has left the browser.
-    const switchRelay = (_command: string, _flag: 'lidarOn' | 'monitoringOn') => (_on: boolean) => {
-        if (send({ command_name: _command, switch: _on })) store.update((_robot) => ({ ..._robot, [_flag]: _on }));
+    #switchRelay = (_command: string, _flag: 'lidarOn' | 'monitoringOn') => (_on: boolean) => {
+        if (this.#send({ command_name: _command, switch: _on })) this.#update(set(_flag, _on));
     };
 
     /// Sends a cue as one sequence of its steps, named by its label, and shows each field the cue
     /// changes as pending until the relay's verdict settles or drops it. Returns at once a promise
-    /// of the verdict, which resolves once the store holds it.
-    const request = (_cue: Cue): Promise<Outcome> => {
-        const reqId = (lastRequestId += 1);
+    /// of the verdict, which resolves once the robot's state holds it.
+    request = (_cue: Cue): Promise<Outcome> => {
+        const reqId = (this.#lastRequestId += 1);
         const { label } = _cue;
-        if (!send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
+        if (!this.#send({ kind: 'sequence', command_name: label, sequence: _cue.steps, reqId })) {
             const outcome = stamp(reqId, label, CHANNEL_CLOSED);
-            log.record(outcome);
+            this.#log.record(outcome);
             return Promise.resolve(outcome);
         }
-        const shown = displayed(get(store).state);
+        const shown = displayed(this.#current.state);
         const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
         // Proposed before the verdict can arrive, which is never earlier than the next relay message.
-        if (!isEmpty(changed)) changeState(propose(changed, reqId));
+        if (!isEmpty(changed)) this.#changeState(propose(changed, reqId));
         return new Promise<Outcome>((_resolve) => {
-            const timer = setTimeout(() => finish(stamp(reqId, label, RELAY_SILENT)), REPLY_BACKSTOP_MS);
-            awaiting.set(reqId, { resolve: _resolve, timer, label });
+            const timer = setTimeout(() => this.#finish(RELAY_SILENT)(reqId), REPLY_BACKSTOP_MS);
+            this.#awaiting[reqId] = { resolve: _resolve, timer, label };
         });
     };
 
-    return {
-        subscribe: store.subscribe,
-        videoFrame: readonly(frame),
-        /// Opens the control channel, unless one is already open or opening.
-        connect: () => {
-            if ((socket?.readyState ?? CLOSED) < CLOSED) return;
-            const opened = openSocket();
-            opened.onopen = () => {
-                store.update((_robot) => ({ ..._robot, channelOpen: true }));
-                log.clear();
-            };
-            opened.onclose = () => {
-                store.update((_robot) => ({ ..._robot, channelOpen: false, robotConnected: false, reported: {} }));
-                get(frame)?.close();
-                for (const [reqId, { label }] of [...awaiting]) finish(stamp(reqId, label, CHANNEL_CLOSED));
-            };
-            opened.onmessage = (_event) => received(_event.data);
-            socket = opened;
-        },
-        /// Asks the relay to start a WebRTC session with the robot at `_ip`.
-        connectRobot: (_ip: string) => void send({ command_name: 'connect', ip: _ip }),
-        disconnectRobot: () => void send({ command_name: 'disconnect' }),
-        request,
-        /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
-        /// next press asking for the same thing again. Each does nothing while a toggled field waits
-        /// for a verdict: the cue would read the pending value and queue the opposite command.
-        togglePosture: (_posture: Posture) => {
-            const { pending, settled } = get(store).state;
-            if (pending.posture !== undefined) return;
-            void request(settled.posture === _posture ? leave(_posture) : enter(_posture));
-        },
-        /// From `_gait` in no posture, the toggle returns to `previousGait`.
-        toggleGait: (_gait: CommandableGait) => {
-            const { state, previousGait } = get(store);
-            const { gait, posture } = state.settled;
-            if (state.pending.gait !== undefined || state.pending.posture !== undefined) return;
-            void request(enter(gait === _gait && posture === null ? previousGait : _gait));
-        },
-        setLidar: switchRelay('lidar', 'lidarOn'),
-        setMonitoring: switchRelay('subscribe', 'monitoringOn'),
+    /// Opens the control channel, unless one is already open or opening.
+    connect = () => {
+        if ((this.#socket?.readyState ?? CLOSED) < CLOSED) return;
+        const opened = this.#openSocket();
+        opened.onopen = () => {
+            this.#update(set('channelOpen', true));
+            this.#log.clear();
+        };
+        opened.onclose = () => {
+            this.#update(piped(lost, set('channelOpen', false)));
+            this.#show(null);
+            forEach(keys(this.#awaiting), piped(Number, this.#finish(CHANNEL_CLOSED)));
+        };
+        opened.onmessage = (_event) => this.#received(_event.data);
+        this.#socket = opened;
     };
-};
+
+    /// Asks the relay to start a WebRTC session with the robot at `_ip`.
+    connectRobot = (_ip: string) => void this.#send({ command_name: 'connect', ip: _ip });
+    disconnectRobot = () => void this.#send({ command_name: 'disconnect' });
+
+    /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
+    /// next press asking for the same thing again. Each does nothing while a toggled field waits
+    /// for a verdict: the cue would read the pending value and queue the opposite command.
+    togglePosture = (_posture: Posture) => {
+        const { pending, settled } = this.#current.state;
+        if (pending.posture !== undefined) return;
+        void this.request(settled.posture === _posture ? leave(_posture) : enter(_posture));
+    };
+
+    /// From `_gait` in no posture, the toggle returns to `previousGait`.
+    toggleGait = (_gait: CommandableGait) => {
+        const { state, previousGait } = this.#current;
+        const { gait, posture } = state.settled;
+        if (state.pending.gait !== undefined || state.pending.posture !== undefined) return;
+        void this.request(enter(gait === _gait && posture === null ? previousGait : _gait));
+    };
+
+    setLidar = this.#switchRelay('lidar', 'lidarOn');
+    setMonitoring = this.#switchRelay('subscribe', 'monitoringOn');
+}
 
 /// The app's robot, which talks to the relay on this machine.
-export const robot = createRobot({ openSocket: () => new WebSocket('ws://localhost:8000/ws'), outcomeLog });
+export const robot = new Robot({ openSocket: () => new WebSocket('ws://localhost:8000/ws'), outcomeLog });

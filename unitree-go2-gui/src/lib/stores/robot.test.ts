@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { map, prop, range, reverse, times } from 'remeda';
-import { get } from 'svelte/store';
-import { createRobot } from './robot';
+import { Robot } from './robot.svelte';
 import { OutcomeLog } from './outcomes.svelte';
 import type { Outcome } from './outcomes.svelte';
 import { enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
@@ -23,7 +22,7 @@ class FakeSocket {
     throwOnSend = false;
     onopen: (() => void) | null = null;
     onclose: (() => void) | null = null;
-    onmessage: ((_event: { data: string }) => void) | null = null;
+    onmessage: ((_event: { data: string | Blob }) => void) | null = null;
 
     send(data: string) {
         if (this.throwOnSend) throw new Error('socket is gone');
@@ -35,8 +34,8 @@ class FakeSocket {
         return this.frames.map((frame) => JSON.parse(frame));
     }
 
-    /** Delivers `_data` as a message from the relay. */
-    receive(_data: string) {
+    /** Delivers `_data` as a message from the relay: JSON as a string, a video frame as a Blob. */
+    receive(_data: string | Blob) {
         this.onmessage?.({ data: _data });
     }
 
@@ -62,7 +61,7 @@ const robotState = (connected: boolean) => JSON.stringify({ type: 'robot_state',
 const openRobot = () => {
     const socket = new FakeSocket();
     const log = new OutcomeLog();
-    const robot = createRobot({ openSocket: () => socket, outcomeLog: log });
+    const robot = new Robot({ openSocket: () => socket, outcomeLog: log });
     robot.connect();
     socket.onopen?.();
     return { robot, socket, log };
@@ -70,7 +69,12 @@ const openRobot = () => {
 
 describe('the store', () => {
     it('starts with the channel closed, no robot, nothing told, and the robot settled on its boot state', () => {
-        expect(get(createRobot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() }))).toEqual({
+        const robot = new Robot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() });
+        // @ts-expect-error: only the robot's own methods write its state, so it exposes no `update`.
+        expect(robot.update).toBeUndefined();
+        // @ts-expect-error: `current` has a getter and no setter.
+        expect(() => (robot.current = robot.current)).toThrow(TypeError);
+        expect(robot.current).toEqual({
             channelOpen: false,
             robotConnected: false,
             lidarOn: false,
@@ -90,12 +94,25 @@ describe('the store', () => {
         });
     });
 
+    it('shows each decoded video frame and closes the one it replaces', async () => {
+        const [first, second] = times(2, () => ({ close: vi.fn() }));
+        vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second));
+        const { robot, socket } = openRobot();
+        socket.receive(new Blob());
+        await vi.waitFor(() => expect(robot.frame).toBe(first));
+        socket.receive(new Blob());
+        await vi.waitFor(() => expect(robot.frame).toBe(second));
+        expect(first.close).toHaveBeenCalledOnce();
+        expect(second.close).not.toHaveBeenCalled();
+        vi.unstubAllGlobals();
+    });
+
     it('records each flag it is given', () => {
         const { robot, socket } = openRobot();
         socket.receive(robotState(true));
         robot.setLidar(true);
         robot.setMonitoring(true);
-        expect(get(robot)).toMatchObject({
+        expect(robot.current).toMatchObject({
             channelOpen: true,
             robotConnected: true,
             lidarOn: true,
@@ -110,7 +127,7 @@ describe('the store', () => {
             opened.push(socket);
             return socket;
         };
-        const robot = createRobot({ openSocket, outcomeLog: new OutcomeLog() });
+        const robot = new Robot({ openSocket, outcomeLog: new OutcomeLog() });
         robot.connect();
         robot.connect();
         expect(opened).toHaveLength(1);
@@ -156,10 +173,10 @@ describe.each([
         const { robot, socket } = openRobot();
         robot[_method](true);
         expect(socket.written).toEqual([{ command_name: _commandName, switch: true }]);
-        expect(get(robot)[_flag]).toBe(true);
+        expect(robot.current[_flag]).toBe(true);
         robot[_method](false);
         expect(socket.written[1]).toEqual({ command_name: _commandName, switch: false });
-        expect(get(robot)[_flag]).toBe(false);
+        expect(robot.current[_flag]).toBe(false);
     });
 
     it('keeps the flag when the channel is closed', () => {
@@ -167,7 +184,7 @@ describe.each([
         socket.readyState = CLOSED;
         robot[_method](true);
         expect(socket.frames).toEqual([]);
-        expect(get(robot)[_flag]).toBe(false);
+        expect(robot.current[_flag]).toBe(false);
     });
 });
 
@@ -271,7 +288,7 @@ describe('request', () => {
     });
 
     it('resolves failed at once before the channel was ever opened', async () => {
-        const robot = createRobot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() });
+        const robot = new Robot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() });
         expect((await robot.request(HELLO)).outcome).toBe('failed');
     });
 
@@ -313,7 +330,7 @@ describe('request', () => {
         const reqId = socket.reqId();
         socket.onclose?.();
         expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
-        expect(get(robot).robotConnected).toBe(false);
+        expect(robot.current.robotConnected).toBe(false);
     });
 
     it('ignores a verdict that arrives after its request already settled', async () => {
@@ -399,13 +416,13 @@ describe('robot state', () => {
     it('follows every robot_state the relay sends, not only the first', () => {
         const { robot, socket } = openRobot();
         socket.receive(robotState(false));
-        expect(get(robot).robotConnected).toBe(false);
+        expect(robot.current.robotConnected).toBe(false);
 
         socket.receive(robotState(true));
-        expect(get(robot).robotConnected).toBe(true);
+        expect(robot.current.robotConnected).toBe(true);
 
         socket.receive(robotState(false));
-        expect(get(robot).robotConnected).toBe(false);
+        expect(robot.current.robotConnected).toBe(false);
     });
 
     it('drops a frame it cannot read without disturbing what it already knows', () => {
@@ -413,7 +430,7 @@ describe('robot state', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         socket.receive(robotState(true));
         socket.receive('{ this is not json');
-        expect(get(robot).robotConnected).toBe(true);
+        expect(robot.current.robotConnected).toBe(true);
         warn.mockRestore();
     });
 
@@ -423,7 +440,7 @@ describe('robot state', () => {
         socket.receive(robotState(true));
         socket.receive('null');
         socket.receive(JSON.stringify({ type: 'pirouette', connected: false }));
-        expect(get(robot).robotConnected).toBe(true);
+        expect(robot.current.robotConnected).toBe(true);
         expect(log.entries).toEqual([]);
         expect(warn).toHaveBeenCalledTimes(2);
         warn.mockRestore();
@@ -457,45 +474,45 @@ const connectedRobot = () => {
 describe("the robot's report", () => {
     it('starts with no field reported', () => {
         const { robot } = connectedRobot();
-        expect(get(robot).reported).toEqual({});
+        expect(robot.current.reported).toEqual({});
     });
 
     it('applies exactly the fields a report states, and changes no other field', () => {
         const { robot, socket } = connectedRobot();
-        const before = get(robot).state.settled;
+        const before = robot.current.state.settled;
         socket.receive(settings(1, null));
-        expect(get(robot).state.settled).toEqual({ ...before, speed: 1 });
-        expect(get(robot).reported).toEqual({ speed: true });
+        expect(robot.current.state.settled).toEqual({ ...before, speed: 1 });
+        expect(robot.current.reported).toEqual({ speed: true });
 
         socket.receive(settings(1, false));
-        expect(get(robot).state.settled).toEqual({ ...before, speed: 1, obstacleAvoidance: false });
-        expect(get(robot).reported).toEqual({ speed: true, obstacleAvoidance: true });
+        expect(robot.current.state.settled).toEqual({ ...before, speed: 1, obstacleAvoidance: false });
+        expect(robot.current.reported).toEqual({ speed: true, obstacleAvoidance: true });
     });
 
     it('applies a report received while the robot connection is false', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(robotState(false));
         socket.receive(settings(1, null));
-        expect(get(robot).state.settled.speed).toBe(1);
-        expect(get(robot).reported).toEqual({ speed: true });
+        expect(robot.current.state.settled.speed).toBe(1);
+        expect(robot.current.reported).toEqual({ speed: true });
     });
 
     it('sets previousGait to the old gait when a report changes the gait', async () => {
         const { robot, socket, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
         socket.receive(sportState(2010));
-        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Stairs' } }, previousGait: 'Trotting' });
-        expect(get(robot).reported).toEqual({ gait: true, posture: true });
+        expect(robot.current).toMatchObject({ state: { settled: { gait: 'Stairs' } }, previousGait: 'Trotting' });
+        expect(robot.current.reported).toEqual({ gait: true, posture: true });
     });
 
     it('keeps previousGait when a report states the settled gait, or a posture', async () => {
         const { robot, socket, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
-        const { previousGait } = get(robot);
+        const { previousGait } = robot.current;
         socket.receive(sportState(1016));
         socket.receive(sportState(1007));
         socket.receive(sportState(1013));
-        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Trotting' } }, previousGait });
+        expect(robot.current).toMatchObject({ state: { settled: { gait: 'Trotting' } }, previousGait });
     });
 });
 
@@ -503,19 +520,19 @@ describe('robot settings', () => {
     it.each([-1, 0, 1])('reports speed level %i, and only the speed', (level) => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(level, null));
-        expect(get(robot).state.settled.speed).toBe(level);
-        expect(get(robot).reported).toEqual({ speed: true });
+        expect(robot.current.state.settled.speed).toBe(level);
+        expect(robot.current.reported).toEqual({ speed: true });
     });
 
     it.each([2, null])('states no speed for level %s, and warns', (level) => {
         const { robot, socket } = connectedRobot();
-        const speed = get(robot).state.settled.speed;
+        const speed = robot.current.state.settled.speed;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         socket.receive(settings(level, true));
 
-        expect(get(robot).state.settled.speed).toBe(speed);
-        expect(get(robot).reported).toEqual({ obstacleAvoidance: true });
+        expect(robot.current.state.settled.speed).toBe(speed);
+        expect(robot.current.reported).toEqual({ obstacleAvoidance: true });
         expect(warn).toHaveBeenCalledOnce();
         warn.mockRestore();
     });
@@ -523,29 +540,29 @@ describe('robot settings', () => {
     it.each([null, 'yes', 1])('states no obstacle avoidance for %s', (value) => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(0, value));
-        expect(get(robot).reported).toEqual({ speed: true });
+        expect(robot.current.reported).toEqual({ speed: true });
     });
 
     it('reports obstacle avoidance', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(0, false));
-        expect(get(robot).state.settled.obstacleAvoidance).toBe(false);
-        expect(get(robot).reported).toEqual({ speed: true, obstacleAvoidance: true });
+        expect(robot.current.state.settled.obstacleAvoidance).toBe(false);
+        expect(robot.current.reported).toEqual({ speed: true, obstacleAvoidance: true });
 
         socket.receive(settings(0, true));
-        expect(get(robot).state.settled.obstacleAvoidance).toBe(true);
+        expect(robot.current.state.settled.obstacleAvoidance).toBe(true);
     });
 
     it('leaves the store unchanged on a frame that states nothing', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(-1, null));
-        const before = get(robot);
+        const before = robot.current;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         socket.receive(settings(2, 'yes'));
         socket.receive(sportState(4242));
-        expect(get(robot)).toBe(before);
-        expect(get(robot).state.settled.speed).toBe(-1);
-        expect(get(robot).reported).toEqual({ speed: true });
+        expect(robot.current).toBe(before);
+        expect(robot.current.state.settled.speed).toBe(-1);
+        expect(robot.current.reported).toEqual({ speed: true });
         warn.mockRestore();
     });
 
@@ -554,30 +571,30 @@ describe('robot settings', () => {
         socket.receive(sportState(2017));
         await confirm(enter('Trotting'));
         socket.receive(settings(1, null));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Trotting', speed: 1 });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Trotting', speed: 1 });
     });
 
     it('keeps the settled values but clears reported when the robot is lost', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(-1, true));
-        const { settled } = get(robot).state;
+        const { settled } = robot.current.state;
         socket.receive(robotState(false));
-        expect(get(robot).state.settled).toEqual(settled);
-        expect(get(robot).reported).toEqual({});
+        expect(robot.current.state.settled).toEqual(settled);
+        expect(robot.current.reported).toEqual({});
     });
 
     it('keeps reported while the robot stays connected', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(0, true));
         socket.receive(robotState(true));
-        expect(get(robot).reported).toEqual({ speed: true, obstacleAvoidance: true });
+        expect(robot.current.reported).toEqual({ speed: true, obstacleAvoidance: true });
     });
 
     it('clears reported when the control channel closes', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(settings(0, true));
         socket.onclose?.();
-        expect(get(robot).reported).toEqual({});
+        expect(robot.current.reported).toEqual({});
     });
 });
 
@@ -585,8 +602,8 @@ describe('sport_state report', () => {
     it('reports Leaping on code 2008 under mcf, and no posture', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(sportState(2008));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Leaping', posture: null });
-        expect(get(robot).reported).toEqual({ gait: true, posture: true });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Leaping', posture: null });
+        expect(robot.current.reported).toEqual({ gait: true, posture: true });
     });
 
     it.each([
@@ -599,8 +616,8 @@ describe('sport_state report', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(sportState(2017));
         socket.receive(sportState(_code));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Backstand', posture: _posture });
-        expect(get(robot).reported).toEqual({ gait: true, posture: true });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Backstand', posture: _posture });
+        expect(robot.current.reported).toEqual({ gait: true, posture: true });
     });
 
     it('keeps the gait and clears the posture on code 1013', () => {
@@ -608,7 +625,7 @@ describe('sport_state report', () => {
         socket.receive(sportState(1015));
         socket.receive(sportState(1007));
         socket.receive(sportState(1013));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'StaticWalk', posture: null });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'StaticWalk', posture: null });
     });
 
     it.each([
@@ -621,11 +638,11 @@ describe('sport_state report', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(sportState(1016));
         socket.receive(sportState(1004));
-        const before = get(robot);
+        const before = robot.current;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         socket.receive(sportState(_code, _motionMode));
-        expect(get(robot)).toBe(before);
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Trotting', posture: 'Lying' });
+        expect(robot.current).toBe(before);
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Trotting', posture: 'Lying' });
         expect(warn).not.toHaveBeenCalled();
         warn.mockRestore();
     });
@@ -633,11 +650,11 @@ describe('sport_state report', () => {
     it('changes nothing on an unknown code, and warns once per code', () => {
         const { robot, socket } = connectedRobot();
         socket.receive(sportState(1016));
-        const before = get(robot);
+        const before = robot.current;
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         socket.receive(sportState(9001));
         socket.receive(sportState(9001));
-        expect(get(robot)).toBe(before);
+        expect(robot.current).toBe(before);
         expect(warn).toHaveBeenCalledOnce();
 
         socket.receive(sportState(9002));
@@ -648,13 +665,13 @@ describe('sport_state report', () => {
     it('applies each of two reports stating the same gait', async () => {
         const { robot, socket, confirm } = connectedRobot();
         socket.receive(sportState(2017));
-        expect(get(robot).state.settled.gait).toBe('Backstand');
+        expect(robot.current.state.settled.gait).toBe('Backstand');
 
         await confirm(enter('Trotting'));
-        expect(get(robot).state.settled.gait).toBe('Trotting');
+        expect(robot.current.state.settled.gait).toBe('Trotting');
 
         socket.receive(sportState(2017));
-        expect(get(robot).state.settled.gait).toBe('Backstand');
+        expect(robot.current.state.settled.gait).toBe('Backstand');
     });
 
     it('does not re-apply an earlier speed report on a gait report', async () => {
@@ -662,30 +679,30 @@ describe('sport_state report', () => {
         socket.receive(settings(-1, null));
         await confirm(set({ name: 'speed', value: 1 }));
         socket.receive(sportState(2008));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Leaping', speed: 1 });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Leaping', speed: 1 });
     });
 
     it('leaves a pending gait proposal pending, which a confirmation then settles', async () => {
         const { robot, socket } = connectedRobot();
         const done = robot.request(enter('Jumping'));
         socket.receive(sportState(2011));
-        expect(get(robot).state.settled.gait).toBe('Handstand');
-        expect(get(robot).state.pending.gait).toEqual({ value: 'Jumping', reqId: socket.reqId() });
+        expect(robot.current.state.settled.gait).toBe('Handstand');
+        expect(robot.current.state.pending.gait).toEqual({ value: 'Jumping', reqId: socket.reqId() });
 
         socket.receive(verdict(socket.reqId(), 'confirmed', 0));
         await done;
-        expect(get(robot).state.settled.gait).toBe('Jumping');
+        expect(robot.current.state.settled.gait).toBe('Jumping');
     });
 
     it('leaves a pending gait proposal displayed, and a refusal keeps the reported gait', async () => {
         const { robot, socket, reply } = connectedRobot();
         const done = robot.request(enter('Jumping'));
         socket.receive(sportState(2016));
-        expect(get(robot).state.settled.gait).toBe('CrossStep');
-        expect(displayed(get(robot).state).gait).toBe('Jumping');
+        expect(robot.current.state.settled.gait).toBe('CrossStep');
+        expect(displayed(robot.current.state).gait).toBe('Jumping');
         reply('failed');
         await done;
-        expect(get(robot).state.settled.gait).toBe('CrossStep');
+        expect(robot.current.state.settled.gait).toBe('CrossStep');
     });
 });
 
@@ -702,11 +719,11 @@ describe('request and the robot state', () => {
     it('proposes under the request id the store sent to the relay', async () => {
         const { robot, socket, reply } = connectedRobot();
         const answer = robot.request(set({ name: 'headlight', value: 'red' }));
-        expect(get(robot).state.pending.headlight?.reqId).toBe(socket.reqId());
+        expect(robot.current.state.pending.headlight?.reqId).toBe(socket.reqId());
 
         reply('confirmed');
         await answer;
-        expect(get(robot).state.pending).toEqual({});
+        expect(robot.current.state.pending).toEqual({});
     });
 
     it('proposes each field a cue changes, and a confirmation settles them', async () => {
@@ -714,15 +731,15 @@ describe('request and the robot state', () => {
         const answer = robot.request(SABOTS);
 
         expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Sabots', sequence: SABOTS.steps })]);
-        expect(get(robot).state.pending).toEqual({
+        expect(robot.current.state.pending).toEqual({
             gait: { value: 'Backstand', reqId: expect.any(Number) },
             headlight: { value: 'blue', reqId: expect.any(Number) },
         });
 
         reply('confirmed');
         expect((await answer).outcome).toBe('confirmed');
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Backstand', headlight: 'blue' });
-        expect(get(robot).state.pending).toEqual({});
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Backstand', headlight: 'blue' });
+        expect(robot.current.state.pending).toEqual({});
     });
 
     it('proposes only the fields whose value differs from the displayed one', async () => {
@@ -730,122 +747,122 @@ describe('request and the robot state', () => {
         await confirm(set({ name: 'headlight', value: 'blue' }));
         // The headlight is already blue, so only the gait is proposed.
         const answer = robot.request(sequence('', enter('Trotting'), set({ name: 'headlight', value: 'blue' })));
-        expect(get(robot).state.pending.gait).toBeDefined();
-        expect(get(robot).state.pending.headlight).toBeUndefined();
+        expect(robot.current.state.pending.gait).toBeDefined();
+        expect(robot.current.state.pending.headlight).toBeUndefined();
         reply('confirmed');
         await answer;
     });
 
     it.each(['failed', 'rejected', 'unknown'] as const)('keeps the settled state on %s', async (_outcome) => {
         const { robot, reply } = connectedRobot();
-        const before = get(robot).state.settled;
+        const before = robot.current.state.settled;
         const answer = robot.request(sequence('', enter('ClassicWalk'), set({ name: 'headlight', value: 'green' })));
-        expect(displayed(get(robot).state)).toMatchObject({ gait: 'ClassicWalk', headlight: 'green' });
+        expect(displayed(robot.current.state)).toMatchObject({ gait: 'ClassicWalk', headlight: 'green' });
 
         reply(_outcome);
         await answer;
-        expect(get(robot).state.settled).toEqual(before);
-        expect(displayed(get(robot).state)).toEqual(before);
-        expect(get(robot).state.pending).toEqual({});
+        expect(robot.current.state.settled).toEqual(before);
+        expect(displayed(robot.current.state)).toEqual(before);
+        expect(robot.current.state.pending).toEqual({});
     });
 
     it('proposes nothing for a cue that changes no tracked field, and still sends it', async () => {
         const { robot, socket, reply } = connectedRobot();
-        const before = get(robot).state;
+        const before = robot.current.state;
         const answer = robot.request(HELLO);
         expect(socket.written).toEqual([expect.objectContaining({ command_name: 'Hello' })]);
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
         reply('failed');
         await answer;
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
     });
 
     it('proposes nothing for a click on the value already displayed, and still sends it', async () => {
         const { robot, socket, reply } = connectedRobot();
-        const cue = set({ name: 'headlight', value: displayed(get(robot).state).headlight });
-        const before = get(robot).state;
+        const cue = set({ name: 'headlight', value: displayed(robot.current.state).headlight });
+        const before = robot.current.state;
         const answer = robot.request(cue);
         expect(socket.written).toEqual([expect.objectContaining({ command_name: cue.label, sequence: cue.steps })]);
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
         reply('confirmed');
         expect((await answer).outcome).toBe('confirmed');
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
     });
 
     it('proposes nothing when the channel is closed, and resolves failed', async () => {
         const { robot, socket } = connectedRobot();
         socket.readyState = CLOSED;
-        const before = get(robot).state;
+        const before = robot.current.state;
         const answer = robot.request(enter('Trotting'));
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
         expect((await answer).outcome).toBe('failed');
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
     });
 
     it('sets obstacle avoidance and settles it on confirmation', async () => {
         const { robot, reply } = connectedRobot();
         const answer = robot.request(set({ name: 'obstacleAvoidance', value: false }));
-        expect(get(robot).state.pending.obstacleAvoidance?.value).toBe(false);
+        expect(robot.current.state.pending.obstacleAvoidance?.value).toBe(false);
         reply('confirmed');
         await answer;
-        expect(get(robot).state.settled.obstacleAvoidance).toBe(false);
+        expect(robot.current.state.settled.obstacleAvoidance).toBe(false);
     });
 
     it('keeps two cues on different fields pending side by side, each settled by its own verdict', async () => {
         const { robot, reply } = connectedRobot();
-        const { gait } = get(robot).state.settled;
+        const { gait } = robot.current.state.settled;
         const first = robot.request(enter('Trotting'));
         const second = robot.request(enter('Sitting'));
-        expect(displayed(get(robot).state)).toMatchObject({ gait: 'Trotting', posture: 'Sitting' });
+        expect(displayed(robot.current.state)).toMatchObject({ gait: 'Trotting', posture: 'Sitting' });
 
         reply('failed', 0);
         await first;
-        expect(get(robot).state.settled.gait).toBe(gait);
-        expect(get(robot).state.pending.gait).toBeUndefined();
-        expect(get(robot).state.pending.posture).toBeDefined();
+        expect(robot.current.state.settled.gait).toBe(gait);
+        expect(robot.current.state.pending.gait).toBeUndefined();
+        expect(robot.current.state.pending.posture).toBeDefined();
 
         reply('confirmed', 1);
         await second;
-        expect(get(robot).state.settled).toMatchObject({ gait, posture: 'Sitting' });
+        expect(robot.current.state.settled).toMatchObject({ gait, posture: 'Sitting' });
     });
 
     it('lets a second cue on the same field replace the first, whose verdict then changes nothing', async () => {
         const { robot, reply } = connectedRobot();
-        const { gait } = get(robot).state.settled;
+        const { gait } = robot.current.state.settled;
         const first = robot.request(enter('Pose'));
         const second = robot.request(enter('Jumping'));
-        expect(displayed(get(robot).state)).toMatchObject({ gait: 'Jumping', posture: null });
+        expect(displayed(robot.current.state)).toMatchObject({ gait: 'Jumping', posture: null });
 
-        const before = get(robot).state;
+        const before = robot.current.state;
         reply('confirmed', 0);
         await first;
-        expect(get(robot).state).toBe(before);
+        expect(robot.current.state).toBe(before);
 
         reply('failed', 1);
         await second;
-        expect(get(robot).state.settled.gait).toBe(gait);
+        expect(robot.current.state.settled.gait).toBe(gait);
     });
 
     it('keeps the gait on entering Pose', async () => {
         const { robot, reply, confirm } = connectedRobot();
         await confirm(enter('Backstand'));
         const answer = robot.request(enter('Pose'));
-        expect(get(robot).state.pending).toEqual({ posture: { value: 'Pose', reqId: expect.any(Number) } });
+        expect(robot.current.state.pending).toEqual({ posture: { value: 'Pose', reqId: expect.any(Number) } });
         reply('confirmed');
         await answer;
-        expect(get(robot).state.settled).toMatchObject({ gait: 'Backstand', posture: 'Pose' });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'Backstand', posture: 'Pose' });
     });
 
     it('leaves the gait as it was before Sit, and no posture, after Sit then RiseSit', async () => {
         const { robot, reply, confirm } = connectedRobot();
         await confirm(enter('EconomicGait'));
         await confirm(enter('Sitting'));
-        expect(get(robot).state.settled).toMatchObject({ gait: 'EconomicGait', posture: 'Sitting' });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'EconomicGait', posture: 'Sitting' });
         const answer = robot.request(leave('Sitting'));
-        expect(get(robot).state.pending).toEqual({ posture: { value: null, reqId: expect.any(Number) } });
+        expect(robot.current.state.pending).toEqual({ posture: { value: null, reqId: expect.any(Number) } });
         reply('confirmed');
         await answer;
-        expect(get(robot).state.settled).toMatchObject({ gait: 'EconomicGait', posture: null });
+        expect(robot.current.state.settled).toMatchObject({ gait: 'EconomicGait', posture: null });
     });
 
 });
@@ -855,10 +872,10 @@ describe('previousGait', () => {
         const { robot, reply, confirm } = connectedRobot();
         await confirm(enter('StaticWalk'));
         const answer = robot.request(enter('Leaping'));
-        expect(get(robot).previousGait).toBe('FreeWalk');
+        expect(robot.current.previousGait).toBe('FreeWalk');
         reply('confirmed');
         await answer;
-        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'StaticWalk' });
+        expect(robot.current).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'StaticWalk' });
     });
 
     it('is unchanged when the old gait is one the app cannot command', async () => {
@@ -866,14 +883,14 @@ describe('previousGait', () => {
         await confirm(enter('Trotting'));
         socket.receive(sportState(2010));
         await confirm(enter('Leaping'));
-        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'Trotting' });
+        expect(robot.current).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'Trotting' });
     });
 
     it('is unchanged on re-entering the current gait', async () => {
         const { robot, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
         await confirm(enter('Trotting'));
-        expect(get(robot).previousGait).toBe('FreeWalk');
+        expect(robot.current.previousGait).toBe('FreeWalk');
     });
 
     it('is unchanged on a refused gait change', async () => {
@@ -881,17 +898,17 @@ describe('previousGait', () => {
         const answer = robot.request(enter('Trotting'));
         reply('failed');
         await answer;
-        expect(get(robot).previousGait).toBe('FreeWalk');
+        expect(robot.current.previousGait).toBe('FreeWalk');
     });
 
     it('is unchanged on entering or leaving a posture', async () => {
         const { robot, confirm } = connectedRobot();
         await confirm(enter('Trotting'));
-        const { previousGait } = get(robot);
+        const { previousGait } = robot.current;
         const cues = [enter('Pose'), leave('Pose'), enter('Damp'), enter('Sitting'), leave('Sitting'), enter('Lying')];
         for (const cue of [...cues, recover()]) {
             await confirm(cue);
-            expect(get(robot).previousGait).toBe(previousGait);
+            expect(robot.current.previousGait).toBe(previousGait);
         }
     });
 
@@ -899,7 +916,7 @@ describe('previousGait', () => {
         const { robot, confirm } = connectedRobot();
         await confirm(enter('StaticWalk'));
         await confirm(sequence('', enter('Trotting'), enter('Sitting'), enter('Backstand')));
-        expect(get(robot)).toMatchObject({ state: { settled: { gait: 'Backstand' } }, previousGait: 'StaticWalk' });
+        expect(robot.current).toMatchObject({ state: { settled: { gait: 'Backstand' } }, previousGait: 'StaticWalk' });
     });
 });
 
@@ -923,7 +940,7 @@ describe('the toggles', () => {
         const connected = connectedRobot();
         const b = () => connected.robot.toggleGait('Leaping');
         expect(pressAll(connected, [b, b, b])).toEqual(asSent(enter('Leaping'), enter('FreeWalk'), enter('Leaping')));
-        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'FreeWalk' });
+        expect(connected.robot.current).toMatchObject({ state: { settled: { gait: 'Leaping' } }, previousGait: 'FreeWalk' });
     });
 
     it('b from StaticWalk, then b again, returns to StaticWalk', async () => {
@@ -931,7 +948,7 @@ describe('the toggles', () => {
         await connected.confirm(enter('StaticWalk'));
         const b = () => connected.robot.toggleGait('Leaping');
         expect(pressAll(connected, [b, b])).toEqual(asSent(enter('Leaping'), enter('StaticWalk')));
-        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'StaticWalk' } }, previousGait: 'Leaping' });
+        expect(connected.robot.current).toMatchObject({ state: { settled: { gait: 'StaticWalk' } }, previousGait: 'Leaping' });
     });
 
     it('b from Leaping after a gait the app cannot command returns to the gait before it, and keeps toggling', async () => {
@@ -940,7 +957,7 @@ describe('the toggles', () => {
         await connected.confirm(enter('Leaping'));
         const b = () => connected.robot.toggleGait('Leaping');
         expect(pressAll(connected, [b, b, b])).toEqual(asSent(enter('FreeWalk'), enter('Leaping'), enter('FreeWalk')));
-        expect(get(connected.robot)).toMatchObject({ state: { settled: { gait: 'FreeWalk' } }, previousGait: 'Leaping' });
+        expect(connected.robot.current).toMatchObject({ state: { settled: { gait: 'FreeWalk' } }, previousGait: 'Leaping' });
     });
 
     it('a from a gait sends StopMove and Pose on, then only Pose off', async () => {
@@ -948,7 +965,7 @@ describe('the toggles', () => {
         await connected.confirm(enter('Trotting'));
         const a = () => connected.robot.togglePosture('Pose');
         expect(pressAll(connected, [a, a])).toEqual(asSent(enter('Pose'), leave('Pose')));
-        expect(get(connected.robot)).toMatchObject({
+        expect(connected.robot.current).toMatchObject({
             state: { settled: { gait: 'Trotting', posture: null } },
             previousGait: 'FreeWalk',
         });
@@ -981,7 +998,7 @@ describe('the toggles', () => {
 
     it('sends nothing while a toggled field waits for a verdict, and sends once another field waits', () => {
         /** Whether `_toggle` sends a cue while `_waiting` waits for its verdict. */
-        const sends = (_waiting: Cue, _toggle: (_robot: ReturnType<typeof createRobot>) => void) => {
+        const sends = (_waiting: Cue, _toggle: (_robot: Robot) => void) => {
             const { robot, socket } = connectedRobot();
             void robot.request(_waiting);
             _toggle(robot);
@@ -990,9 +1007,9 @@ describe('the toggles', () => {
         const waitsPosture = enter('Sitting');
         const waitsGait = enter('Trotting');
         const waitsHeadlight = set({ name: 'headlight', value: 'red' });
-        const pose = (_robot: ReturnType<typeof createRobot>) => _robot.togglePosture('Pose');
-        const sit = (_robot: ReturnType<typeof createRobot>) => _robot.togglePosture('Sitting');
-        const leap = (_robot: ReturnType<typeof createRobot>) => _robot.toggleGait('Leaping');
+        const pose = (_robot: Robot) => _robot.togglePosture('Pose');
+        const sit = (_robot: Robot) => _robot.togglePosture('Sitting');
+        const leap = (_robot: Robot) => _robot.toggleGait('Leaping');
         [pose, sit, leap].forEach((_toggle) => {
             expect(sends(waitsPosture, _toggle)).toBe(false);
             expect(sends(waitsHeadlight, _toggle)).toBe(true);

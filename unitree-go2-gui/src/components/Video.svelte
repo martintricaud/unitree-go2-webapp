@@ -7,9 +7,7 @@
         FaceDetector,
     } from '@mediapipe/tasks-vision';
     import { onMount, onDestroy } from 'svelte';
-    import { writable, derived } from 'svelte/store';
-    import type { Writable } from 'svelte/store';
-    import { robot } from '../lib/stores/robot';
+    import { robot } from '../lib/stores/robot.svelte';
     import type {
         NormalizedLandmark,
         Detection,
@@ -33,11 +31,12 @@
     let video: HTMLVideoElement;
     let rafId: number;
 
-    const cameraFrame = writable<ImageBitmap | null>(null);
-
-    const aggregateFrameStore = derived([robot.videoFrame, cameraFrame], ([videoFrame, cameraFrame]) => {
-        return webcamOn ? cameraFrame : videoFrame;
-    });
+    let cameraFrame = $state.raw<ImageBitmap | null>(null);
+    /// A new webcam frame closes the one it replaces, which nothing draws any more.
+    const showCamera = (_bitmap: ImageBitmap | null) => {
+        cameraFrame?.close();
+        cameraFrame = _bitmap;
+    };
 
     let faceLandmarker: FaceLandmarker | null = null;
     let faceDetector: FaceDetector | null = null;
@@ -133,22 +132,7 @@
     }
 
     let landmarkDetectionResult;
-    let faceDetectionResult: Writable<FaceDetectorResult> = writable({ detections: [] });
-    let faces = derived(faceDetectionResult, ($faceDetectionResult) => {
-        return $faceDetectionResult.detections.map((face) => {
-            if (face.boundingBox === undefined) {
-                return null;
-            } else {
-                return createImageBitmap(
-                    canvas,
-                    face.boundingBox.originX,
-                    face.boundingBox.originY,
-                    face.boundingBox.width,
-                    face.boundingBox.height,
-                );
-            }
-        });
-    });
+    let faceDetectionResult = $state.raw<FaceDetectorResult>({ detections: [] });
     onMount(() => {
         // Start webcam
         (async () => {
@@ -165,11 +149,7 @@
 
             const loop = async () => {
                 if (!running) return;
-                const bitmap = await createImageBitmap(video);
-                cameraFrame.update((prev) => {
-                    prev?.close();
-                    return bitmap;
-                });
+                showCamera(await createImageBitmap(video));
 
                 rafId = requestAnimationFrame(loop);
             };
@@ -183,42 +163,37 @@
         initFaceLandmarker();
         initFaceDetection();
         //createAgeClassifier();
-
-        // Subscribe to the frame store
-        const unsubscribe = aggregateFrameStore.subscribe((bitmap) => {
-            if (!bitmap) return;
-            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-            const now = performance.now();
-            if (now <= lastTs) return;
-            lastTs = now;
-            if (faceLandmarker && props.faceLandmarksEnabled) {
-                landmarkDetectionResult = faceLandmarker.detectForVideo(canvas, now);
-                if (!landmarkDetectionResult.faceLandmarks) return;
-                drawFaceLandmarks(landmarkDetectionResult.faceLandmarks);
-            }
-            if (faceDetector && props.faceDetectionEnabled) {
-                // faceDetectionResult = faceDetector.detectForVideo(canvas, now);
-                faceDetectionResult.set(faceDetector.detectForVideo(canvas, now));
-                if (!$faceDetectionResult.detections) return;
-                // if (agePredictionEnabled) {
-                //     for(let detection of result2.detections){
-                //         let face = cropCanvasToBoundingBox(ctx, detection.boundingBox)
-                //     }
-                // }
-            }
-        });
-
-        return () => unsubscribe();
+    });
+    // Draws each new frame, the webcam's while it is on and otherwise the robot's, and runs the enabled
+    // detections on it. Declared after `onMount`, which creates `ctx`, so it runs after it.
+    $effect(() => {
+        const shown = webcamOn ? cameraFrame : robot.frame;
+        if (!shown) return;
+        ctx.drawImage(shown, 0, 0, canvas.width, canvas.height);
+        const now = performance.now();
+        if (now <= lastTs) return;
+        lastTs = now;
+        if (faceLandmarker && props.faceLandmarksEnabled) {
+            landmarkDetectionResult = faceLandmarker.detectForVideo(canvas, now);
+            if (!landmarkDetectionResult.faceLandmarks) return;
+            drawFaceLandmarks(landmarkDetectionResult.faceLandmarks);
+        }
+        if (faceDetector && props.faceDetectionEnabled) {
+            // Written, never read, here: a read would make the effect re-run on its own write.
+            faceDetectionResult = faceDetector.detectForVideo(canvas, now);
+            // if (agePredictionEnabled) {
+            //     for(let detection of result2.detections){
+            //         let face = cropCanvasToBoundingBox(ctx, detection.boundingBox)
+            //     }
+            // }
+        }
     });
     onDestroy(() => {
         running = false;
         cancelAnimationFrame(rafId);
         stream?.getTracks().forEach((t) => t.stop());
 
-        cameraFrame.update((frame) => {
-            frame?.close();
-            return null;
-        });
+        showCamera(null);
     });
 </script>
 
@@ -234,8 +209,8 @@
     >
     </canvas>
     <div bind:this={liveView} class="liveView" style="width: {cw}px;height: {ch}px;">
-        {#if $faceDetectionResult.detections && $faceDetectionResult.detections.length > 0}
-            {#each $faceDetectionResult.detections as { boundingBox, categories, keypoints }}
+        {#if faceDetectionResult.detections && faceDetectionResult.detections.length > 0}
+            {#each faceDetectionResult.detections as { boundingBox, categories, keypoints }}
                 {#if boundingBox}
                     {@const { width, height, originX, originY } = boundingBox}
                     <!-- Prediction text -->

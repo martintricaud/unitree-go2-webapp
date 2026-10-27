@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { map, pick, set, times } from 'remeda';
-import { get } from 'svelte/store';
 import { CONDUITE, presets } from '../data/cues';
 import { enter, perform, sequence, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
 import { CueSheet } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
-import { createRobot } from './robot';
+import { Robot } from './robot.svelte';
 
 const CUES: [Cue, ...Cue[]] = [enter('FreeWalk'), perform('Hello'), wait(1)];
 
@@ -26,7 +25,7 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
   const frames: string[] = [];
   const send = (_frame: string) => void frames.push(_frame);
   const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null };
-  const robot = createRobot({ openSocket: () => socket, outcomeLog: new OutcomeLog() });
+  const robot = new Robot({ openSocket: () => socket, outcomeLog: new OutcomeLog() });
   robot.connect();
   const cueSheet = new CueSheet(_cues, robot, _storage);
   const sent = () => map(frames, (_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
@@ -136,7 +135,7 @@ describe('cueSheet keys', () => {
   it('sends nothing for a toggle whose fields wait for a verdict, and still sends a preset', () => {
     const { cueSheet, robot, sent } = setup();
     cueSheet.press('a');
-    expect(get(robot).state.pending.posture).toBeDefined();
+    expect(robot.current.state.pending.posture).toBeDefined();
     // Pose, Sit and Leaping all toggle the posture, which waits.
     cueSheet.press('a');
     cueSheet.press('x');
