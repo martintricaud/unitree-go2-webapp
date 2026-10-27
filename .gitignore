@@ -1,3 +1,6 @@
 backend/venv
 # backend/go2_webrtc_connect
 backend/__pycache__
+
+# macOS folder metadata
+.DS_Store
