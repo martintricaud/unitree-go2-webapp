@@ -159,6 +159,18 @@ button:focus-visible {
   height: calc(100% - 0.5em);
 }
 
+/* A grid whose buttons stay in one column: the rows share the grid's height, and the buttons
+   shrink below the button rule's min-height to fit. */
+.button-grid.single-column {
+  grid-auto-flow: row;
+  grid-template-rows: none;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.button-grid.single-column button {
+  min-height: 0;
+}
+
 .tp-lblv {
   flex-direction: column !important;
 }

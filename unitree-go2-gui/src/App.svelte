@@ -149,7 +149,7 @@
     </section>
     <section>
         <h2>Light</h2>
-        <div class="button-grid">
+        <div class="button-grid single-column">
             {#each cueSheet.state.shown.pane.lights as cell (cell.id)}
                 <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
                     optionName={cell.label}

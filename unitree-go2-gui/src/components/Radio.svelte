@@ -18,12 +18,3 @@
     {props.optionName}
     {#if props.spinning}<span class="spinner" aria-label="waiting for the robot"></span>{:else if props.selected}✅{/if}
 </button>
-
-<style>
-    button:disabled,
-    button.greyed {
-        cursor: not-allowed;
-        opacity: 0.5;
-    }
-
-</style>
