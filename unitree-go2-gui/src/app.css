@@ -175,6 +175,16 @@ button:focus-visible {
   min-height: 0;
 }
 
+/* Two stacked buttons are divided by one grooved line: the upper button's bottom edge. A pressed
+   or held button keeps its inset border on every side. */
+.button-grid.single-column>.target+.target:not(.pressed) button:not(:active) {
+  border-top: none;
+}
+
+.button-grid.single-column>.target:not(.pressed):has(+ .target) button:not(:active) {
+  border-bottom-style: groove;
+}
+
 .tp-lblv {
   flex-direction: column !important;
 }

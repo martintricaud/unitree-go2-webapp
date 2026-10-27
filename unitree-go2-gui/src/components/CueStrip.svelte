@@ -116,6 +116,15 @@
         flex: 1 1 auto;
     }
 
+    /* Two adjacent tools are divided by one grooved line: the left tool's right edge. */
+    .bar button + button {
+        border-left: none;
+    }
+
+    .bar button:has(+ button) {
+        border-right-style: groove;
+    }
+
     .bar .active {
         border-style: inset;
         font-weight: bold;
@@ -137,6 +146,16 @@
         font-weight: 500;
         line-height: 1em;
         overflow-wrap: anywhere;
+    }
+
+    /* Two stacked cells are divided by one grooved line: the upper cell's bottom edge. A pressed
+       cell keeps its inset border on every side. */
+    .cell + .cell:not(.pressed) {
+        border-top: none;
+    }
+
+    .cell:not(.pressed):has(+ .cell) {
+        border-bottom-style: groove;
     }
 
     [contenteditable] {
