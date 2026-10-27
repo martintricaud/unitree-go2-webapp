@@ -79,7 +79,7 @@ describe('label', () => {
   it('names each cue as the cue sheet and the outcome log show it', () => {
     expect(
       [
-        enter('Leaping'),
+        enter('Bound'),
         enter('Pose'),
         leave('Lying'),
         perform('Hello'),
@@ -93,7 +93,7 @@ describe('label', () => {
         sequence('', perform('Hello')),
       ].map((_cue) => _cue.label),
     ).toEqual([
-      'Leaping',
+      'Bound',
       'Pose',
       'Exit Lying',
       'Hello',
@@ -135,7 +135,7 @@ describe('label', () => {
 
 describe('changes', () => {
   it('lists the fields each cue changes, a sequence its items\' changes in order', () => {
-    expect(enter('Leaping').changes).toEqual([{ gait: 'Leaping' }, { posture: null }]);
+    expect(enter('Bound').changes).toEqual([{ gait: 'Bound' }, { posture: null }]);
     expect(enter('Pose').changes).toEqual([{ posture: 'Pose' }]);
     expect(leave('Pose').changes).toEqual([{ posture: null }]);
     expect(recover().changes).toEqual([{ posture: null }]);
@@ -143,8 +143,8 @@ describe('changes', () => {
     [perform('Hello'), orient(0, -1, 0), dim(4), wait(1)].forEach((_cue) => {
       expect(_cue.changes).toEqual([]);
     });
-    expect(sequence('', enter('Trotting'), wait(1), enter('Sitting')).changes).toEqual([
-      { gait: 'Trotting' },
+    expect(sequence('', enter('Running'), wait(1), enter('Sitting')).changes).toEqual([
+      { gait: 'Running' },
       { posture: null },
       { posture: 'Sitting' },
     ]);
@@ -158,7 +158,7 @@ describe('items', () => {
 
   it('is empty for every cue not built by sequence', () => {
     [
-      enter('Leaping'),
+      enter('Bound'),
       enter('Pose'),
       leave('Lying'),
       perform('Hello'),

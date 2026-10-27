@@ -67,7 +67,7 @@ describe('the verdict on a proposal', () => {
             INITIAL,
             propose({ mode: 'Pose' }, 1),
             resolve(1, CONFIRMED),
-            propose({ mode: 'Trotting' }, 2),
+            propose({ mode: 'Running' }, 2),
             resolve(2, FAILED),
         );
         expect(displayed(state).mode).toBe('Pose');
@@ -96,29 +96,29 @@ describe('proposals on different fields', () => {
 
 describe('a second proposal on the same field', () => {
     it('replaces the earlier proposal for that field', () => {
-        const state = pipe(INITIAL, propose({ mode: 'Pose' }, 1), propose({ mode: 'Trotting' }, 2));
-        expect(state.pending).toEqual({ mode: { value: 'Trotting', reqId: 2 } });
+        const state = pipe(INITIAL, propose({ mode: 'Pose' }, 1), propose({ mode: 'Running' }, 2));
+        expect(state.pending).toEqual({ mode: { value: 'Running', reqId: 2 } });
     });
 
     it("makes the earlier request's verdict change nothing", () => {
-        const before = pipe(INITIAL, propose({ mode: 'Pose' }, 1), propose({ mode: 'Trotting' }, 2));
+        const before = pipe(INITIAL, propose({ mode: 'Pose' }, 1), propose({ mode: 'Running' }, 2));
 
         const after = resolve(1, CONFIRMED)(before);
 
         expect(after).toBe(before);
-        expect(displayed(after).mode).toBe('Trotting');
+        expect(displayed(after).mode).toBe('Running');
     });
 
     it('replaces only the fields it carries, so the earlier verdict still settles the others', () => {
         const state = pipe(
             INITIAL,
             propose({ mode: 'Pose', headlight: 'red' }, 1),
-            propose({ mode: 'Trotting' }, 2),
+            propose({ mode: 'Running' }, 2),
             resolve(1, CONFIRMED),
         );
 
         expect(state.settled).toEqual({ ...START, headlight: 'red' });
-        expect(state.pending.mode).toEqual({ value: 'Trotting', reqId: 2 });
+        expect(state.pending.mode).toEqual({ value: 'Running', reqId: 2 });
     });
 });
 

@@ -52,7 +52,7 @@ const STRETCH_HELLO_JUMP = sequence(
 const MONOLOGUE = [
     enter('Sitting'),
     sequence('FreeWalk', ...EXIT_SIT),
-    sequence('Chien', enter('Leaping')),
+    sequence('Chien', enter('Bound')),
     enter('FreeWalk'),
     presets.dance,
     // perform('Content'),
@@ -111,7 +111,7 @@ export const KEYS = ['a', 'b', 'x', 'y'] as const;
 /// `CONDUITE`, so that the store finds their cells by identity.
 export const KEYED = {
     a: POSTURE_CUES.Pose,
-    b: GAIT_CUES.Leaping,
+    b: GAIT_CUES.Bound,
     x: POSTURE_CUES.Sitting,
     y: presets.dance,
 } satisfies Partial<Record<(typeof KEYS)[number], Cue>>;

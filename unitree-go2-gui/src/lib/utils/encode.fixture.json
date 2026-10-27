@@ -509,7 +509,7 @@
       "topic": "SPORT_MOD",
       "command_name": "StaticWalk"
     },
-    "Trotting": {
+    "Running": {
       "parameter": {
         "data": true
       },
@@ -545,7 +545,7 @@
       "topic": "SPORT_MOD",
       "command_name": "FreeWalk"
     },
-    "Leaping": {
+    "Bound": {
       "parameter": {
         "data": true
       },

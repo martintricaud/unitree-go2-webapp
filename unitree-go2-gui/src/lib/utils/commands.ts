@@ -22,11 +22,11 @@ type PostureRequests = readonly [PostureRequest, ...PostureRequest[]];
 export const GAITS = {
     FreeWalk: { enter: 'FreeWalk' },
     StaticWalk: { enter: 'StaticWalk' },
-    Trotting: { enter: 'TrotRun' },
+    Running: { enter: 'TrotRun' },
     EconomicGait: { enter: 'EconomicGait' },
     ClassicWalk: { enter: 'ClassicWalk' },
     ContinuousGait: { enter: 'ContinuousGait' },
-    Leaping: { enter: 'FreeBound' },
+    Bound: { enter: 'FreeBound' },
     Jumping: { enter: 'FreeJump' },
     FreeAvoid: { enter: 'FreeAvoid' },
     Handstand: { enter: 'HandStand' },

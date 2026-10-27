@@ -127,7 +127,7 @@ describe('cueSheet keys', () => {
 
   it.each([
     ['a', ENTER_POSE],
-    ['b', enter('Leaping')],
+    ['b', enter('Bound')],
     ['x', enter('Sitting')],
     ['y', presets.dance],
   ] as const)('sends the cue %s is linked to in the default document, draws it pressed, and leaves the pointer', (_key, _cue) => {
@@ -156,7 +156,7 @@ describe('cueSheet keys', () => {
     const { cueSheet, robot, sent } = setup(CONDUITE);
     cueSheet.press('a');
     expect(robot.current.state.pending.posture).toBeDefined();
-    // Pose, Sit and Leaping all toggle the posture, which waits.
+    // Pose, Sit and Bound all toggle the posture, which waits.
     cueSheet.press('a');
     cueSheet.press('x');
     cueSheet.press('b');

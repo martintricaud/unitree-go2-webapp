@@ -25,7 +25,7 @@ const INITIAL_ROBOT_STATE: RobotState = {
 const STATES: RobotState[] = [
   INITIAL_ROBOT_STATE,
   { gait: 'Stairs', posture: 'Sitting', headlight: 'red', speed: -1, obstacleAvoidance: false },
-  { gait: 'Trotting', posture: 'Lying', headlight: 'blue', speed: 1, obstacleAvoidance: true },
+  { gait: 'Running', posture: 'Lying', headlight: 'blue', speed: 1, obstacleAvoidance: true },
 ];
 
 describe('transition', () => {
@@ -43,9 +43,9 @@ describe('transition', () => {
   });
 
   it('clears the posture on entering a gait from a posture', () => {
-    expect(transition(enter('Leaping'))(STATES[2])).toEqual({
+    expect(transition(enter('Bound'))(STATES[2])).toEqual({
       ...STATES[2],
-      gait: 'Leaping',
+      gait: 'Bound',
       posture: null,
     });
   });
@@ -103,8 +103,8 @@ describe('transition', () => {
       enter('Stairs');
       // @ts-expect-error 'Pose' is a posture, not an action.
       perform('Pose');
-      // @ts-expect-error 'Leaping' is a gait, not a posture, so it cannot be left.
-      leave('Leaping');
+      // @ts-expect-error 'Bound' is a gait, not a posture, so it cannot be left.
+      leave('Bound');
     };
     expect(refused).toBeDefined();
     // @ts-expect-error 'Sit' takes no flag.
