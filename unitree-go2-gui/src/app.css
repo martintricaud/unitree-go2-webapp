@@ -4,6 +4,8 @@
   --app-border: 2px;
   /* The width of a button's border, which the posture group's row gap also takes. */
   --button-border: 4px;
+  /* The line between two areas of the screen, and between two columns of the pane. */
+  --divider: 2px groove rgb(200, 200, 200);
   font-size: small;
   line-height: 1.5;
   color-scheme: light;
@@ -26,7 +28,8 @@ body {
 #app {
   border: var(--app-border) solid rgb(177,177,177) ;
   background-color:rgb(177,177,177) ;
-  gap: 2px;
+  /* The areas are divided by grooved borders, not by gaps. */
+  gap: 0;
   width: 100vw;
   height: 100vh;
   display: grid;
@@ -98,6 +101,7 @@ button:focus-visible {
 
 #sidebar {
   grid-area: sidebar;
+  border-left: var(--divider);
 }
 
 .ui-pane {
@@ -107,20 +111,24 @@ button:focus-visible {
   flex-wrap: nowrap;
   flex-direction: row;
   overflow-y: hidden;
-  gap: 1em;
+  gap: 0.5em;
   grid-area: bottomleft;
+  border-top: var(--divider);
 }
 
 .ui-pane>* {
+  /* A column keeps its width: a shrunk column wraps its labels. */
+  flex-shrink: 0;
   width: max-content;
   height: 100%;
-  padding-bottom: 1em;
+  /* Equal at the top and the bottom; together 1em, which leaves the grids their six rows. */
+  padding-block: 0.5em;
 }
 
 /* A thin grooved line between two neighbouring columns of the pane, centred in the gap. */
 .ui-pane>*+* {
-  border-left: 2px groove rgb(200, 200, 200);
-  padding-left: 1em;
+  border-left: var(--divider);
+  padding-left: 0.5em;
 }
 
 /* A group of the pane: its heading above its button grid, which takes the height left. */

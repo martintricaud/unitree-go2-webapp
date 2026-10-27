@@ -36,42 +36,50 @@
 {/snippet}
 
 <div class="strip">
+    <!-- Three groups: the connection on the left, the controller and the edit mode centred, the
+         last outcome and the log on the right. -->
     <div class="line">
-        <button
-            class="toggle"
-            disabled={!robot.current.channelOpen}
-            onclick={() => (robot.current.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
-        >
-            {robot.current.robotConnected ? 'Disconnect' : 'Connect'}
-        </button>
-        <button class="toggle" onclick={() => props.callback(!props.drawerOpen)}>
-            {props.drawerOpen ? 'Hide' : 'Show'} controller
-        </button>
-        <!-- Edit mode is any instrument but Fire; the strip's Edit enters it with Move. -->
-        {#if cueSheet.state.instrument === 'Fire'}
-            <button class="toggle" onclick={() => cueSheet.choose('Move')}>Edit</button>
-        {:else}
-            <span class="edit">
-                <button class="toggle" onclick={() => cueSheet.save()}>Save</button>
-                <button class="toggle" onclick={() => cueSheet.reset()}>Reset</button>
-                <button class="toggle" onclick={() => cueSheet.cancel()}>Cancel</button>
-                <button class="toggle" onclick={() => picker.click()}>Import</button>
-                <button class="toggle" onclick={exportShown}>Export</button>
-            </span>
-            {#if cueSheet.state.problem !== null}
-                <span class="problem" title={cueSheet.state.problem}>{cueSheet.state.problem}</span>
+        <div class="side">
+            <button
+                class="toggle"
+                disabled={!robot.current.channelOpen}
+                onclick={() => (robot.current.robotConnected ? robot.disconnectRobot() : robot.connectRobot('192.168.123.161'))}
+            >
+                {robot.current.robotConnected ? 'Disconnect' : 'Connect'}
+            </button>
+            <span>Websocket {robot.current.channelOpen ? '✅' : '❌'}</span>
+            <span>Robot {robot.current.robotConnected ? '✅' : '❌'}</span>
+        </div>
+        <div class="centre">
+            <button class="toggle" onclick={() => props.callback(!props.drawerOpen)}>
+                {props.drawerOpen ? 'Hide' : 'Show'} controller
+            </button>
+            <!-- Edit mode is any instrument but Fire; the strip's Edit enters it with Move. -->
+            {#if cueSheet.state.instrument === 'Fire'}
+                <button class="toggle" onclick={() => cueSheet.choose('Move')}>Edit</button>
+            {:else}
+                <span class="edit">
+                    <button class="toggle" onclick={() => cueSheet.save()}>Save</button>
+                    <button class="toggle" onclick={() => cueSheet.reset()}>Reset</button>
+                    <button class="toggle" onclick={() => cueSheet.cancel()}>Cancel</button>
+                    <button class="toggle" onclick={() => picker.click()}>Import</button>
+                    <button class="toggle" onclick={exportShown}>Export</button>
+                </span>
+                {#if cueSheet.state.problem !== null}
+                    <span class="problem" title={cueSheet.state.problem}>{cueSheet.state.problem}</span>
+                {/if}
             {/if}
-        {/if}
-        <input type="file" accept=".json,application/json" hidden bind:this={picker} onchange={importChosen} />
-        <span>Websocket {robot.current.channelOpen ? '✅' : '❌'}</span>
-        <span>Robot {robot.current.robotConnected ? '✅' : '❌'}</span>
-        <span class="last" title={outcomeLog.last?.detail ?? ''}>
-            {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
-        </span>
-        <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
-        <button class="toggle" popovertarget="outcome-log">
-            Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌)
-        </button>
+            <input type="file" accept=".json,application/json" hidden bind:this={picker} onchange={importChosen} />
+        </div>
+        <div class="side end">
+            <span class="last" title={outcomeLog.last?.detail ?? ''}>
+                {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
+            </span>
+            <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
+            <button class="toggle" popovertarget="outcome-log">
+                Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌)
+            </button>
+        </div>
     </div>
     <ol
         id="outcome-log"
@@ -97,23 +105,35 @@
         --strip-padding-x: 0.6rem;
         grid-area: strip;
         height: var(--strip-height);
+        border-top: var(--divider);
         display: flex;
         align-items: center;
         background: rgb(230, 230, 230);
-        border-top: 2px solid #999;
         padding: 0 var(--strip-padding-x);
     }
 
 
+    /* The two sides share the width left by the centre equally, so the centre group is centred. */
     .line {
         flex: 1 1 auto;
         min-width: 0;
-        display: flex;
-        flex-wrap: nowrap;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
         align-items: center;
         gap: 1.2em;
         white-space: nowrap;
-        overflow-x: auto;
+    }
+
+    .side,
+    .centre {
+        display: flex;
+        align-items: center;
+        gap: 1.2em;
+        min-width: 0;
+    }
+
+    .end {
+        justify-content: flex-end;
     }
 
     /* Takes the spare width, its text set against the log button it summarises. */
@@ -134,6 +154,7 @@
     .problem {
         flex: 0 1 auto;
         min-width: 0;
+        max-width: 30ch;
         overflow: hidden;
         text-overflow: ellipsis;
         color: rgb(160, 0, 0);
