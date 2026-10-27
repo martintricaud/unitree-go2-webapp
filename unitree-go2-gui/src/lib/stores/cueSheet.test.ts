@@ -269,6 +269,28 @@ describe('cueSheet sweeps', () => {
   });
 });
 
+describe('cueSheet sweeps in progress', () => {
+  it('previews a Move as its release will leave the cells, and highlights only the moved cell', () => {
+    const { cueSheet, shown } = editing('Move');
+    const preview = cueSheet.instruments.Move.shown(1, 4)(shown().cells);
+    expect(cueSheet.instruments.Move.swept(1, 4)).toEqual([4]);
+    cueSheet.sweep(1, 4);
+    expect(preview).toEqual(shown().cells);
+  });
+
+  it('highlights nothing under Fire, and shows the cells unchanged', () => {
+    const { cueSheet, shown } = editing('Fire');
+    expect(cueSheet.instruments.Fire.swept(1, 4)).toEqual([]);
+    expect(cueSheet.instruments.Fire.shown(1, 4)(shown().cells)).toEqual(shown().cells);
+  });
+
+  it.each(['Rename', 'Group', 'Ungroup'] as const)('highlights the swept range in either direction under %s', (_name) => {
+    const { cueSheet, shown } = editing(_name);
+    expect(cueSheet.instruments[_name].swept(3, 1)).toEqual([1, 2, 3]);
+    expect(cueSheet.instruments[_name].shown(3, 1)(shown().cells)).toEqual(shown().cells);
+  });
+});
+
 describe('cueSheet edits', () => {
   it('renames a cell and ends the rename, keeps the label on stopRenaming, and ends a rename on another change', () => {
     const { cueSheet, shown } = editing('Rename');

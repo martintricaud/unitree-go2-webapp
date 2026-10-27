@@ -1,6 +1,6 @@
 <script lang="ts">
-    import { filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, pipe, range } from 'remeda';
-    import { cueSheet, span } from '../lib/stores/cueSheet.svelte';
+    import { filter, flatMap, forEach, isEmpty, isIncludedIn, last, map, reduce } from 'remeda';
+    import { cueSheet } from '../lib/stores/cueSheet.svelte';
     import type { Cue } from '../lib/utils/commands';
 
     /// The strip's root element, whose drawn cells give each cell its index.
@@ -11,8 +11,10 @@
     /// anywhere else only ends it.
     let sweeps: { a: number; b: number }[] = $state([]);
 
-    /// The indices of the cells the sweep in progress highlights.
-    let swept = $derived(flatMap(sweeps, ({ a, b }) => pipe(span(a, b), ([_lo, _hi]) => range(_lo, _hi + 1))));
+    /// The active instrument, and the cells it shows and highlights during the sweep in progress.
+    let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
+    let shown = $derived(reduce(sweeps, (_cells: Cue[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.cells));
+    let swept = $derived(flatMap(sweeps, ({ a, b }) => instrument.swept(a, b)));
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
     /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
@@ -57,7 +59,7 @@
 <div
     id="sidebar"
     class="actionsequence"
-    style:cursor={cueSheet.instruments[cueSheet.state.instrument].cursor}
+    data-instrument={cueSheet.state.instrument}
     bind:this={strip}
     onpointerdown={(event) => (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index })))}
     onpointerover={(event) => (sweeps = map(sweeps, ({ a, b }) => ({ a, b: last([b, ...cellAt(event)]) })))}
@@ -70,8 +72,8 @@
             {/each}
         </div>
     {/if}
-    {#each cueSheet.state.cells as cell, i}
-        <div class="cell" data-index={i} class:active-step={i === cueSheet.state.pointer} class:pressed={i === cueSheet.state.pressed}
+    {#each shown as cell, i}
+        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.cells[cueSheet.state.pointer]} class:pressed={i === cueSheet.state.pressed}
             class:swept={isIncludedIn(i, swept)}>
             {#if cueSheet.state.renaming === i}
                 <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
@@ -97,7 +99,10 @@
 <style>
     /* The width fits the four tool buttons of the top bar on one line, and does not change between
        modes or with the labels. */
+    /* No text is selected during a sweep; Safari needs the prefixed property. */
     .actionsequence {
+        -webkit-user-select: none;
+        user-select: none;
         width: 19rem;
         display: flex;
         flex-direction: column;
@@ -132,9 +137,9 @@
         font-weight: bold;
     }
 
-    /* A cell is drawn as the app's buttons are, with no pressed look of its own: only the keys draw a
-       cell pressed. A long label wraps inside its cell. The label sits flush left and the command
-       count flush right; the gap separates them, since a flex container drops the space. */
+    /* A cell is drawn as the app's buttons are. A long label wraps inside its cell. The label sits
+       flush left and the command count flush right; the gap separates them, since a flex container
+       drops the space. */
     .cell {
         display: flex;
         align-items: center;
@@ -147,8 +152,12 @@
         font-size: 0.9em;
         font-weight: 500;
         line-height: 1em;
-        user-select: none;
         overflow-wrap: anywhere;
+    }
+
+    [contenteditable] {
+        -webkit-user-select: text;
+        user-select: text;
     }
 
     .active-step {
@@ -161,7 +170,31 @@
         background: rgb(170, 200, 240);
     }
 
-    .pressed {
+    /* The cursor shows the active instrument; Move shows a closed hand while a cell is held. */
+    [data-instrument='Fire'],
+    [data-instrument='Ungroup'] {
+        cursor: pointer;
+    }
+
+    [data-instrument='Move'] {
+        cursor: grab;
+    }
+
+    [data-instrument='Move']:has(.cell:active) {
+        cursor: grabbing;
+    }
+
+    [data-instrument='Rename'] {
+        cursor: text;
+    }
+
+    [data-instrument='Group'] {
+        cursor: cell;
+    }
+
+    /* A cell fired by a key, or held under the pointer in play mode, looks pressed. */
+    .pressed,
+    [data-instrument='Fire'] .cell:active {
         border-style: inset;
     }
 </style>

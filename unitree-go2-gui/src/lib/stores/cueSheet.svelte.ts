@@ -45,7 +45,10 @@ const playing = (_cells: Cue[]) => ({
 
 /// The cells from `_a` to `_b` as the lowest and the highest index: the only place a sweep's
 /// direction is dropped.
-export const span = (_a: number, _b: number) => sortBy([_a, _b], identity());
+const span = (_a: number, _b: number) => sortBy([_a, _b], identity());
+
+/// The indices of the cells from `_a` to `_b`, in either order.
+const covered = (_a: number, _b: number) => pipe(span(_a, _b), ([_lo, _hi]) => range(_lo, _hi + 1));
 
 /// `_index` moved onto the first or the last of `_cells` when it falls outside them.
 const within = (_cells: Cue[], _index: number) => clamp(_index, { min: 0, max: _cells.length - 1 });
@@ -79,15 +82,23 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'sub
         this.state = _change(this.state);
     };
 
-    /// What a sweep from cell `a` to cell `b` does under each instrument: the cursor over the strip,
-    /// and the effect on release. Every instrument highlights the cells from `a` to `b`.
-    instruments = {
-        Fire: { cursor: 'pointer', release: (_a, _b) => this.send(_b) },
-        Move: { cursor: 'grab', release: (_a, _b) => this.reorder(_a, _b) },
-        Rename: { cursor: 'text', release: (_a, _b) => this.startRenaming(_b) },
-        Group: { cursor: 'cell', release: (_a, _b) => this.group(_a, _b) },
-        Ungroup: { cursor: 'pointer', release: (_a, _b) => this.ungroup(_a, _b) },
-    } satisfies Record<CueSheet['state']['instrument'], { cursor: string; release: (_a: number, _b: number) => void }>;
+    /// What a sweep from cell `a` to cell `b` does under each instrument: the cells shown and the
+    /// cells highlighted while the pointer is down, and the effect on release. Fire highlights nothing. Move shows the cells as its release will leave them, and highlights
+    /// only the moved cell, which follows the pointer.
+    instruments: Record<
+        CueSheet['state']['instrument'],
+        {
+            shown: (_a: number, _b: number) => (_cells: Cue[]) => Cue[];
+            swept: (_a: number, _b: number) => number[];
+            release: (_a: number, _b: number) => void;
+        }
+    > = {
+        Fire: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.send(_b) },
+        Move: { shown: move, swept: (_a, _b) => [_b], release: (_a, _b) => this.reorder(_a, _b) },
+        Rename: { shown: () => identity(), swept: covered, release: (_a, _b) => this.startRenaming(_b) },
+        Group: { shown: () => identity(), swept: covered, release: (_a, _b) => this.group(_a, _b) },
+        Ungroup: { shown: () => identity(), swept: covered, release: (_a, _b) => this.ungroup(_a, _b) },
+    };
 
     /// Applies the sweep from cell `_a` to cell `_b` with the active instrument.
     sweep = (_a: number, _b: number) => this.instruments[this.state.instrument].release(_a, _b);
