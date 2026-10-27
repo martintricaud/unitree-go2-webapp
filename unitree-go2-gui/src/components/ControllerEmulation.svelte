@@ -20,7 +20,6 @@
         /// Called with the button's key, and with `true` when the button is pressed and `false` when
         /// it is released.
         callback: (key: (typeof DIRECTIONS | typeof FACE_BUTTONS)[number]['key'], pressed: boolean) => void;
-        disabled?: boolean;
     } = $props();
 </script>
 
@@ -33,7 +32,6 @@
                     aria-label={button.name}
                     title={cueSheet.bindings[button.key].label}
                     style:grid-area={button.area}
-                    disabled={props.disabled}
                     onpointerdown={() => props.callback(button.key, true)}
                     onpointerup={() => props.callback(button.key, false)}
                     onpointerleave={(event) => event.buttons && props.callback(button.key, false)}>
@@ -88,13 +86,8 @@
         user-select: none;
     }
 
-    button:active:not(:disabled) {
+    button:active {
         background-color: #bbb;
-    }
-
-    button:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
     }
 
     .dpad button {

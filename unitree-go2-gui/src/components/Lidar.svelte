@@ -12,9 +12,6 @@
     let geometry: THREE.BufferGeometry | null = null;
     let animationFrameId: number;
 
-    // Container dimensions
-    let width = $state(0);
-    let height = $state(0);
     let maxPointCount = 0;
     let controls : OrbitControls;
 
@@ -71,15 +68,15 @@
 
     function initScene() {
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        // The drawing size is fixed by the canvas attributes, and CSS scales it, as for the video canvas.
+        camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, 1000);
         camera.position.set( 0, 20, 100 );
 
-        // Use the existing canvas
+        // Takes its drawing size from the canvas, so it needs no setSize.
         renderer = new THREE.WebGLRenderer({
             canvas: canvas,
             antialias: true,
         });
-        renderer.setSize(width, height);
 
         // Initialize OrbitControls after renderer and camera are set up
         controls = new OrbitControls(camera, canvas);
@@ -149,14 +146,6 @@
     }
 
     onMount(initScene);
-
-    // Fits the camera and the renderer to the canvas's size, at mount and on every resize. Declared
-    // after `onMount`, so its first run finds the camera and the renderer that `initScene` creates.
-    $effect(() => {
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-    });
 </script>
 
 <!-- Your existing canvas -->
@@ -165,8 +154,6 @@
         bind:this={canvas}
         width="1280"
         height="720"
-        bind:clientWidth={width}
-        bind:clientHeight={height}
     >
     </canvas>
 </div>
