@@ -127,7 +127,7 @@
          matching the robot's settled posture is drawn pressed. -->
     <section>
         <h2>Posture changes</h2>
-        <div class="button-grid">
+        <div class="button-grid pairs">
             {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
                 {#if posture}
@@ -164,17 +164,20 @@
     <div id="actionsequence" style="width:max-content">
 
     </div>
-    <div class="button-grid">
-        {#each entries(SPEED_LEVELS) as [speedName, level]}
-            <Radio
-                optionName={speedName}
-                selected={robot.current.state.settled.speed === level}
-                spinning={robot.current.state.pending.speed?.value === level}
-                disabled={!robot.current.robotConnected || !robot.current.reported.speed}
-                callback={() => sendToRobot(set({ name: 'speed', value: level }))}
-            />
-        {/each}
-    </div>
+    <section>
+        <h2>Speed</h2>
+        <div class="button-grid">
+            {#each entries(SPEED_LEVELS) as [speedName, level]}
+                <Radio
+                    optionName={speedName}
+                    selected={robot.current.state.settled.speed === level}
+                    spinning={robot.current.state.pending.speed?.value === level}
+                    disabled={!robot.current.robotConnected || !robot.current.reported.speed}
+                    callback={() => sendToRobot(set({ name: 'speed', value: level }))}
+                />
+            {/each}
+        </div>
+    </section>
 </div>
 <CueStrip />
 
