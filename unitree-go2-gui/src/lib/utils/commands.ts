@@ -120,6 +120,9 @@ type Step =
 /// the constructor calls it runs, in order, so that it can be stored as data.
 export type Cue = { label: string; steps: Step[]; changes: Change[]; items: Cue[]; source: Command[] };
 
+/// The steps of `_cue` that send a message to the robot, in order, without its waits.
+export const commandsOf = (_cue: Cue) => filter(_cue.steps, (_step) => _step.kind === 'command');
+
 /// One sport request. A flag request carries `_flag`; a request without flag takes no argument.
 const sportCommand = (_request: SportRequest, _flag = true): Step =>
     merge(

@@ -5,7 +5,7 @@ import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
-import { COMMANDABLE_GAITS, POSTURES, cellSchema, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
+import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, grouped, isCommandable, nextId, numbered } from '../utils/commands';
 import { postureChange, sheetSchema, stored, transition } from '../utils/commands';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
@@ -230,8 +230,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Makes Assign the active one, with `_key` selected for linking to the next cell chosen.
     selectKey = (_key: Key) => this.#enter('Assign', _key);
 
-    /// Makes the label of cell `_index` editable.
-    startRenaming = (_index: number) => this.update(set('renaming', _index));
+    /// Makes the label of cell `_index` editable, unless the cell sends no command: such a cell
+    /// only waits, and its label states how long.
+    startRenaming = (_index: number) => {
+        if (!isEmpty(commandsOf(this.state.shown.sheet[_index]))) this.update(set('renaming', _index));
+    };
 
     /// Ends any renaming and keeps the label.
     stopRenaming = () => this.update(set('renaming', null));

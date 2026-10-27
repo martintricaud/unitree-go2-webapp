@@ -298,6 +298,12 @@ describe('cueSheet sweeps', () => {
     expect(sheets(cueSheet)).toMatchObject({ shown: CELLS, renaming: 2, instrument: 'Rename' });
     expect(sent()).toEqual([]);
   });
+
+  it('does not start renaming a wait cell, whose label states its duration', () => {
+    const { cueSheet, state } = editing('Rename');
+    cueSheet.sweep(0, 4);
+    expect(state().renaming).toBeNull();
+  });
 });
 
 describe('cueSheet sweeps in progress', () => {
