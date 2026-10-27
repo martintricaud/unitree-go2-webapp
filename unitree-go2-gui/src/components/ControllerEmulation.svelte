@@ -139,6 +139,32 @@
         border-radius: 4px;
     }
 
+    /* Each arm is open on the edge it shares with the centre cell, with square corners there, so the
+       four arms and the centre form one cross. */
+    .dpad button[aria-label='up'] {
+        border-bottom: none;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .dpad button[aria-label='down'] {
+        border-top: none;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+
+    .dpad button[aria-label='left'] {
+        border-right: none;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .dpad button[aria-label='right'] {
+        border-left: none;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+
     /* The d-pad's centre cell, between its four buttons. */
     .dpad::after {
         content: '';
