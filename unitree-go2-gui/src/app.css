@@ -77,8 +77,8 @@ button:where(:active:not(:disabled)) {
   border-style: inset;
 }
 
-/* A greyed button looks disabled and still takes the pointer, so it draws itself pressed while held. */
-button:where(:disabled, .greyed) {
+/* A button with aria-disabled looks disabled and still takes the pointer, so it draws itself pressed while held. */
+button:where(:disabled, [aria-disabled='true']) {
   color: rgb(16 16 16 / 0.3);
   border-color: rgb(118 118 118 / 0.3);
   background-color: rgb(239 239 239 / 0.3);

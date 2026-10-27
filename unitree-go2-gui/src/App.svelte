@@ -101,7 +101,7 @@
         <h2>Actions</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.actions as cell (cell.id)}
-                <button class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)} class:greyed={!cueSheet.usable(cell)}
+                <button class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
                     aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)}>
                     {cell.label}
                 </button>
@@ -136,12 +136,12 @@
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
                     <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
-                        <button class:pressed={cueSheet.isPressed(cell, entry)} class:greyed={!cueSheet.usable(cell, entry)}
+                        <button class:pressed={cueSheet.isPressed(cell, entry)}
                             aria-disabled={!cueSheet.usable(cell, entry)} onclick={() => cueSheet.use(cell, entry)}>
                             {POSTURE_FACES[posture][0]}
                             {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
-                        <button class:pressed={cueSheet.isPressed(cell, exit)} class:greyed={!cueSheet.usable(cell, exit)}
+                        <button class:pressed={cueSheet.isPressed(cell, exit)}
                             aria-disabled={!cueSheet.usable(cell, exit)} onclick={() => cueSheet.use(cell, exit)}>
                             {POSTURE_FACES[posture][1]}
                             {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}

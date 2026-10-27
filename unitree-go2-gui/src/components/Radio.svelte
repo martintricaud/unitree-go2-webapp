@@ -14,7 +14,7 @@
     } = $props();
 </script>
 
-<button disabled={props.disabled} class:greyed={props.greyed} aria-disabled={props.greyed} onclick={props.callback}>
+<button disabled={props.disabled} aria-disabled={props.greyed} onclick={props.callback}>
     {props.optionName}
     {#if props.spinning}<span class="spinner" aria-label="waiting for the robot"></span>{:else if props.selected}✅{/if}
 </button>
