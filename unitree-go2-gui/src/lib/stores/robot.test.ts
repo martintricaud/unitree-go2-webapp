@@ -347,7 +347,7 @@ describe('the outcome log', () => {
     it('records the newest outcome first and keeps at most 200', () => {
         const log = new OutcomeLog();
         times(201, (_reqId) =>
-            log.record({ outcome: 'confirmed', code: 0, detail: '', reqId: _reqId, label: '', at: 0 }),
+            log.record({ outcome: 'confirmed', code: 0, detail: '', reqId: _reqId, label: '' }),
         );
         expect(map(log.entries, prop('reqId'))).toEqual(reverse(range(1, 201)));
     });

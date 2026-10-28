@@ -100,10 +100,6 @@ const REPORTED: Partial<Record<number, Partial<RobotState>>> = {
     1006: {},
 };
 
-/// The outcome of request `_reqId`, named `_label`, recorded now.
-const stamp = (_reqId: number, _label: string, _verdict: Verdict): Outcome =>
-    merge(_verdict, { reqId: _reqId, label: _label, at: Date.now() });
-
 /// The relay message `_data` holds, or null when `_data` is not JSON.
 const parsed = (_data: string): RelayMessage | null => {
     try {
@@ -242,7 +238,7 @@ export class Robot {
         if (!request) return undefined;
         clearTimeout(request.timer);
         this.#awaiting.delete(_reqId);
-        const outcome = this.#log.record(stamp(_reqId, request.label, _verdict));
+        const outcome = this.#log.record(merge(_verdict, { reqId: _reqId, label: request.label }));
         this.#changeState(resolve(_reqId, outcome));
         request.resolve(outcome);
         return outcome;
@@ -323,7 +319,7 @@ export class Robot {
                 // No awaiting request: the verdict arrived after the backstop, and the relay names it.
                 const outcome =
                     this.#finish(verdict)(_msg.reqId) ??
-                    this.#log.record(stamp(_msg.reqId, _msg.command_name ?? 'command', verdict));
+                    this.#log.record(merge(verdict, { reqId: _msg.reqId, label: _msg.command_name ?? 'command' }));
                 return summary(outcome);
             }
             case 'faults':
@@ -348,7 +344,7 @@ export class Robot {
         const { label } = _cue;
         if (!this.#send({ kind: 'sequence', command_name: label, sequence: compiled(_cue).steps, reqId })) {
             this.block(label, CHANNEL_CLOSED.detail);
-            return Promise.resolve(this.#log.record(stamp(reqId, label, CHANNEL_CLOSED)));
+            return Promise.resolve(this.#log.record(merge(CHANNEL_CLOSED, { reqId, label })));
         }
         const shown = displayed(this.#current.state);
         const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));

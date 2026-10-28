@@ -1,4 +1,4 @@
-import { concat, constant, countBy, first, fromKeys, prop, set, take } from 'remeda';
+import { concat, constant, countBy, first, fromKeys, merge, prop, set, take } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 
 /// `confirmed`: the robot's service accepted the request, which does not prove it moved.
@@ -63,10 +63,11 @@ export class OutcomeLog implements Pick<Writable<Outcome[]>, 'update'> {
     /// An arrow function, so a caller may pass it detached from the object, as `Writable` allows.
     update = (_change: Updater<Outcome[]>) => { this.entries = _change(this.entries); };
 
-    /// Puts `_outcome` first; the oldest entries beyond `LOG_LIMIT` drop. Returns `_outcome`.
-    record = (_outcome: Outcome) => {
-        this.update((_log) => take([_outcome, ..._log], LOG_LIMIT));
-        return _outcome;
+    /// Puts `_outcome` first, timed now; the oldest entries beyond `LOG_LIMIT` drop. Returns the timed entry.
+    record = (_outcome: Omit<Outcome, 'at'>) => {
+        const timed = merge(_outcome, { at: Date.now() });
+        this.update((_log) => take([timed, ..._log], LOG_LIMIT));
+        return timed;
     };
 
     /// Puts a message of `_kind` first in its list, timed now; the oldest beyond the kind's limit drop.
