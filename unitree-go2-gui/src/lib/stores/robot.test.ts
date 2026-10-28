@@ -404,7 +404,7 @@ describe('the outcome log', () => {
         expect(log.entries).toEqual([]);
         expect(log.counts).toEqual({ confirmed: 0, failed: 0, rejected: 0, unknown: 0 });
         expect(log.last).toBeNull();
-        expect(log.messages).toEqual({ sent: [], received: [], stream: [] });
+        expect(log.messages).toEqual({ sent: [], received: [], stream: [], blocked: [] });
     });
 });
 
@@ -1150,5 +1150,48 @@ describe('the toggles', () => {
         });
         expect(sends(waitsGait, leap)).toBe(false);
         [pose, sit].forEach((_toggle) => expect(sends(waitsGait, _toggle)).toBe(true));
+    });
+});
+
+describe('blocked presses', () => {
+    /** The summaries of the presses `_log` holds as blocked, newest first. */
+    const blocked = (_log: OutcomeLog) => map(_log.messages.blocked, prop('summary'));
+
+    it('logs a toggled posture as blocked while a posture change waits for its verdict', () => {
+        const { robot, log } = connectedRobot();
+        void robot.request(enter('Sitting'));
+        robot.togglePosture('Sitting');
+        expect(blocked(log)).toEqual(['Sitting: waiting for the verdict on the posture']);
+    });
+
+    it('logs a toggled field as blocked while it waits for its verdict, naming every field that waits', () => {
+        const { robot, log } = connectedRobot();
+        void robot.request(enter('Running'));
+        robot.toggleTo('gait', 'Bound');
+        void robot.request(set({ name: 'headlight', value: 'red' }));
+        robot.toggleTo('headlight', 'blue');
+        expect(blocked(log)).toEqual(['blue: waiting for the verdict on the headlight', 'Bound: waiting for the verdict on the gait']);
+    });
+
+    it('logs a request on a closed channel as blocked, and keeps its failed verdict', async () => {
+        const { robot, socket, log } = openRobot();
+        socket.readyState = CLOSED;
+        await robot.request(HELLO);
+        expect(blocked(log)).toEqual(['Hello: the control channel is closed, so the command never left the browser']);
+        expect(log.counts).toMatchObject({ failed: 1 });
+    });
+
+    it('logs nothing as blocked for a request that is sent or a toggle that sends', () => {
+        const { robot, log } = connectedRobot();
+        void robot.request(HELLO);
+        robot.togglePosture('Sitting');
+        robot.toggleTo('headlight', 'red');
+        expect(blocked(log)).toEqual([]);
+    });
+
+    it('leaves the verdict counts and the last verdict as they were', () => {
+        const { robot, log } = openRobot();
+        robot.block('Hello', 'the robot is not connected');
+        expect([log.counts, log.last]).toEqual([{ confirmed: 0, unknown: 0, failed: 0, rejected: 0 }, null]);
     });
 });

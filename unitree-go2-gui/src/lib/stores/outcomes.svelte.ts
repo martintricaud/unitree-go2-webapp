@@ -24,8 +24,9 @@ export const summary = ({ label, outcome, code }: Pick<Outcome, 'label' | 'outco
     `${label} ${outcome}${code === null ? '' : ` (${code})`}`;
 
 /// `sent`: a message the browser sent to the relay. `received`: a message the relay sent, except
-/// the robot's raw state stream. `stream`: one message of that stream.
-export const KINDS = ['sent', 'received', 'stream'] as const;
+/// the robot's raw state stream. `stream`: one message of that stream. `blocked`: a press the app
+/// refused, which sent nothing; it is not a verdict, so `last` and `counts` leave it out.
+export const KINDS = ['sent', 'received', 'stream', 'blocked'] as const;
 type Kind = (typeof KINDS)[number];
 
 /// The list each kind of message is kept in: the most entries it holds, and its filter's label.
@@ -36,6 +37,7 @@ export const LISTS: Record<Kind, { limit: number; label: string }> = {
     sent: { limit: LOG_LIMIT, label: 'Sent' },
     received: { limit: LOG_LIMIT, label: 'Received' },
     stream: { limit: 1000, label: 'Stream' },
+    blocked: { limit: LOG_LIMIT, label: 'Blocked' },
 };
 
 /// One message: when it was logged, a one-line summary, and the whole message as `detail`.
@@ -43,8 +45,8 @@ type Message = { kind: Kind; at: number; summary: string; detail: string };
 
 const NO_MESSAGES = fromKeys(KINDS, constant<Message[]>([]));
 
-/// The outcomes of a robot's requests, and every message the robot exchanged with the relay. The
-/// robot clears the log when its control channel opens.
+/// The outcomes of a robot's requests, every message the robot exchanged with the relay, and every
+/// press the app refused. The robot clears the log when its control channel opens.
 export class OutcomeLog implements Pick<Writable<Outcome[]>, 'update'> {
     /// Newest first.
     entries = $state.raw<Outcome[]>([]);

@@ -24,15 +24,16 @@ const memoryStorage = (_entries = new Map<string, string>()) => ({
 /** A cue sheet of its own on `_storage`, on a fresh robot whose open socket the relay never answers,
  * so every cue sent stays pending. Unless `_connected` is false, the relay reports the robot
  * connected in its boot gait, so every pane button can send. `sent` reads each cue the robot wrote,
- * as `asSent` shows it. */
+ * as `asSent` shows it; `receive` delivers a message from the relay; `log` is the robot's log. */
 const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = memoryStorage(), _connected = true) => {
   const frames: string[] = [];
   const send = (_frame: string) => void frames.push(_frame);
   const socket = { readyState: 1, send, onopen: null, onclose: null, onmessage: null as ((_event: { data: string }) => void) | null };
-  const robot = new Robot({ openSocket: () => socket, outcomeLog: new OutcomeLog() });
+  const log = new OutcomeLog();
+  const robot = new Robot({ openSocket: () => socket, outcomeLog: log });
   robot.connect();
-  const reports = [{ type: 'robot_state', connected: true }, { type: 'sport_state', motionMode: 'mcf', errorCode: 0 }];
-  forEach(_connected ? reports : [], (_report) => socket.onmessage?.({ data: JSON.stringify(_report) }));
+  const receive = (_message: object) => socket.onmessage?.({ data: JSON.stringify(_message) });
+  forEach(_connected ? [{ type: 'robot_state', connected: true }, { type: 'sport_state', motionMode: 'mcf', errorCode: 0 }] : [], receive);
   const cueSheet = new CueSheet(_cues, robot, _storage);
   const sent = () => map(frames, (_frame) => pick(JSON.parse(_frame), ['command_name', 'sequence']));
   /** Confirms the latest request, as the relay would. */
@@ -40,8 +41,11 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
     socket.onmessage?.({
       data: JSON.stringify({ type: 'command_result', reqId: JSON.parse(frames[frames.length - 1]).reqId, outcome: 'confirmed', code: 0, detail: null, command_name: null }),
     });
-  return { cueSheet, robot, sent, confirm };
+  return { cueSheet, robot, sent, confirm, receive, log };
 };
+
+/** The summaries of the presses `_log` holds as blocked, newest first. */
+const blocked = (_log: OutcomeLog) => map(_log.messages.blocked, prop('summary'));
 
 /** The state of `_cueSheet`, with the saved and the shown document each reduced to its sheet. */
 const sheets = (_cueSheet: CueSheet) => evolve(_cueSheet.state, { saved: prop('sheet'), shown: prop('sheet') });
@@ -153,8 +157,8 @@ describe('cueSheet keys', () => {
     expect(pressOnce('y')).toEqual({ sent: [], pointer: 0, pressed: null });
   });
 
-  it('sends nothing for a toggle whose fields wait for a verdict, and still sends a sheet cell', () => {
-    const { cueSheet, robot, sent } = setup(CONDUITE);
+  it('sends nothing for a toggle whose fields wait for a verdict, logs it as blocked, and still sends a sheet cell', () => {
+    const { cueSheet, robot, sent, log } = setup(CONDUITE);
     cueSheet.press('a');
     expect(robot.current.state.pending.posture).toBeDefined();
     // Pose, Sit and Bound all toggle the posture, which waits.
@@ -163,6 +167,9 @@ describe('cueSheet keys', () => {
     cueSheet.press('b');
     cueSheet.press('y');
     expect(sent()).toEqual(asSent(ENTER_POSE, presets.dance));
+    expect(blocked(log)).toEqual(
+      map(['Bound', 'Sitting', 'Pose'], (_label) => `${_label}: waiting for the verdict on the posture`),
+    );
   });
 
   it.each(['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Enter'])(
@@ -545,6 +552,48 @@ describe('cueSheet key assignment', () => {
     confirm();
     cueSheet.press('a');
     expect([sent(), cueSheet.state.pressed]).toEqual([asSent(enter('Sitting')), null]);
+  });
+
+  it('logs a pane button pressed while the robot is disconnected as blocked, with the reason', () => {
+    const { cueSheet, log } = setup(CONDUITE, memoryStorage(), false);
+    cueSheet.use(paneCell(cueSheet, 'lights', 'red'));
+    expect(blocked(log)).toEqual(['red: the robot is not connected']);
+  });
+
+  it('logs a gait pressed before any gait or posture report as blocked, with the reason', () => {
+    const { cueSheet, sent, receive, log } = setup(CONDUITE, memoryStorage(), false);
+    receive({ type: 'robot_state', connected: true });
+    cueSheet.use(paneCell(cueSheet, 'gaits', 'Bound'));
+    expect([sent(), blocked(log)]).toEqual([[], ['Bound: the robot has not reported its gait or posture']]);
+  });
+
+  it('logs the side of a posture pair the settled posture does not allow as blocked, from a button and from a key', () => {
+    const { cueSheet, confirm, log } = setup(CONDUITE);
+    cueSheet.use(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
+    tap(cueSheet, 'x');
+    confirm();
+    cueSheet.press('a');
+    expect(blocked(log)).toEqual(map(['Pose', 'Exit Sitting'], (_label) => `${_label}: the robot's posture does not allow it`));
+  });
+
+  it('logs an unassigned key under Fire as blocked, and nothing for a key that is not a face key', () => {
+    const { cueSheet, log } = setup();
+    tap(cueSheet, 'y');
+    tap(cueSheet, 'z');
+    expect(blocked(log)).toEqual(['y: no cell is linked to this key']);
+  });
+
+  it('draws a key\'s cell pressed while the robot cannot take it, and logs the press as blocked', () => {
+    const { cueSheet, sent, log } = setup(CONDUITE, memoryStorage(), false);
+    cueSheet.press('b');
+    expect([sent(), cueSheet.state.pressed?.id, blocked(log)]).toEqual([[], cueSheet.linked('b')?.id, ['Bound: the robot is not connected']]);
+  });
+
+  it('logs no blocked entry for a press that is sent', () => {
+    const { cueSheet, sent, log } = setup(CONDUITE);
+    cueSheet.use(paneCell(cueSheet, 'lights', 'red'));
+    tap(cueSheet, 'y');
+    expect([sent().length, blocked(log)]).toEqual([2, []]);
   });
 
   it('links a key to the sheet cell a sweep ends on, and unassigns it when Ungroup removes that cell', () => {

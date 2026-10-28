@@ -1,5 +1,5 @@
 import { constant, evolve, filter, forEach, indexBy, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish } from 'remeda';
-import { isPlainObject, keys, mapValues, merge, omit, omitBy, pickBy, pipe, piped, set, values } from 'remeda';
+import { isPlainObject, join, keys, mapValues, merge, omit, omitBy, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
 import { compiled, enter, isCommandable, postureChange, set as setting, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
@@ -129,6 +129,13 @@ const previousAfter = (_previous: Toggled, _from: RobotState, _to: RobotState): 
     gait: _to.gait !== _from.gait && isCommandable(_from.gait) ? _from.gait : _previous.gait,
     headlight: _to.headlight !== _from.headlight ? _from.headlight : _previous.headlight,
 });
+
+/// Why a toggle changing `_fields` must wait, or null when none of them awaits a verdict: the cue
+/// would read the pending value and queue the opposite command.
+const waitingOn = (_pending: Confirmable<RobotState>['pending'], _fields: (keyof RobotState)[]) =>
+    pipe(_fields, filter((_field) => _pending[_field] !== undefined), (_waiting) =>
+        isEmpty(_waiting) ? null : `waiting for the verdict on the ${join(_waiting, ' and ')}`,
+    );
 
 /// Losing the robot also clears its faults: the next robot reports its own.
 const lost = merge({ robotConnected: false, reported: {}, faults: {} });
@@ -339,8 +346,10 @@ export class Robot {
     request = (_cue: Cue): Promise<Outcome> => {
         const reqId = (this.#lastRequestId += 1);
         const { label } = _cue;
-        if (!this.#send({ kind: 'sequence', command_name: label, sequence: compiled(_cue).steps, reqId }))
+        if (!this.#send({ kind: 'sequence', command_name: label, sequence: compiled(_cue).steps, reqId })) {
+            this.block(label, CHANNEL_CLOSED.detail);
             return Promise.resolve(this.#log.record(stamp(reqId, label, CHANNEL_CLOSED)));
+        }
         const shown = displayed(this.#current.state);
         const changed = pickBy(transition(_cue)(shown), (_value, _field) => !isDeepEqual(_value, shown[_field]));
         // Proposed before the verdict can arrive, which is never earlier than the next relay message.
@@ -350,6 +359,10 @@ export class Robot {
             this.#awaiting.set(reqId, { resolve: _resolve, timer, label });
         });
     };
+
+    /// Logs a press the app refused, named `_label`, with `_reason` in plain words. It is not a
+    /// verdict, so the counts and the last outcome stay as they are.
+    block = (_label: string, _reason: string) => this.#log.note('blocked', `${_label}: ${_reason}`, '');
 
     /// Opens the control channel, unless one is already open or opening.
     connect = () => {
@@ -374,13 +387,13 @@ export class Robot {
     disconnectRobot = () => void this.#send({ command_name: 'disconnect' });
 
     /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
-    /// next press asking for the same thing again. Each does nothing while a toggled field waits
-    /// for a verdict: the cue would read the pending value and queue the opposite command. A
-    /// posture's toggle sends the side of its pair the settled state allows, so it does nothing
-    /// while the robot is in another posture.
+    /// next press asking for the same thing again. Each logs the press as blocked while a toggled
+    /// field waits for a verdict. A posture's toggle sends the side of its pair the settled state
+    /// allows, so it does nothing while the robot is in another posture.
     togglePosture = (_posture: Posture) => {
         const { pending, settled } = this.#current.state;
-        if (pending.posture === undefined) forEach(postureChange(_posture)(settled), (_cue) => void this.request(_cue));
+        const waiting = waitingOn(pending, ['posture']);
+        forEach(postureChange(_posture)(settled), (_cue) => (waiting === null ? void this.request(_cue) : this.block(_cue.label, waiting)));
     };
 
     /// Sends `_field` to `_value`, or back to its previous value when the robot already shows
@@ -389,8 +402,8 @@ export class Robot {
     toggleTo = <F extends keyof Toggled>(_field: F, _value: Toggled[F]) => {
         const { state, previous } = this.#current;
         const cue = TOGGLES[_field](_value);
-        const waiting = pipe(compiled(cue).change, keys(), filter((_toggled) => state.pending[_toggled] !== undefined));
-        if (!isEmpty(waiting)) return;
+        const waiting = waitingOn(state.pending, keys(compiled(cue).change));
+        if (waiting !== null) return this.block(_value, waiting);
         void this.request(isDeepEqual(transition(cue)(state.settled), state.settled) ? TOGGLES[_field](previous[_field]) : cue);
     };
 
