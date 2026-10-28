@@ -5,10 +5,12 @@ if version==117:
     from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
     from go2_webrtc_driver.constants import RTC_TOPIC
     from go2_webrtc_driver.util import get_nested_field
+    from go2_webrtc_driver.msgs.error_handler import get_error_code_text, get_error_source_text, integer_to_hex_string
 elif version==118:
     from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
     from unitree_webrtc_connect.constants import RTC_TOPIC
     from unitree_webrtc_connect.util import get_nested_field
+    from unitree_webrtc_connect.msgs.error_handler import get_error_code_text, get_error_source_text, integer_to_hex_string
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
@@ -74,6 +76,19 @@ def cue_outcome(step_outcomes):
     return (outcome, code, detail)
 
 
+def fault_of(triple):
+    """One [timestamp, source, code] fault triple as the browser reads it: the two numbers and
+    the driver's texts for them. Raises ValueError unless the triple is a number (the timestamp
+    may be a float) and two integers."""
+    if not (isinstance(triple, (list, tuple)) and len(triple) == 3):
+        raise ValueError(f"not a triple: {triple!r}")
+    timestamp, source, code = triple
+    if not (isinstance(timestamp, (int, float)) and type(source) is int and type(code) is int):
+        raise ValueError(f"not a number and two integers: {triple!r}")
+    code_text = get_error_code_text(source, integer_to_hex_string(code))
+    return {"source": source, "code": code, "text": f"{get_error_source_text(source)}: {code_text}"}
+
+
 async def recv_camera_stream(track: MediaStreamTrack):
         while True:
             frame = await track.recv()  # wait for next frame
@@ -128,6 +143,7 @@ class RobotSession:
             # The driver starts the heartbeat in on_validate; starting it here too leaves
             # a timer chain stop_heartbeat cannot cancel.
             self.conn.datachannel.pub_sub.set_on_err_callback(self.note_rejection)
+            self.conn.datachannel.set_on_fault_callback(self.note_faults)
             # The robot publishes this topic periodically, so the browser learns its settings
             # without asking. The driver drops a subscribe sent before the channel validates;
             # conn.connect() returns only after validation.
@@ -320,6 +336,26 @@ class RobotSession:
         logging.warning("The bridge refused a request: %r", info)
         if self.rejection is not None and not self.rejection.done():
             self.rejection.set_result(f"the bridge refused the request: {info}")
+
+    def note_faults(self, kind, triples):
+        """Forward one snapshot (`errors`) or delta (`add_error`, `rm_error`) of the robot's
+        faults as one message. An unreadable triple is logged and left out; a message with no
+        readable triple left is not forwarded. The driver calls this synchronously, so the
+        send is scheduled as a task."""
+        faults = []
+        for triple in triples:
+            try:
+                faults.append(fault_of(triple))
+            except ValueError:
+                logging.warning("Ignoring an unreadable %s fault: %r", kind, triple)
+        if triples and not faults:
+            return
+        try:
+            asyncio.get_running_loop().create_task(
+                notify_frontend({"type": "faults", "change": kind, "faults": faults})
+            )
+        except Exception:
+            logging.exception("Failed to schedule the %s fault notification", kind)
 
     async def dispatch(self, msg):
         """Send one command and wait, bounded, for the robot's answer.

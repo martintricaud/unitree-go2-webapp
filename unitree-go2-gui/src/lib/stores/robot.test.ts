@@ -68,7 +68,7 @@ const openRobot = () => {
 };
 
 describe('the store', () => {
-    it('starts with the channel closed, no robot, nothing told, and the robot settled on its boot state', () => {
+    it('starts with the channel closed, no robot, nothing told, no fault, and the robot settled on its boot state', () => {
         const robot = new Robot({ openSocket: () => new FakeSocket(), outcomeLog: new OutcomeLog() });
         // @ts-expect-error: only the robot's own methods write its state, so it exposes no `update`.
         expect(robot.update).toBeUndefined();
@@ -90,6 +90,7 @@ describe('the store', () => {
             },
             reported: {},
             previous: { gait: 'FreeWalk', headlight: 'green' },
+            faults: {},
         });
     });
 
@@ -659,6 +660,67 @@ describe('robot settings', () => {
         socket.receive(settings(0, true));
         socket.onclose?.();
         expect(robot.current.reported).toEqual({});
+    });
+});
+
+const MOTOR = { source: 300, code: 16, text: 'Motor malfunction: Winding overheating' };
+const FIRMWARE = { source: 100, code: 1, text: 'Communication firmware malfunction: DDS message timeout' };
+const FAN = { source: 600, code: 2, text: 'Fan malfunction' };
+
+const faults = (change: string, ..._faults: (typeof MOTOR)[]) => JSON.stringify({ type: 'faults', change, faults: _faults });
+
+describe('faults', () => {
+    it('replaces the active faults with a snapshot', () => {
+        const { robot, socket } = connectedRobot();
+        socket.receive(faults('errors', MOTOR, FIRMWARE));
+        socket.receive(faults('errors', FAN));
+        expect(robot.current.faults).toEqual({ '600-2': FAN });
+    });
+
+    it('adds and removes one fault per delta, and leaves the others', () => {
+        const { robot, socket } = connectedRobot();
+        socket.receive(faults('errors', MOTOR));
+        socket.receive(faults('add_error', FIRMWARE));
+        expect(robot.current.faults).toEqual({ '300-16': MOTOR, '100-1': FIRMWARE });
+        socket.receive(faults('rm_error', MOTOR));
+        expect(robot.current.faults).toEqual({ '100-1': FIRMWARE });
+    });
+
+    it('holds a fault added twice once', () => {
+        const { robot, socket } = connectedRobot();
+        socket.receive(faults('add_error', MOTOR));
+        socket.receive(faults('add_error', MOTOR));
+        expect(robot.current.faults).toEqual({ '300-16': MOTOR });
+    });
+
+    it('clears the faults when the robot is lost, and when the control channel closes', () => {
+        const { robot, socket } = connectedRobot();
+        socket.receive(faults('errors', MOTOR));
+        socket.receive(robotState(false));
+        expect(robot.current.faults).toEqual({});
+        socket.receive(faults('errors', MOTOR));
+        socket.onclose?.();
+        expect(robot.current.faults).toEqual({});
+    });
+
+    it('changes nothing for a change kind it does not know', () => {
+        const { robot, socket } = connectedRobot();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        socket.receive(faults('errors', MOTOR));
+        socket.receive(faults('clear_errors', MOTOR));
+        expect(robot.current.faults).toEqual({ '300-16': MOTOR });
+        expect(warn).toHaveBeenCalledWith('Ignoring a fault message of an unknown change:', 'clear_errors');
+        warn.mockRestore();
+    });
+
+    it('logs a faults message as received under its type', () => {
+        const { socket, log } = connectedRobot();
+        socket.receive(faults('add_error', MOTOR));
+        expect(log.messages.received[0]).toMatchObject({
+            kind: 'received',
+            summary: 'faults',
+            detail: JSON.stringify({ change: 'add_error', faults: [MOTOR] }),
+        });
     });
 });
 

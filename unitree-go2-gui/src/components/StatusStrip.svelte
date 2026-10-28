@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { filter, flatMap, fromKeys, pipe, prop, set, sortBy } from 'remeda';
+    import { filter, flatMap, fromKeys, pipe, prop, set, sortBy, values } from 'remeda';
     import { robot } from '../lib/stores/robot.svelte';
     import { KINDS, LISTS, outcomeLog, summary } from '../lib/stores/outcomes.svelte';
     import { cueSheet } from '../lib/stores/cueSheet.svelte';
@@ -29,6 +29,9 @@
         link.click();
         URL.revokeObjectURL(link.href);
     };
+
+    /// The robot's active faults, which the log button counts and the popover lists.
+    const faults = $derived(values(robot.current.faults));
 
     /// Whether the log shows each kind of message; a filter button flips its kind.
     let shown = $state.raw(fromKeys(KINDS, () => true));
@@ -85,19 +88,31 @@
             <span class="last" title={outcomeLog.last?.detail ?? ''}>
                 {#if outcomeLog.last === null}no command sent yet{:else}{summary(outcomeLog.last)}{/if}
             </span>
-            <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
+            <!-- The verdicts by outcome, then the active faults; a rejection by the WebRTC bridge
+                 counts as a failure. -->
             <button class="toggle" popovertarget="outcome-log">
-                Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌)
+                Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌, {faults.length} ⚠️)
             </button>
         </div>
     </div>
     <div id="outcome-log" class="log" popover="auto">
-        <div class="filters">
-            {#each KINDS as kind}
-                <button class="toggle" aria-pressed={shown[kind]} onclick={() => (shown = set(shown, kind, !shown[kind]))}>
-                    {LISTS[kind].label}
-                </button>
-            {/each}
+        <div class="head">
+            <!-- Each fault as the driver names it, then its source and its code in hexadecimal, as
+                 the driver writes them. -->
+            {#if faults.length > 0}
+                <ul class="faults">
+                    {#each faults as fault}
+                        <li>{fault.text} ({fault.source}-{fault.code.toString(16).toUpperCase()})</li>
+                    {/each}
+                </ul>
+            {/if}
+            <div class="filters">
+                {#each KINDS as kind}
+                    <button class="toggle" aria-pressed={shown[kind]} onclick={() => (shown = set(shown, kind, !shown[kind]))}>
+                        {LISTS[kind].label}
+                    </button>
+                {/each}
+            </div>
         </div>
         <ol>
             <!-- Keyed by the entry object, which no two rows share even within one millisecond, so
@@ -200,14 +215,30 @@
         background: rgb(240, 240, 240);
     }
 
-    /* The filters stay in view while the entries scroll under them. */
-    .filters {
+    /* The faults and the filters stay in view while the entries scroll under them. */
+    .head {
         position: sticky;
         top: 0;
+        background: inherit;
+    }
+
+    .faults {
+        margin: 0 0 0.3rem;
+        padding: 0 0 0.3rem;
+        list-style: none;
+        border-bottom: 1px solid #999;
+        color: rgb(160, 0, 0);
+    }
+
+    /* A fault's text wraps rather than widen the popover past its 60 characters. */
+    .log .faults li {
+        white-space: normal;
+    }
+
+    .filters {
         display: flex;
         gap: 0.4em;
         padding-bottom: 0.3rem;
-        background: inherit;
     }
 
     /* A pressed filter shows its kind. It is drawn as the controller draws a selected button. */

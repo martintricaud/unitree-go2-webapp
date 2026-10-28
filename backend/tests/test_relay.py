@@ -5,11 +5,13 @@ import asyncio
 import json
 import logging
 import time
+from types import SimpleNamespace
 
 import pytest
 
 import main
 from go2_webrtc_driver.msgs.error_handler import handle_error
+from go2_webrtc_driver.webrtc_datachannel import WebRTCDataChannel
 
 from .conftest import MOTION_SWITCHER, FakeConnection, FakeWebSocket, motion_switcher_reply, reply_for
 
@@ -582,6 +584,58 @@ def test_an_empty_fault_snapshot_does_not_raise(capsys):
     assert capsys.readouterr().out == ""
 
 
+async def test_a_registered_fault_callback_receives_the_triples_instead_of_the_print(capsys):
+    seen = []
+    channel = SimpleNamespace(on_fault_callback=lambda kind, triples: seen.append((kind, triples)))
+    await WebRTCDataChannel.handle_response(channel, {"type": "add_error", "data": [1765000000, 300, 16]})
+    assert seen == [("add_error", [[1765000000, 300, 16]])]
+    assert capsys.readouterr().out == ""
+
+
+async def test_without_a_fault_callback_the_driver_still_prints(capsys):
+    channel = SimpleNamespace(on_fault_callback=None)
+    await WebRTCDataChannel.handle_response(channel, {"type": "rm_error", "data": [1765000000, 300, 16]})
+    assert capsys.readouterr().out.count("Error Received from Go2") == 1
+
+
+MOTOR = {"source": 300, "code": 16, "text": "Motor malfunction: Winding overheating"}
+FIRMWARE = {"source": 100, "code": 1, "text": "Communication firmware malfunction: DDS message timeout"}
+
+
+async def note_faults(session, kind, triples):
+    """Hand the relay one fault message, then let the notification task it schedules run."""
+    session.note_faults(kind, triples)
+    await asyncio.sleep(0)
+
+
+async def test_a_fault_snapshot_is_forwarded_as_one_message_with_every_fault(session, gui):
+    await note_faults(session, "errors", [[1765000000, 300, 16], [1765000000.5, 100, 1]])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": [MOTOR, FIRMWARE]}]
+
+
+async def test_an_empty_fault_snapshot_is_forwarded_so_the_browser_clears_its_faults(session, gui):
+    await note_faults(session, "errors", [])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": []}]
+
+
+@pytest.mark.parametrize("kind", ["add_error", "rm_error"])
+async def test_a_fault_delta_is_forwarded_as_one_message_with_one_fault(session, gui, kind):
+    await note_faults(session, kind, [[1765000000, 300, 16]])
+    assert gui.sent == [{"type": "faults", "change": kind, "faults": [MOTOR]}]
+
+
+async def test_an_unreadable_fault_is_logged_and_left_out(session, gui, caplog):
+    await note_faults(session, "errors", [[1765000000, 300, 16], [1765000000, "300", 16], [300, 16]])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": [MOTOR]}]
+    assert sum("unreadable errors fault" in record.getMessage() for record in caplog.records) == 2
+
+
+async def test_a_fault_message_with_nothing_readable_is_not_forwarded(session, gui, caplog):
+    await note_faults(session, "add_error", [[1765000000, 300, 16.5]])
+    assert gui.sent == []
+    assert any("unreadable add_error fault" in record.getMessage() for record in caplog.records)
+
+
 # ── Connecting ───────────────────────────────────────────────────────────────────────────
 
 
@@ -676,6 +730,11 @@ async def deliver(pub_sub, message, topic=MULTIPLE_STATE):
 async def test_a_successful_connect_subscribes_to_the_robots_settings_once(monkeypatch, session, pub_sub):
     await connect_through_driver(monkeypatch, session, pub_sub)
     assert pub_sub.subscribe_calls.count(MULTIPLE_STATE) == 1
+
+
+async def test_a_successful_connect_registers_the_fault_callback_once(monkeypatch, session, pub_sub):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    assert session.conn.datachannel.fault_callbacks == [session.note_faults]
 
 
 async def test_a_report_is_forwarded_with_both_values(monkeypatch, session, pub_sub, gui):

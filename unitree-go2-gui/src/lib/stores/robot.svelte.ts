@@ -1,5 +1,5 @@
-import { constant, filter, flatMap, forEach, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, keys } from 'remeda';
-import { isPlainObject, mapValues, merge, omit, pickBy, pipe, piped, set, values } from 'remeda';
+import { constant, evolve, filter, flatMap, forEach, indexBy, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish } from 'remeda';
+import { isPlainObject, keys, mapValues, merge, omit, omitBy, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
 import { enter, isCommandable, leave, set as setting, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
@@ -26,7 +26,24 @@ type RelayMessage =
       }
     /// The robot's `rt/lf/sportmodestate` report, sent only when one of its fields changes. Null for
     /// a field the report did not carry, or for a motion-control mode the relay could not read.
-    | { type: 'sport_state'; motionMode: string | null; mode: number | null; errorCode: number | null };
+    | { type: 'sport_state'; motionMode: string | null; mode: number | null; errorCode: number | null }
+    /// A snapshot (`errors`) or a delta (`add_error`, `rm_error`) of the robot's active faults.
+    | { type: 'faults'; change: keyof typeof FAULT_CHANGES; faults: Fault[] };
+
+/// One fault the robot reports: its source, its code, and the driver's text for both.
+type Fault = { source: number; code: number; text: string };
+
+/// Faults keyed by source and code, so the same fault reported twice is held once.
+const keyed = indexBy((_fault: Fault) => `${_fault.source}-${_fault.code}`);
+type Faults = ReturnType<typeof keyed>;
+
+/// How each kind of fault message changes the active faults: a snapshot replaces them, a delta
+/// adds or removes the faults it carries.
+const FAULT_CHANGES = {
+    errors: (_faults: Faults) => constant(_faults),
+    add_error: (_faults: Faults) => (_active: Faults) => merge(_active, _faults),
+    rm_error: (_faults: Faults) => (_active: Faults) => omitBy(_active, (_fault, _key) => _key in _faults),
+};
 
 // WebSocket.readyState values, named so the tests need no browser global.
 const OPEN = 1;
@@ -113,7 +130,8 @@ const previousAfter = (_previous: Toggled, _from: RobotState, _to: RobotState): 
     headlight: _to.headlight !== _from.headlight ? _from.headlight : _previous.headlight,
 });
 
-const lost = merge({ robotConnected: false, reported: {} });
+/// Losing the robot also clears its faults: the next robot reports its own.
+const lost = merge({ robotConnected: false, reported: {}, faults: {} });
 
 /// The control channel to the relay, as far as the robot uses it.
 type Socket = Pick<WebSocket, 'readyState' | 'send' | 'onopen' | 'onclose' | 'onmessage'>;
@@ -136,6 +154,8 @@ export class Robot {
         /// The last settled gait the app can enter and the last settled colour, each before the
         /// current one, so a toggle can return to it.
         previous: Toggled;
+        /// The robot's active faults, as it last reported them.
+        faults: Faults;
     }>({
         channelOpen: false,
         robotConnected: false,
@@ -155,6 +175,7 @@ export class Robot {
         reported: {},
         /// A toggle that leaves a value before any other was settled returns to the boot value.
         previous: { gait: 'FreeWalk', headlight: 'green' },
+        faults: {},
     });
     get current() { return this.#current; }
     /// The latest decoded frame of the robot's camera, or null before the first one arrives.
@@ -298,6 +319,12 @@ export class Robot {
                     this.#log.record(stamp(_msg.reqId, _msg.command_name ?? 'command', verdict));
                 return summary(outcome);
             }
+            case 'faults':
+                // A change kind this browser does not know changes nothing.
+                if (isIncludedIn(_msg.change, keys(FAULT_CHANGES)))
+                    this.#update(evolve({ faults: FAULT_CHANGES[_msg.change](keyed(_msg.faults)) }));
+                else console.warn('Ignoring a fault message of an unknown change:', _msg.change);
+                return;
             case 'state_stream':
                 // The robot's telemetry, which only the log shows.
                 return;
