@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { map, prop, range, reverse, times } from 'remeda';
+import { map, omit, prop, range, reverse, times } from 'remeda';
 import { Robot } from './robot.svelte';
-import { OutcomeLog } from './outcomes.svelte';
+import { LISTS, OutcomeLog } from './outcomes.svelte';
 import type { Outcome } from './outcomes.svelte';
 import { enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue, RobotState } from '../utils/commands';
@@ -403,6 +403,76 @@ describe('the outcome log', () => {
         expect(log.entries).toEqual([]);
         expect(log.counts).toEqual({ confirmed: 0, failed: 0, rejected: 0, unknown: 0 });
         expect(log.last).toBeNull();
+        expect(log.messages).toEqual({ sent: [], received: [], stream: [] });
+    });
+});
+
+const stateStream = JSON.stringify({ type: 'state_stream', data: { mode: 1 } });
+
+describe('the message log', () => {
+    it('logs a request as sent, and its verdict as received under the label of the request it answers', () => {
+        const { robot, socket, log } = openRobot();
+        void robot.request(DANCE);
+        // The verdict carries no command name, so only the awaited request can name it.
+        socket.receive(verdict(socket.reqId(), 'confirmed', 0));
+        const detail = JSON.stringify(omit(socket.written[0], ['command_name']));
+        expect(log.messages.sent).toMatchObject([{ kind: 'sent', summary: 'Dance', detail }]);
+        expect(log.messages.received).toMatchObject([{ kind: 'received', summary: 'Dance confirmed (0)' }]);
+    });
+
+    it('logs connect and disconnect as sent', () => {
+        const { robot, log } = openRobot();
+        robot.connectRobot('192.168.123.161');
+        robot.disconnectRobot();
+        expect(map(log.messages.sent, prop('summary'))).toEqual(['disconnect', 'connect']);
+    });
+
+    it('logs nothing as sent when the message never left the browser', async () => {
+        const { robot, socket, log } = openRobot();
+        socket.readyState = CLOSED;
+        await robot.request(HELLO);
+        expect(log.messages.sent).toEqual([]);
+    });
+
+    it('logs a robot_state as received under its type, and a state_stream as stream with only its data', () => {
+        const { socket, log } = openRobot();
+        socket.receive(robotState(true));
+        socket.receive(stateStream);
+        expect(log.messages).toMatchObject({
+            sent: [],
+            received: [{ kind: 'received', summary: 'robot_state', detail: '{"connected":true}' }],
+            stream: [{ kind: 'stream', summary: '', detail: '{"mode":1}' }],
+        });
+    });
+
+    it('logs a frame that is not JSON as received', () => {
+        const { socket, log } = openRobot();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        socket.receive('{ this is not json');
+        expect(log.messages.received).toMatchObject([{ summary: 'not a relay message', detail: '{ this is not json' }]);
+        warn.mockRestore();
+    });
+
+    it('keeps the newest stream messages up to their own limit, and leaves the other lists untouched', () => {
+        const { robot, socket, log } = openRobot();
+        void robot.request(HELLO);
+        socket.receive(verdict(socket.reqId(), 'confirmed', 0));
+        const { sent, received } = log.messages;
+        times(LISTS.stream.limit + 1, () => socket.receive(stateStream));
+        expect(log.messages.stream).toHaveLength(LISTS.stream.limit);
+        expect(log.messages.sent).toBe(sent);
+        expect(log.messages.received).toBe(received);
+    });
+
+    it('counts only the verdicts', () => {
+        const { robot, socket, log } = openRobot();
+        robot.connectRobot('192.168.123.161');
+        socket.receive(robotState(true));
+        socket.receive(stateStream);
+        void robot.request(HELLO);
+        socket.receive(verdict(socket.reqId(1), 'failed', 3203));
+        expect(log.entries).toHaveLength(1);
+        expect(log.counts).toEqual({ confirmed: 0, failed: 1, rejected: 0, unknown: 0 });
     });
 });
 

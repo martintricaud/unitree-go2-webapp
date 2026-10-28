@@ -1,7 +1,7 @@
 <script lang="ts">
+    import { filter, flatMap, fromKeys, pipe, prop, set, sortBy } from 'remeda';
     import { robot } from '../lib/stores/robot.svelte';
-    import { outcomeLog } from '../lib/stores/outcomes.svelte';
-    import type { Outcome } from '../lib/stores/outcomes.svelte';
+    import { KINDS, LISTS, outcomeLog, summary } from '../lib/stores/outcomes.svelte';
     import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
     let props: {
@@ -29,11 +29,21 @@
         link.click();
         URL.revokeObjectURL(link.href);
     };
-</script>
 
-{#snippet summary(entry: Outcome)}
-    {entry.label} {entry.outcome}{entry.code === null ? '' : ` (${entry.code})`}
-{/snippet}
+    /// Whether the log shows each kind of message; a filter button flips its kind.
+    let shown = $state.raw(fromKeys(KINDS, () => true));
+
+    /// The shown messages, newest first. Each kind's list is already newest first, so the sort
+    /// only merges them.
+    const listed = $derived(
+        pipe(
+            KINDS,
+            filter((_kind) => shown[_kind]),
+            flatMap((_kind) => outcomeLog.messages[_kind]),
+            sortBy([prop('at'), 'desc']),
+        ),
+    );
+</script>
 
 <div class="strip">
     <!-- Three groups: the connection on the left, the controller and the edit mode centred, the
@@ -73,7 +83,7 @@
         </div>
         <div class="side end">
             <span class="last" title={outcomeLog.last?.detail ?? ''}>
-                {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
+                {#if outcomeLog.last === null}no command sent yet{:else}{summary(outcomeLog.last)}{/if}
             </span>
             <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
             <button class="toggle" popovertarget="outcome-log">
@@ -81,21 +91,27 @@
             </button>
         </div>
     </div>
-    <ol
-        id="outcome-log"
-        class="log"
-        popover="auto"
-    >
-        <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
-             duplicate key would take the whole strip down mid-performance. -->
-        {#each outcomeLog.entries as entry}
-            <li>
-                <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
-                <span>{@render summary(entry)}</span>
-                <span class="detail">{entry.detail}</span>
-            </li>
-        {/each}
-    </ol>
+    <div id="outcome-log" class="log" popover="auto">
+        <div class="filters">
+            {#each KINDS as kind}
+                <button class="toggle" aria-pressed={shown[kind]} onclick={() => (shown = set(shown, kind, !shown[kind]))}>
+                    {LISTS[kind].label}
+                </button>
+            {/each}
+        </div>
+        <ol>
+            <!-- Keyed by the entry object, which no two rows share even within one millisecond, so
+                 a new message adds one row and leaves the others as they are. -->
+            {#each listed as entry (entry)}
+                <li>
+                    <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
+                    <span class="kind">{LISTS[entry.kind].label}</span>
+                    <span>{entry.summary}</span>
+                    <span class="detail" title={entry.detail}>{entry.detail}</span>
+                </li>
+            {/each}
+        </ol>
+    </div>
 </div>
 
 <style>
@@ -184,13 +200,40 @@
         background: rgb(240, 240, 240);
     }
 
+    /* The filters stay in view while the entries scroll under them. */
+    .filters {
+        position: sticky;
+        top: 0;
+        display: flex;
+        gap: 0.4em;
+        padding-bottom: 0.3rem;
+        background: inherit;
+    }
+
+    /* A pressed filter shows its kind. It is drawn as the controller draws a selected button. */
+    .filters [aria-pressed='true'] {
+        border-style: inset;
+        background-color: #bbb;
+    }
+
+    .log ol {
+        margin: 0;
+        padding: 0;
+    }
+
+    /* A stream entry has no summary, so its empty slot takes no gap. */
+    .log li span:empty {
+        display: none;
+    }
+
     .log li {
         display: flex;
         gap: 0.8em;
         white-space: nowrap;
     }
 
-    .clock {
+    .clock,
+    .kind {
         color: #555;
     }
 
