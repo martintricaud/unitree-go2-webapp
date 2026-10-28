@@ -607,6 +607,14 @@ describe('cueSheet import and export', () => {
     expect([cueSheet.state.shown, cueSheet.state.instrument]).toEqual([shown, 'Group']);
   });
 
+  it('exports the same text again after importing its own export', () => {
+    const { cueSheet } = editing('Group');
+    cueSheet.sweep(0, 1);
+    const text = cueSheet.exported();
+    cueSheet.import(text);
+    expect(cueSheet.exported()).toBe(text);
+  });
+
   it.each([
     ['an invalid leaf', (_cueSheet: CueSheet) => file(_cueSheet, [set(ONE, 'args', ['Stairs'])]), /→ at sheet\.0\.args\.0$/],
     ['a wrong version', (_cueSheet: CueSheet) => file(_cueSheet, [ONE]).replace('"version":2', '"version":3'), /→ at version$/],

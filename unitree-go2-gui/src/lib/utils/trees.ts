@@ -25,10 +25,13 @@ const numberedFrom =
     (_first: number) =>
     <A, L>(_tree: Tree<A, L>, _index: number, _trees: readonly Tree<A, L>[]): Tree<A & { id: number }, L> =>
         pipe(_first + preorder(take(_trees, _index)).length, (_id) =>
-            _tree.items === undefined ? merge(_tree, { id: _id }) : merge(_tree, { id: _id, items: map(_tree.items, numberedFrom(_id + 1)) }),
+            _tree.items === undefined
+                ? merge({ id: _id }, _tree)
+                : merge(merge({ id: _id }, _tree), { items: map(_tree.items, numberedFrom(_id + 1)) }),
         );
 
-/// `_trees` with every node numbered in pre-order from `_first` under `id`.
+/// `_trees` with every node numbered in pre-order from `_first` under `id`. `id` is each node's first
+/// key, so that a numbered tree serializes to the same JSON text as one read back from it.
 export const numbered = <A, L>(_trees: Tree<A, L>[], _first: number) => map(_trees, numberedFrom(_first));
 
 /// The identifiers of every node of `_trees`, in pre-order.
