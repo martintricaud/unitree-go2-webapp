@@ -41,7 +41,7 @@ type Faults = ReturnType<typeof keyed>;
 /// adds or removes the faults it carries.
 const FAULT_CHANGES = {
     errors: (_faults: Faults) => constant(_faults),
-    add_error: (_faults: Faults) => (_active: Faults) => merge(_active, _faults),
+    add_error: (_faults: Faults) => merge(_faults),
     rm_error: (_faults: Faults) => (_active: Faults) => omitBy(_active, (_fault, _key) => _key in _faults),
 };
 

@@ -4,9 +4,9 @@ import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { COLOURS, SPEED_LEVELS } from '../data/settings';
 import { ACTIONS, GAITS, dim, enter, isCommandable, leave, orient, perform, recover, sequence, set, wait } from './commands';
-import { cells as numbered, compiled, sheetSchema } from './commands';
+import { compiled, sheetSchema } from './commands';
 import type { Cell } from './commands';
-import { nextId } from './trees';
+import { nextId, numbered } from './trees';
 import WIRE from './encode.fixture.json';
 
 const COMMANDABLE_GAITS = keys(GAITS).filter(isCommandable);

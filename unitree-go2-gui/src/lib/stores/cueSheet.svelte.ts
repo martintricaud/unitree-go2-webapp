@@ -5,9 +5,9 @@ import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
-import { COMMANDABLE_GAITS, POSTURES, cells, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
+import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
 import { face, postureChange, sheetSchema, transition } from '../utils/commands';
-import { nextId, opened } from '../utils/trees';
+import { nextId, numbered, opened } from '../utils/trees';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
 
@@ -70,8 +70,8 @@ const numberedDocument = (_cues: Cue[]) => {
         PANE_GROUPS,
         reduce(
             (_document: Document, _group) =>
-                merge(_document, { pane: set(_document.pane, _group, cells(PANE[_group], nextId(cellsOf(_document)))) }),
-            { sheet: cells(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
+                merge(_document, { pane: set(_document.pane, _group, numbered(PANE[_group], nextId(cellsOf(_document)))) }),
+            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
         ),
     );
     const pairs = zip(cellsOf({ sheet: _cues, pane: PANE }), cellsOf(document));
@@ -279,9 +279,9 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// same move, applied to the indices, says where each cell lands.
     reorder = (_from: number, _to: number) =>
         this.#edit((_state) =>
-            merge(_state, {
-                shown: merge(_state.shown, { sheet: move(_from, _to)(_state.shown.sheet) }),
-                pointer: pipe(range(0, _state.shown.sheet.length), move(_from, _to), findIndex(isStrictEqual(_state.pointer))),
+            evolve(_state, {
+                shown: { sheet: move(_from, _to)<Cell> },
+                pointer: (_at) => pipe(range(0, _state.shown.sheet.length), move(_from, _to), findIndex(isStrictEqual(_at))),
             }),
         );
 
@@ -294,9 +294,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     reset = () => this.#show(this.state.saved);
 
     /// The shown document as JSON text, as storage and an exported file hold it.
-    exported = () => {
-        return JSON.stringify(merge({ version: 2 }, this.state.shown), null, 2);
-    };
+    exported = () => JSON.stringify(merge({ version: 2 }, this.state.shown), null, 2);
 
     /// Shows the document of the JSON text `_text` until Save or Cancel. When `_text` holds no valid
     /// document, the shown one stays, and Valibot's message for the first issue, with its location,

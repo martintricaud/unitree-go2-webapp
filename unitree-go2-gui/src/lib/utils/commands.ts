@@ -2,7 +2,7 @@ import { filter, flatMap, hasAtLeast, identity, isPlainObject, keys, map, mergeA
 import * as v from 'valibot';
 import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
-import { distinct, leaves, numbered } from './trees';
+import { distinct, leaves } from './trees';
 import type { Tree } from './trees';
 
 type SportRequest = keyof typeof SPORT_API;
@@ -155,9 +155,6 @@ export type Cue = Tree<{ label: string }, Call>;
 /// stored form.
 export type Cell = Tree<{ label: string; id: number }, Call>;
 
-/// `_cues` as cells numbered in pre-order from `_first`.
-export const cells = (_cues: Cue[], _first: number): Cell[] => numbered(_cues, _first);
-
 /// One message the relay sends to the robot, or a pause between two of them.
 type Step =
     | { kind: 'command'; topic: string; api_id: number; command_name: string; parameter?: Record<string, unknown> }
@@ -215,16 +212,17 @@ const run = <K extends keyof Params>({ name, args }: { name: K; args: Params[K] 
 
 /// A cue calling command `_name` with `_args`, under the label its command gives it. Each
 /// constructor below fixes its arity, so that a caller such as `map` cannot pass extra arguments.
+/// Each returns `Cue`, so that a list of cues of different commands has one element type.
 const call = <K extends keyof Params>(_name: K, ..._args: Params[K]) => ({ label: COMMANDS[_name](..._args).label, name: _name, args: _args });
 
-export const enter = (_target: Params['enter'][0]) => call('enter', _target);
-export const leave = (_posture: Posture) => call('leave', _posture);
-export const perform = (_action: Params['perform'][0]) => call('perform', _action);
-export const recover = () => call('recover');
-export const set = (_setting: Params['set'][0]) => call('set', _setting);
-export const orient = (_x: number, _y: number, _z: number) => call('orient', _x, _y, _z);
-export const dim = (_level: number) => call('dim', _level);
-export const wait = (_seconds: number) => call('wait', _seconds);
+export const enter = (_target: Params['enter'][0]): Cue => call('enter', _target);
+export const leave = (_posture: Posture): Cue => call('leave', _posture);
+export const perform = (_action: Params['perform'][0]): Cue => call('perform', _action);
+export const recover = (): Cue => call('recover');
+export const set = (_setting: Params['set'][0]): Cue => call('set', _setting);
+export const orient = (_x: number, _y: number, _z: number): Cue => call('orient', _x, _y, _z);
+export const dim = (_level: number): Cue => call('dim', _level);
+export const wait = (_seconds: number): Cue => call('wait', _seconds);
 
 /// Runs `_items` one after the other, as one cue. An empty label leaves the sequence unnamed.
 export const sequence = (_label: string, ..._items: [Cue, ...Cue[]]): Cue => ({
