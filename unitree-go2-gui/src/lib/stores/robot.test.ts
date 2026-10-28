@@ -1116,6 +1116,13 @@ describe('the toggles', () => {
         expect(pressAll(a, [() => a.robot.togglePosture('Pose')])).toEqual([]);
     });
 
+    it("Damp's toggle drops the robot from another posture, then stands it up", async () => {
+        const connected = connectedRobot();
+        await connected.confirm(enter('Sitting'));
+        const d = () => connected.robot.togglePosture('Damp');
+        expect(pressAll(connected, [d, d])).toEqual(asSent(enter('Damp'), leave('Damp')));
+    });
+
     it('x sits from a gait, then rises', () => {
         const connected = connectedRobot();
         const x = () => connected.robot.togglePosture('Sitting');

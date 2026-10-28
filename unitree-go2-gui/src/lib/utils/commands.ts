@@ -1,4 +1,4 @@
-import { filter, flatMap, hasAtLeast, identity, isPlainObject, keys, map, mergeAll, objOf, pipe, prop, values } from 'remeda';
+import { filter, flatMap, hasAtLeast, identity, isDeepEqual, isPlainObject, keys, map, mergeAll, objOf, pipe, prop, sortBy, take, values } from 'remeda';
 import * as v from 'valibot';
 import { SPORT_API } from '../data/sportApi';
 import { BRIGHTNESS, COLOURS, EULER, SETTINGS, SPEED_LEVELS } from '../data/settings';
@@ -241,10 +241,25 @@ export const commandsOf = (_cue: Cue) => filter(compiled(_cue).steps, (_step) =>
 /// The state the robot is in once `_cue` has run from `_state`.
 export const transition = (_cue: Cue) => (_state: RobotState): RobotState => ({ ..._state, ...compiled(_cue).change });
 
-/// The side of `_posture`'s pair the robot can take from `_state`, as zero or one cue. In no
-/// posture the robot can enter any posture; in a posture it can only leave that posture.
-export const postureChange = (_posture: Posture) => ({ posture }: RobotState) =>
-    posture === null ? [enter(_posture)] : posture === _posture ? [leave(_posture)] : [];
+/// True for Damp, the one posture the robot can enter and leave (by RecoveryStand) from any
+/// state, reported or not, so that the operator can always drop the robot or stand it up.
+export const anyState = (_posture: Posture) => _posture === 'Damp';
+
+/// The sides of `_posture`'s pair the robot can take from `_state`. In no posture the robot can
+/// enter any posture; in a posture it can only leave that posture. Damp's pair allows both sides.
+export const postureSides = (_posture: Posture) => ({ posture }: RobotState) =>
+    anyState(_posture)
+        ? [enter(_posture), leave(_posture)]
+        : posture === null
+          ? [enter(_posture)]
+          : posture === _posture
+            ? [leave(_posture)]
+            : [];
+
+/// The side of `_sides` a key sends from `_state`, as zero or one cue: the first side that changes
+/// the state, or the first side when none does.
+export const toggled = (_state: RobotState) => (_sides: Cue[]) =>
+    pipe(_sides, sortBy((_side) => isDeepEqual(transition(_side)(_state), _state)), take(1));
 
 /// A non-empty list of stored cells. The check runs first, so that `_message` alone reports an
 /// empty list. Lazy, because groups and cells refer to each other.

@@ -6,7 +6,7 @@ import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
 import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
-import { face, postureChange, sheetSchema, transition } from '../utils/commands';
+import { anyState, face, postureSides, sheetSchema, toggled, transition } from '../utils/commands';
 import { nextId, numbered, opened } from '../utils/trees';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
@@ -91,7 +91,8 @@ const reached = (_robot: typeof robot, _cell: Cell) => transition(_cell)(_robot.
 const itself = (_robot: typeof robot, _cell: Cell) => [_cell];
 
 /// Why the robot cannot take a cell yet, or null once it can: a sheet cell always; a pane cell once
-/// the robot is connected, and a gait or a posture once it has also reported its gait or posture.
+/// the robot is connected, and a gait or a posture other than Damp once it has also reported its
+/// gait or posture.
 const connected = (_robot: typeof robot) => (_robot.current.robotConnected ? null : 'the robot is not connected');
 const motionKnown = (_robot: typeof robot) =>
     connected(_robot) ??
@@ -101,18 +102,19 @@ const PANE_KEYS: Record<
     PaneGroup,
     {
         act: (_robot: typeof robot, _cell: Cell) => void;
-        refusal: (_robot: typeof robot) => string | null;
+        refusal: (_robot: typeof robot, _cell: Cell) => string | null;
         available: (_robot: typeof robot, _cell: Cell) => Cue[];
     }
 > = {
     actions: { act: send, refusal: connected, available: itself },
-    // A posture pair has two sides, the posture's entry and its exit, and allows the one
-    // `postureChange` gives.
+    // A posture pair has two sides, the posture's entry and its exit, and allows the ones
+    // `postureSides` gives.
     postures: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).posture, (_posture) => _posture && _robot.togglePosture(_posture)),
-        refusal: motionKnown,
+        refusal: (_robot, _cell) =>
+            pipe(reached(_robot, _cell).posture, (_posture) => (_posture && anyState(_posture) ? connected : motionKnown)(_robot)),
         available: (_robot, _cell) =>
-            pipe(reached(_robot, _cell).posture, (_posture) => (_posture ? postureChange(_posture)(_robot.current.state.settled) : [])),
+            pipe(reached(_robot, _cell).posture, (_posture) => (_posture ? postureSides(_posture)(_robot.current.state.settled) : [])),
     },
     gaits: {
         act: (_robot, _cell) => pipe(reached(_robot, _cell).gait, (_gait) => isCommandable(_gait) && _robot.toggleTo('gait', _gait)),
@@ -122,17 +124,17 @@ const PANE_KEYS: Record<
     lights: { act: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight), refusal: connected, available: itself },
 };
 
-/// Why the robot cannot take `_sides`, the sides of a cell a press would send, or null when it can:
-/// the cell's own refusal, or no side the robot's state allows.
-const refusalOf = (_robot: typeof robot, { refusal }: (typeof PANE_KEYS)[PaneGroup], _sides: Cue[]) =>
-    refusal(_robot) ?? (isEmpty(_sides) ? "the robot's posture does not allow it" : null);
-
 /// Each drawn cell of `_document`, with what a key linked to it does, when the robot can take it,
 /// and which of its sides the robot's state allows.
 const targets = ({ sheet, pane }: Document) => [
     ...map(sheet, (_cell) => ({ act: send, refusal: constant(null), available: itself, cell: _cell })),
     ...pipe(PANE_GROUPS, flatMap((_group) => map(pane[_group], (_cell) => merge(PANE_KEYS[_group], { cell: _cell })))),
 ];
+
+/// Why the robot cannot take `_sides`, the sides of a cell a press would send, or null when it can:
+/// the cell's own refusal, or no side the robot's state allows.
+const refusalOf = (_robot: typeof robot, { refusal, cell }: ReturnType<typeof targets>[number], _sides: Cue[]) =>
+    refusal(_robot, cell) ?? (isEmpty(_sides) ? "the robot's posture does not allow it" : null);
 
 /// The target of `_document` whose cell has identifier `_id`, as zero or one.
 const targetOf = (_document: Document, _id: Cell['id'] | undefined) =>
@@ -383,8 +385,8 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     usable = (_cell: Cell, _cue: Cue = _cell) =>
         this.state.instrument === 'Assign' || pipe(this.#refusals(_cell, _cue), filter(isNullish), hasAtLeast(1));
 
-    /// A face key under Fire draws pressed the side the robot's state allows of the cell it is
-    /// linked to in the saved document, and acts on the cell once the robot can take it; it logs
+    /// A face key under Fire draws pressed the side `toggled` picks among the allowed sides of the
+    /// cell it is linked to in the saved document, and acts on the cell once the robot can take it; it logs
     /// the press as blocked for an unassigned key, a cell with no side allowed, or a robot that
     /// cannot take the cell yet. Under every edit instrument it selects itself under Assign.
     #trigger = (_key: Key) => {
@@ -392,7 +394,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         const links = linksOf(this.state.saved, _key);
         if (isEmpty(links)) this.#robot.block(_key, 'no cell is linked to this key');
         forEach(links, (_target) => {
-            const sides = _target.available(this.#robot, _target.cell);
+            const sides = pipe(_target.available(this.#robot, _target.cell), toggled(this.#robot.current.state.settled));
             forEach(sides, (_side) => this.#press(_target.cell, _side));
             const refused = refusalOf(this.#robot, _target, sides);
             if (refused === null) _target.act(this.#robot, _target.cell);

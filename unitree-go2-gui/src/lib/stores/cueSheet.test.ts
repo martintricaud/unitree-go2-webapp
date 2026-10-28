@@ -513,7 +513,7 @@ describe('cueSheet key assignment', () => {
     expect(cueSheet.usable(red)).toBe(true);
   });
 
-  it('makes usable and sends only the side of a posture pair the settled posture allows', () => {
+  it('makes usable and sends only the sides of a posture pair the settled posture allows, and both sides of Damp', () => {
     const { cueSheet, sent, confirm } = setup();
     const usableSides = () =>
       pipe(
@@ -522,11 +522,11 @@ describe('cueSheet key assignment', () => {
         map(prop('label')),
       );
     const sitting = paneCell(cueSheet, 'postures', 'Sitting');
-    expect(usableSides()).toEqual(keys(POSTURES));
+    expect(usableSides()).toEqual([...keys(POSTURES), leave('Damp').label]);
     cueSheet.use(sitting, leave('Sitting'));
     cueSheet.use(sitting, enter('Sitting'));
     confirm();
-    expect(usableSides()).toEqual([leave('Sitting').label]);
+    expect(usableSides()).toEqual(map([leave('Sitting'), enter('Damp'), leave('Damp')], prop('label')));
     cueSheet.use(paneCell(cueSheet, 'postures', 'Pose'), enter('Pose'));
     cueSheet.use(sitting, leave('Sitting'));
     expect(sent()).toEqual(asSent(enter('Sitting'), leave('Sitting')));
@@ -565,6 +565,15 @@ describe('cueSheet key assignment', () => {
     receive({ type: 'robot_state', connected: true });
     cueSheet.use(paneCell(cueSheet, 'gaits', 'Bound'));
     expect([sent(), blocked(log)]).toEqual([[], ['Bound: the robot has not reported its gait or posture']]);
+  });
+
+  it('makes both sides of Damp usable before any gait or posture report, and sends them', () => {
+    const { cueSheet, sent, receive } = setup(CONDUITE, memoryStorage(), false);
+    receive({ type: 'robot_state', connected: true });
+    const damp = paneCell(cueSheet, 'postures', 'Damp');
+    expect([cueSheet.usable(damp, enter('Damp')), cueSheet.usable(damp, leave('Damp'))]).toEqual([true, true]);
+    cueSheet.use(damp, leave('Damp'));
+    expect(sent()).toEqual(asSent(leave('Damp')));
   });
 
   it('logs the side of a posture pair the settled posture does not allow as blocked, from a button and from a key', () => {

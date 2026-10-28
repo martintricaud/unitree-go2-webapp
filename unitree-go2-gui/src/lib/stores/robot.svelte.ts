@@ -1,7 +1,7 @@
 import { constant, evolve, filter, forEach, indexBy, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish } from 'remeda';
 import { isPlainObject, join, keys, mapValues, merge, omit, omitBy, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { compiled, enter, face, isCommandable, postureChange, set as setting, transition } from '../utils/commands';
+import { compiled, enter, face, isCommandable, postureSides, set as setting, toggled, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
@@ -384,12 +384,12 @@ export class Robot {
 
     /// The toggles ask for the opposite of what the robot shows, so a refused command leaves the
     /// next press asking for the same thing again. Each logs the press as blocked while a toggled
-    /// field waits for a verdict. A posture's toggle sends the side of its pair the settled state
-    /// allows, so it does nothing while the robot is in another posture.
+    /// field waits for a verdict. A posture's toggle sends the side of its pair `toggled` picks from
+    /// the settled state, so it does nothing while the robot is in another posture, except Damp's.
     togglePosture = (_posture: Posture) => {
         const { pending, settled } = this.#current.state;
         const waiting = waitingOn(pending, ['posture']);
-        forEach(postureChange(_posture)(settled), (_cue) => (waiting === null ? void this.request(_cue) : this.block(face(_cue), waiting)));
+        forEach(pipe(postureSides(_posture)(settled), toggled(settled)), (_cue) => (waiting === null ? void this.request(_cue) : this.block(face(_cue), waiting)));
     };
 
     /// Sends `_field` to `_value`, or back to its previous value when the robot already shows
