@@ -1,7 +1,7 @@
 <script lang="ts">
+    import { filter, flatMap, fromKeys, pipe, prop, set, sortBy, values } from 'remeda';
     import { robot } from '../lib/stores/robot.svelte';
-    import { outcomeLog } from '../lib/stores/outcomes.svelte';
-    import type { Outcome } from '../lib/stores/outcomes.svelte';
+    import { KINDS, LISTS, outcomeLog, summary } from '../lib/stores/outcomes.svelte';
     import { cueSheet } from '../lib/stores/cueSheet.svelte';
 
     let props: {
@@ -29,11 +29,24 @@
         link.click();
         URL.revokeObjectURL(link.href);
     };
-</script>
 
-{#snippet summary(entry: Outcome)}
-    {entry.label} {entry.outcome}{entry.code === null ? '' : ` (${entry.code})`}
-{/snippet}
+    /// The robot's active faults, which the log button counts and the popover lists.
+    const faults = $derived(values(robot.current.faults));
+
+    /// Whether the log shows each kind of message; a filter button flips its kind.
+    let shown = $state.raw(fromKeys(KINDS, () => true));
+
+    /// The shown messages, newest first. Each kind's list is already newest first, so the sort
+    /// only merges them.
+    const listed = $derived(
+        pipe(
+            KINDS,
+            filter((_kind) => shown[_kind]),
+            flatMap((_kind) => outcomeLog.messages[_kind]),
+            sortBy([prop('at'), 'desc']),
+        ),
+    );
+</script>
 
 <div class="strip">
     <!-- Three groups: the connection on the left, the controller and the edit mode centred, the
@@ -73,29 +86,47 @@
         </div>
         <div class="side end">
             <span class="last" title={outcomeLog.last?.detail ?? ''}>
-                {#if outcomeLog.last === null}no command sent yet{:else}{@render summary(outcomeLog.last)}{/if}
+                {#if outcomeLog.last === null}no command sent yet{:else}{summary(outcomeLog.last)}{/if}
             </span>
-            <!-- The verdicts by outcome; a rejection by the WebRTC bridge counts as a failure. -->
+            <!-- The verdicts by outcome, then the active faults; a rejection by the WebRTC bridge
+                 counts as a failure. -->
             <button class="toggle" popovertarget="outcome-log">
-                Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌)
+                Log ({outcomeLog.counts.confirmed} ✅, {outcomeLog.counts.unknown} ❓, {outcomeLog.counts.failed + outcomeLog.counts.rejected} ❌, {faults.length} ⚠️)
             </button>
         </div>
     </div>
-    <ol
-        id="outcome-log"
-        class="log"
-        popover="auto"
-    >
-        <!-- Keyless on purpose: two verdicts can land in the same millisecond, and a
-             duplicate key would take the whole strip down mid-performance. -->
-        {#each outcomeLog.entries as entry}
-            <li>
-                <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
-                <span>{@render summary(entry)}</span>
-                <span class="detail">{entry.detail}</span>
-            </li>
-        {/each}
-    </ol>
+    <div id="outcome-log" class="log" popover="auto">
+        <div class="head">
+            <!-- Each fault as the driver names it, then its source and its code in hexadecimal, as
+                 the driver writes them. -->
+            {#if faults.length > 0}
+                <ul class="faults">
+                    {#each faults as fault}
+                        <li>{fault.text} ({fault.source}-{fault.code.toString(16).toUpperCase()})</li>
+                    {/each}
+                </ul>
+            {/if}
+            <div class="filters">
+                {#each KINDS as kind}
+                    <button class="toggle" aria-pressed={shown[kind]} onclick={() => (shown = set(shown, kind, !shown[kind]))}>
+                        {LISTS[kind].label}
+                    </button>
+                {/each}
+            </div>
+        </div>
+        <ol>
+            <!-- Keyed by the entry object, which no two rows share even within one millisecond, so
+                 a new message adds one row and leaves the others as they are. -->
+            {#each listed as entry (entry)}
+                <li>
+                    <span class="clock">{new Date(entry.at).toLocaleTimeString()}</span>
+                    <span class="kind">{LISTS[entry.kind].label}</span>
+                    <span>{entry.summary}</span>
+                    <span class="detail" title={entry.detail}>{entry.detail}</span>
+                </li>
+            {/each}
+        </ol>
+    </div>
 </div>
 
 <style>
@@ -184,13 +215,56 @@
         background: rgb(240, 240, 240);
     }
 
+    /* The faults and the filters stay in view while the entries scroll under them. */
+    .head {
+        position: sticky;
+        top: 0;
+        background: inherit;
+    }
+
+    .faults {
+        margin: 0 0 0.3rem;
+        padding: 0 0 0.3rem;
+        list-style: none;
+        border-bottom: 1px solid #999;
+        color: rgb(160, 0, 0);
+    }
+
+    /* A fault's text wraps rather than widen the popover past its 60 characters. */
+    .log .faults li {
+        white-space: normal;
+    }
+
+    .filters {
+        display: flex;
+        gap: 0.4em;
+        padding-bottom: 0.3rem;
+    }
+
+    /* A pressed filter shows its kind. It is drawn as the controller draws a selected button. */
+    .filters [aria-pressed='true'] {
+        border-style: inset;
+        background-color: #bbb;
+    }
+
+    .log ol {
+        margin: 0;
+        padding: 0;
+    }
+
+    /* A stream entry has no summary, so its empty slot takes no gap. */
+    .log li span:empty {
+        display: none;
+    }
+
     .log li {
         display: flex;
         gap: 0.8em;
         white-space: nowrap;
     }
 
-    .clock {
+    .clock,
+    .kind {
         color: #555;
     }
 

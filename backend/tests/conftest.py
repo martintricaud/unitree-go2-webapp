@@ -130,12 +130,16 @@ class FakeHeartbeat:
 
 class FakeDataChannel:
     """The driver's data channel as the relay reads it: the pub_sub it publishes through, the
-    flag the validation callback sets, and the heartbeat."""
+    flag the validation callback sets, the heartbeat, and the fault callbacks registered."""
 
     def __init__(self, pub_sub, opened=True):
         self.pub_sub = pub_sub
         self.data_channel_opened = opened
         self.heartbeat = FakeHeartbeat()
+        self.fault_callbacks = []
+
+    def set_on_fault_callback(self, callback):
+        self.fault_callbacks.append(callback)
 
 
 class FakeConnection:

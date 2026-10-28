@@ -73,12 +73,6 @@
             callback={(next: boolean) => robot.setLidar(next)}
         />
         <Switch
-            label={'Monitor State'}
-            value={robot.current.monitoringOn}
-            disabled={!robot.current.robotConnected}
-            callback={(next: boolean) => robot.setMonitoring(next)}
-        />
-        <Switch
             label={'Obstacle Avoidance'}
             value={shown.obstacleAvoidance}
             confirmed={robot.current.state.settled.obstacleAvoidance}

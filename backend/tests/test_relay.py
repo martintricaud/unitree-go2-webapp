@@ -5,11 +5,13 @@ import asyncio
 import json
 import logging
 import time
+from types import SimpleNamespace
 
 import pytest
 
 import main
 from go2_webrtc_driver.msgs.error_handler import handle_error
+from go2_webrtc_driver.webrtc_datachannel import WebRTCDataChannel
 
 from .conftest import MOTION_SWITCHER, FakeConnection, FakeWebSocket, motion_switcher_reply, reply_for
 
@@ -582,6 +584,58 @@ def test_an_empty_fault_snapshot_does_not_raise(capsys):
     assert capsys.readouterr().out == ""
 
 
+async def test_a_registered_fault_callback_receives_the_triples_instead_of_the_print(capsys):
+    seen = []
+    channel = SimpleNamespace(on_fault_callback=lambda kind, triples: seen.append((kind, triples)))
+    await WebRTCDataChannel.handle_response(channel, {"type": "add_error", "data": [1765000000, 300, 16]})
+    assert seen == [("add_error", [[1765000000, 300, 16]])]
+    assert capsys.readouterr().out == ""
+
+
+async def test_without_a_fault_callback_the_driver_still_prints(capsys):
+    channel = SimpleNamespace(on_fault_callback=None)
+    await WebRTCDataChannel.handle_response(channel, {"type": "rm_error", "data": [1765000000, 300, 16]})
+    assert capsys.readouterr().out.count("Error Received from Go2") == 1
+
+
+MOTOR = {"source": 300, "code": 16, "text": "Motor malfunction: Winding overheating"}
+FIRMWARE = {"source": 100, "code": 1, "text": "Communication firmware malfunction: DDS message timeout"}
+
+
+async def note_faults(session, kind, triples):
+    """Hand the relay one fault message, then let the notification task it schedules run."""
+    session.note_faults(kind, triples)
+    await asyncio.sleep(0)
+
+
+async def test_a_fault_snapshot_is_forwarded_as_one_message_with_every_fault(session, gui):
+    await note_faults(session, "errors", [[1765000000, 300, 16], [1765000000.5, 100, 1]])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": [MOTOR, FIRMWARE]}]
+
+
+async def test_an_empty_fault_snapshot_is_forwarded_so_the_browser_clears_its_faults(session, gui):
+    await note_faults(session, "errors", [])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": []}]
+
+
+@pytest.mark.parametrize("kind", ["add_error", "rm_error"])
+async def test_a_fault_delta_is_forwarded_as_one_message_with_one_fault(session, gui, kind):
+    await note_faults(session, kind, [[1765000000, 300, 16]])
+    assert gui.sent == [{"type": "faults", "change": kind, "faults": [MOTOR]}]
+
+
+async def test_an_unreadable_fault_is_logged_and_left_out(session, gui, caplog):
+    await note_faults(session, "errors", [[1765000000, 300, 16], [1765000000, "300", 16], [300, 16]])
+    assert gui.sent == [{"type": "faults", "change": "errors", "faults": [MOTOR]}]
+    assert sum("unreadable errors fault" in record.getMessage() for record in caplog.records) == 2
+
+
+async def test_a_fault_message_with_nothing_readable_is_not_forwarded(session, gui, caplog):
+    await note_faults(session, "add_error", [[1765000000, 300, 16.5]])
+    assert gui.sent == []
+    assert any("unreadable add_error fault" in record.getMessage() for record in caplog.records)
+
+
 # ── Connecting ───────────────────────────────────────────────────────────────────────────
 
 
@@ -678,6 +732,11 @@ async def test_a_successful_connect_subscribes_to_the_robots_settings_once(monke
     assert pub_sub.subscribe_calls.count(MULTIPLE_STATE) == 1
 
 
+async def test_a_successful_connect_registers_the_fault_callback_once(monkeypatch, session, pub_sub):
+    await connect_through_driver(monkeypatch, session, pub_sub)
+    assert session.conn.datachannel.fault_callbacks == [session.note_faults]
+
+
 async def test_a_report_is_forwarded_with_both_values(monkeypatch, session, pub_sub, gui):
     await connect_through_driver(monkeypatch, session, pub_sub)
     await deliver(pub_sub, report(speed_level=1, obstacle_avoidance=False))
@@ -767,22 +826,6 @@ def stream_frames(ws):
     return [message for message in ws.sent if message.get("type") == "state_stream"]
 
 
-class FakeOscClient:
-    def __init__(self):
-        self.sent = []
-
-    def send_message(self, address, value):
-        self.sent.append((address, value))
-
-
-@pytest.fixture
-def osc(monkeypatch):
-    """The OSC client the monitor output writes to, so no test sends UDP."""
-    client = FakeOscClient()
-    monkeypatch.setattr(main, "osc_client", client)
-    return client
-
-
 async def test_a_successful_connect_asks_the_motion_mode_and_subscribes_the_mode_report_once(monkeypatch, session, pub_sub):
     await connect_through_driver(monkeypatch, session, pub_sub)
     requests = [sent for sent in pub_sub.sent if sent["topic"] == MOTION_SWITCHER]
@@ -824,40 +867,28 @@ async def test_a_repeated_mode_report_is_not_forwarded_again(monkeypatch, sessio
     {"topic": SPORT_MOD_STATE},
     "not a message",
 ])
-@pytest.mark.parametrize("monitoring", [False, True])
-async def test_an_unreadable_mode_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, osc, caplog, message, monitoring):
-    """With monitoring on, the monitor output still forwards the raw message as state_stream."""
+async def test_an_unreadable_mode_report_is_logged_and_forwards_nothing(monkeypatch, session, pub_sub, gui, caplog, message):
     await connect_through_driver(monkeypatch, session, pub_sub)
-    await session.subscribe_to_robotstate(monitoring)
     await deliver(pub_sub, message, topic=SPORT_MOD_STATE)
-    assert sport_frames(gui) == []
-    if not monitoring:
-        assert gui.sent == []
+    assert gui.sent == []
     assert any("rt/lf/sportmodestate" in record.getMessage() for record in caplog.records)
 
 
-async def test_monitoring_is_off_until_switched_on(monkeypatch, session, pub_sub, gui, osc):
+async def test_every_readable_mode_report_is_forwarded_whole_as_state_stream(monkeypatch, session, pub_sub, gui):
+    """No switch is needed, and a repeated report is streamed again."""
     await connect_through_driver(monkeypatch, session, pub_sub)
-    await deliver(pub_sub, sport_report(error_code=1013), topic=SPORT_MOD_STATE)
-    assert stream_frames(gui) == []
-    assert osc.sent == []
-
-    await session.subscribe_to_robotstate(True)
-    report = sport_report(error_code=1013)
-    await deliver(pub_sub, report, topic=SPORT_MOD_STATE)
-    assert stream_frames(gui) == [{"type": "state_stream", "data": report["data"]}]
-    assert osc.sent == [("/go2/data", report["data"])]
+    reports = [sport_report(error_code=1013), sport_report(error_code=1013), sport_report(error_code=2008)]
+    for report in reports:
+        await deliver(pub_sub, report, topic=SPORT_MOD_STATE)
+    assert stream_frames(gui) == [{"type": "state_stream", "data": report["data"]} for report in reports]
 
 
-async def test_switching_monitoring_off_keeps_the_mode_report_subscribed(monkeypatch, session, pub_sub, gui, osc):
-    await connect_through_driver(monkeypatch, session, pub_sub)
-    await session.subscribe_to_robotstate(True)
-    await session.subscribe_to_robotstate(False)
-    assert pub_sub.subscriptions[SPORT_MOD_STATE] == session.note_sport_state
-    assert pub_sub.subscribe_calls.count(SPORT_MOD_STATE) == 1
-    await deliver(pub_sub, sport_report(), topic=SPORT_MOD_STATE)
-    assert len(sport_frames(gui)) == 1
-    assert stream_frames(gui) == []
+async def test_a_subscribe_frame_from_an_older_browser_is_logged_as_unknown_and_answered_with_nothing(relay, caplog):
+    ws = FakeWebSocket([json.dumps({"command_name": "subscribe", "switch": True})])
+    with caplog.at_level(logging.WARNING):
+        await main.ws_api(ws)
+    assert "Unknown message type" in caplog.text
+    assert ws.sent == []
 
 
 @pytest.mark.parametrize("script", [

@@ -5,12 +5,13 @@ if version==117:
     from go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
     from go2_webrtc_driver.constants import RTC_TOPIC
     from go2_webrtc_driver.util import get_nested_field
+    from go2_webrtc_driver.msgs.error_handler import get_error_code_text, get_error_source_text, integer_to_hex_string
 elif version==118:
     from unitree_webrtc_connect.webrtc_driver import UnitreeWebRTCConnection as WebRTCConnection, WebRTCConnectionMethod
     from unitree_webrtc_connect.constants import RTC_TOPIC
     from unitree_webrtc_connect.util import get_nested_field
+    from unitree_webrtc_connect.msgs.error_handler import get_error_code_text, get_error_source_text, integer_to_hex_string
 
-from pythonosc import udp_client
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from video_broadcaster import FrameBroadcaster
 from collections import deque
@@ -20,7 +21,6 @@ from aiortc import MediaStreamTrack
 import av
 av.logging.set_level(av.logging.ERROR)
 
-osc_client = udp_client.SimpleUDPClient("192.168.1.130", 6000)
 broadcaster = FrameBroadcaster()
 
 # The sport service replies once it accepts a command, before the motion plays: Unitree's SDK
@@ -76,6 +76,19 @@ def cue_outcome(step_outcomes):
     return (outcome, code, detail)
 
 
+def fault_of(triple):
+    """One [timestamp, source, code] fault triple as the browser reads it: the two numbers and
+    the driver's texts for them. Raises ValueError unless the triple is a number (the timestamp
+    may be a float) and two integers."""
+    if not (isinstance(triple, (list, tuple)) and len(triple) == 3):
+        raise ValueError(f"not a triple: {triple!r}")
+    timestamp, source, code = triple
+    if not (isinstance(timestamp, (int, float)) and type(source) is int and type(code) is int):
+        raise ValueError(f"not a number and two integers: {triple!r}")
+    code_text = get_error_code_text(source, integer_to_hex_string(code))
+    return {"source": source, "code": code, "text": f"{get_error_source_text(source)}: {code_text}"}
+
+
 async def recv_camera_stream(track: MediaStreamTrack):
         while True:
             frame = await track.recv()  # wait for next frame
@@ -109,9 +122,6 @@ class RobotSession:
         # The (motionMode, mode, errorCode) triple the browser was last sent, so sport_state is
         # sent on a change and not on every message. None means it has been sent none.
         self.reported_sport_state: tuple | None = None
-        # Whether the "Monitor State" switch is on: each rt/lf/sportmodestate message is then
-        # also printed, sent over OSC and forwarded whole as state_stream.
-        self.monitoring = False
         self.channel_open_since: float | None = None
         self.watcher: asyncio.Task | None = None
 
@@ -133,13 +143,14 @@ class RobotSession:
             # The driver starts the heartbeat in on_validate; starting it here too leaves
             # a timer chain stop_heartbeat cannot cancel.
             self.conn.datachannel.pub_sub.set_on_err_callback(self.note_rejection)
+            self.conn.datachannel.set_on_fault_callback(self.note_faults)
             # The robot publishes this topic periodically, so the browser learns its settings
             # without asking. The driver drops a subscribe sent before the channel validates;
             # conn.connect() returns only after validation.
             self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["MULTIPLE_STATE"], self.note_settings)
             self.motion_mode = await self.request_motion_mode()
             # The driver keeps one callback per topic, so this is the only subscription to
-            # rt/lf/sportmodestate; the "Monitor State" switch only sets self.monitoring.
+            # rt/lf/sportmodestate.
             self.conn.datachannel.pub_sub.subscribe(RTC_TOPIC["LF_SPORT_MOD_STATE"], self.note_sport_state)
             # The channel is reported by watch_robot rather than here: the driver's validation
             # callback may not have run yet, so reading data_channel_opened at this moment can
@@ -241,11 +252,6 @@ class RobotSession:
             except Exception:
                 logging.exception("Failed to report the robot's state")
 
-    async def subscribe_to_robotstate(self, switch):
-        """Turn the monitor output of rt/lf/sportmodestate on or off. The topic stays
-        subscribed either way, because the mode report depends on it."""
-        self.monitoring = bool(switch)
-
     async def request_motion_mode(self):
         """Ask the motion switcher which motion-control mode the robot runs. Any failure
         returns None and leaves the connection as it is: the mode report then carries no
@@ -264,24 +270,11 @@ class RobotSession:
         logging.info("The robot runs the motion-control mode %r", name)
         return name
 
-    def monitor_sport_state(self, message):
-        """The "Monitor State" output: print the message, send it over OSC and forward it whole."""
-        try:
-            print(message)
-            osc_client.send_message("/go2/data", message.get('data'))
-            asyncio.get_running_loop().create_task(
-                notify_frontend({'type': 'state_stream', 'data': message.get('data')})
-            )
-        except Exception:
-            logging.exception("Failed to monitor an rt/lf/sportmodestate message")
-
     def note_sport_state(self, message):
-        """Forward the mode the robot reports on rt/lf/sportmodestate, with the motion-control
-        mode that gives it its meaning, when the triple differs from what the browser was last
-        sent. The topic publishes at 20-50 Hz, so an unchanged report is dropped. The driver
-        calls this synchronously, so the send is scheduled as a task."""
-        if self.monitoring:
-            self.monitor_sport_state(message)
+        """Forward each rt/lf/sportmodestate message whole as state_stream, and the mode it
+        reports, with the motion-control mode that gives it its meaning, as sport_state when
+        that triple differs from what the browser was last sent. The topic publishes at
+        20-50 Hz. The driver calls this synchronously, so the sends are scheduled as tasks."""
         try:
             data = message["data"]
             if not isinstance(data, dict):
@@ -290,21 +283,21 @@ class RobotSession:
         except Exception:
             logging.exception("Ignoring an unreadable rt/lf/sportmodestate message: %r", message)
             return
-        if sport_state == self.reported_sport_state:
-            return
-        motion_mode, mode, error_code = sport_state
         try:
-            asyncio.get_running_loop().create_task(
-                notify_frontend({
-                    "type": "sport_state",
-                    "motionMode": motion_mode,
-                    "mode": mode,
-                    "errorCode": error_code,
-                })
-            )
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_frontend({"type": "state_stream", "data": data}))
+            if sport_state == self.reported_sport_state:
+                return
+            motion_mode, mode, error_code = sport_state
+            loop.create_task(notify_frontend({
+                "type": "sport_state",
+                "motionMode": motion_mode,
+                "mode": mode,
+                "errorCode": error_code,
+            }))
             self.reported_sport_state = sport_state
         except Exception:
-            logging.exception("Failed to schedule the sport-state notification")
+            logging.exception("Failed to schedule the rt/lf/sportmodestate notifications")
 
     def note_settings(self, message):
         """Forward the speed level and obstacle-avoidance switch the robot reports on
@@ -343,6 +336,26 @@ class RobotSession:
         logging.warning("The bridge refused a request: %r", info)
         if self.rejection is not None and not self.rejection.done():
             self.rejection.set_result(f"the bridge refused the request: {info}")
+
+    def note_faults(self, kind, triples):
+        """Forward one snapshot (`errors`) or delta (`add_error`, `rm_error`) of the robot's
+        faults as one message. An unreadable triple is logged and left out; a message with no
+        readable triple left is not forwarded. The driver calls this synchronously, so the
+        send is scheduled as a task."""
+        faults = []
+        for triple in triples:
+            try:
+                faults.append(fault_of(triple))
+            except ValueError:
+                logging.warning("Ignoring an unreadable %s fault: %r", kind, triple)
+        if triples and not faults:
+            return
+        try:
+            asyncio.get_running_loop().create_task(
+                notify_frontend({"type": "faults", "change": kind, "faults": faults})
+            )
+        except Exception:
+            logging.exception("Failed to schedule the %s fault notification", kind)
 
     async def dispatch(self, msg):
         """Send one command and wait, bounded, for the robot's answer.
@@ -563,8 +576,6 @@ async def ws_api(ws: WebSocket):
                         await robot.connect(ip)
                     case {"command_name": "disconnect"}:
                         await robot.disconnect()
-                    case {"command_name": "subscribe", "switch": _}:
-                        await robot.subscribe_to_robotstate(msg["switch"])
                     case {"command_name": "joystick"}:
                         await robot.test_joystick()
                     case {"kind": _}:
