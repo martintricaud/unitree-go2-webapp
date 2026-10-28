@@ -1161,7 +1161,7 @@ describe('blocked presses', () => {
         const { robot, log } = connectedRobot();
         void robot.request(enter('Sitting'));
         robot.togglePosture('Sitting');
-        expect(blocked(log)).toEqual(['Sitting: waiting for the verdict on the posture']);
+        expect(blocked(log)).toEqual(['Sit: waiting for the verdict on the posture']);
     });
 
     it('logs a toggled field as blocked while it waits for its verdict, naming every field that waits', () => {

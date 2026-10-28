@@ -91,6 +91,16 @@ export const POSTURE_FACES = {
 /// True for a target that is a posture; the other targets are gaits.
 const isPosture = (_target: CommandableGait | Posture): _target is Posture => _target in POSTURES;
 
+/// The side of a posture's pair each posture command is drawn on.
+const SIDES = { enter: 0, leave: 1 } as const;
+
+/// The text of the button that sends `_cue`, which names a press in the log: a posture's entry or
+/// exit is named by its side of the pair, as the pane draws it; any other cue by its label.
+export const face = (_cue: Cue) =>
+    _cue.items === undefined && (_cue.name === 'enter' || _cue.name === 'leave') && isPosture(_cue.args[0])
+        ? POSTURE_FACES[_cue.args[0]][SIDES[_cue.name]]
+        : _cue.label;
+
 export type RobotState = {
     /// While the robot is in a posture, this keeps the gait it returns to on leaving the posture.
     gait: Gait;

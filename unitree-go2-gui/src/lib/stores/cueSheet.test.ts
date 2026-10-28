@@ -168,7 +168,7 @@ describe('cueSheet keys', () => {
     cueSheet.press('y');
     expect(sent()).toEqual(asSent(ENTER_POSE, presets.dance));
     expect(blocked(log)).toEqual(
-      map(['Bound', 'Sitting', 'Pose'], (_label) => `${_label}: waiting for the verdict on the posture`),
+      map(['Bound', 'Sit', 'Enter Pose'], (_label) => `${_label}: waiting for the verdict on the posture`),
     );
   });
 
@@ -573,7 +573,7 @@ describe('cueSheet key assignment', () => {
     tap(cueSheet, 'x');
     confirm();
     cueSheet.press('a');
-    expect(blocked(log)).toEqual(map(['Pose', 'Exit Sitting'], (_label) => `${_label}: the robot's posture does not allow it`));
+    expect(blocked(log)).toEqual(map(['Enter Pose', 'Rise'], (_label) => `${_label}: the robot's posture does not allow it`));
   });
 
   it('logs an unassigned key under Fire as blocked, and nothing for a key that is not a face key', () => {

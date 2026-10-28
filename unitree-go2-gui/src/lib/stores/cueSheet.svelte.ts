@@ -6,7 +6,7 @@ import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
 import { COMMANDABLE_GAITS, POSTURES, cells, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
-import { postureChange, sheetSchema, transition } from '../utils/commands';
+import { face, postureChange, sheetSchema, transition } from '../utils/commands';
 import { nextId, opened } from '../utils/trees';
 import type { Cell, Cue } from '../utils/commands';
 import { robot } from './robot.svelte';
@@ -368,7 +368,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         if (this.state.instrument === 'Assign') this.#bind(_cell);
         else
             forEach(this.#refusals(_cell, _cue), (_refused) =>
-                _refused === null ? void this.#robot.request(_cue) : this.#robot.block(_cue.label, _refused),
+                _refused === null ? void this.#robot.request(_cue) : this.#robot.block(face(_cue), _refused),
             );
     };
 
@@ -398,7 +398,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
             forEach(sides, (_side) => this.#press(_target.cell, _side));
             const refused = refusalOf(this.#robot, _target, sides);
             if (refused === null) _target.act(this.#robot, _target.cell);
-            else this.#robot.block(_target.cell.label, refused);
+            else this.#robot.block(face(first(sides) ?? _target.cell), refused);
         });
     };
 
