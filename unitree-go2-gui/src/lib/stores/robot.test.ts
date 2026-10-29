@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { map, omit, prop, range, reverse, times } from 'remeda';
 import { Robot } from './robot.svelte';
 import { LISTS, OutcomeLog } from './outcomes.svelte';
@@ -39,6 +39,12 @@ class FakeSocket {
         this.onmessage?.({ data: _data });
     }
 
+    /** Closes the socket as a browser does: `readyState` reaches CLOSED before `onclose` runs. */
+    close() {
+        this.readyState = CLOSED;
+        this.onclose?.();
+    }
+
     /** The request id of frame `_index`. */
     reqId(_index = 0): number {
         const reqId = this.written[_index].reqId;
@@ -66,6 +72,22 @@ const openRobot = () => {
     socket.onopen?.();
     return { robot, socket, log };
 };
+
+/** A socket factory that returns a new fake socket on each call, and keeps every socket it made. */
+const socketFactory = () => {
+    const opened: FakeSocket[] = [];
+    const openSocket = () => {
+        const socket = new FakeSocket();
+        opened.push(socket);
+        return socket;
+    };
+    return { opened, openSocket };
+};
+
+// A test that switches to fake timers leaves no timer running into the next test.
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 describe('the store', () => {
     it('starts with the channel closed, no robot, nothing told, no fault, and the robot settled on its boot state', () => {
@@ -119,12 +141,7 @@ describe('the store', () => {
     });
 
     it('opens one socket while the channel is open, and another once it closes', () => {
-        const opened: FakeSocket[] = [];
-        const openSocket = () => {
-            const socket = new FakeSocket();
-            opened.push(socket);
-            return socket;
-        };
+        const { opened, openSocket } = socketFactory();
         const robot = new Robot({ openSocket, outcomeLog: new OutcomeLog() });
         robot.connect();
         robot.connect();
@@ -132,6 +149,24 @@ describe('the store', () => {
         opened[0].readyState = CLOSED;
         robot.connect();
         expect(opened).toHaveLength(2);
+    });
+
+    it('reopens the channel 2 seconds after it closes', () => {
+        vi.useFakeTimers();
+        const { opened, openSocket } = socketFactory();
+        const robot = new Robot({ openSocket, outcomeLog: new OutcomeLog() });
+        robot.connect();
+        opened[0].onopen?.();
+        opened[0].close();
+        expect(robot.current.channelOpen).toBe(false);
+
+        vi.advanceTimersByTime(1_999);
+        expect(opened).toHaveLength(1);
+        vi.advanceTimersByTime(1);
+        expect(opened).toHaveLength(2);
+
+        opened[1].onopen?.();
+        expect(robot.current.channelOpen).toBe(true);
     });
 });
 
@@ -184,10 +219,6 @@ describe('setLidar', () => {
 });
 
 describe('request', () => {
-    beforeEach(() => {
-        vi.useRealTimers();
-    });
-
     it('sends the cue as one sequence of its steps, named by its label and tagged with a request id', async () => {
         const { robot, socket } = openRobot();
         const answer = robot.request(HELLO);
@@ -320,10 +351,11 @@ describe('request', () => {
     });
 
     it('settles every waiting request when the control channel closes', async () => {
+        vi.useFakeTimers();
         const { robot, socket } = openRobot();
         const answer = robot.request(HELLO);
         const reqId = socket.reqId();
-        socket.onclose?.();
+        socket.close();
         expect(await answer).toMatchObject({ outcome: 'failed', reqId, label: 'Hello' });
         expect(robot.current.robotConnected).toBe(false);
     });
@@ -340,10 +372,6 @@ describe('request', () => {
 });
 
 describe('the outcome log', () => {
-    beforeEach(() => {
-        vi.useRealTimers();
-    });
-
     it('records the newest outcome first and keeps at most 200', () => {
         const log = new OutcomeLog();
         times(201, (_reqId) =>
@@ -656,9 +684,10 @@ describe('robot settings', () => {
     });
 
     it('clears reported when the control channel closes', () => {
+        vi.useFakeTimers();
         const { robot, socket } = connectedRobot();
         socket.receive(settings(0, true));
-        socket.onclose?.();
+        socket.close();
         expect(robot.current.reported).toEqual({});
     });
 });
@@ -694,12 +723,13 @@ describe('faults', () => {
     });
 
     it('clears the faults when the robot is lost, and when the control channel closes', () => {
+        vi.useFakeTimers();
         const { robot, socket } = connectedRobot();
         socket.receive(faults('errors', MOTOR));
         socket.receive(robotState(false));
         expect(robot.current.faults).toEqual({});
         socket.receive(faults('errors', MOTOR));
-        socket.onclose?.();
+        socket.close();
         expect(robot.current.faults).toEqual({});
     });
 

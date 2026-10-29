@@ -52,6 +52,9 @@ const CLOSED = 3;
 /// The relay bounds a single command at 5s, so this fires only once the relay has stopped answering.
 const REPLY_BACKSTOP_MS = 20_000;
 
+/// The page reopens the relay socket this long after it closes.
+const RECONNECT_MS = 2_000;
+
 /// The part of an outcome that says what happened, without saying to which request or when.
 type Verdict = Pick<Outcome, 'outcome' | 'code' | 'detail'>;
 
@@ -360,7 +363,8 @@ export class Robot {
     /// verdict, so the counts and the last outcome stay as they are.
     block = (_label: string, _reason: string) => this.#log.note('blocked', `${_label}: ${_reason}`, '');
 
-    /// Opens the control channel, unless one is already open or opening.
+    /// Opens the control channel, unless one is already open or opening. A channel that closes, or
+    /// fails to open, reopens itself after `RECONNECT_MS`.
     connect = () => {
         if ((this.#socket?.readyState ?? CLOSED) < CLOSED) return;
         const opened = this.#openSocket();
@@ -373,6 +377,7 @@ export class Robot {
             this.#show(null);
             // The ids are copied first, because `#finish` deletes each one from the map.
             forEach([...this.#awaiting.keys()], this.#finish(CHANNEL_CLOSED));
+            setTimeout(this.connect, RECONNECT_MS);
         };
         opened.onmessage = (_event) => this.#received(_event.data);
         this.#socket = opened;
