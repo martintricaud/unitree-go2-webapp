@@ -336,6 +336,74 @@ describe('cueSheet sweeps in progress', () => {
   });
 });
 
+/** The wait cell of `_seconds` a Pause sweep on `_cueSheet` inserts: numbered above every shown cell. */
+const pauseCell = (_cueSheet: CueSheet, _seconds: number) =>
+  numbered([wait(_seconds)], nextId([..._cueSheet.state.shown.sheet, ...pipe(_cueSheet.state.shown.pane, values(), flat())]))[0];
+
+describe('cueSheet pauses', () => {
+  it.each([
+    [false, 1],
+    [true, 2],
+  ])('inserts a wait cell, with after %s on cell 1, at index %i, and keeps every other cell', (_after, _index) => {
+    const { cueSheet, state } = editing('Pause');
+    const expected = pauseCell(cueSheet, 0.1);
+    cueSheet.sweep(1, 1, { after: _after, travel: 0 });
+    expect(state().shown.sheet[_index]).toEqual(expected);
+    expect(filter(state().shown.sheet, (_cell) => _cell !== state().shown.sheet[_index])).toEqual(CELLS);
+  });
+
+  it.each([
+    [0, 0.1],
+    [0.5, 2.6],
+    [1, 5],
+  ])('waits, for a travel of %f, %f seconds', (_travel, _seconds) => {
+    const { cueSheet, state } = editing('Pause');
+    const expected = pauseCell(cueSheet, _seconds);
+    cueSheet.sweep(1, 1, { after: false, travel: _travel });
+    expect(state().shown.sheet[1]).toEqual(expected);
+  });
+
+  it('inserts, without a press, a 0.1 s wait before the cell', () => {
+    const { cueSheet, state } = editing('Pause');
+    const expected = pauseCell(cueSheet, 0.1);
+    cueSheet.sweep(1, 1);
+    expect(state().shown.sheet[1]).toEqual(expected);
+  });
+
+  it('gives the wait cell an identifier no other cell of the sheet or the pane holds', () => {
+    const { cueSheet, state } = editing('Pause');
+    cueSheet.sweep(1, 1, { after: true, travel: 0.5 });
+    expect(v.safeParse(documentSchema, state().shown).success).toBe(true);
+  });
+
+  it.each([false, true])('previews, with after %s, the sheet its release leaves, and highlights only the wait cell', (_after) => {
+    const { cueSheet, state } = editing('Pause');
+    const press = { after: _after, travel: 0.5 };
+    const preview = cueSheet.instruments.Pause.shown(1, 3, press)(state().shown.sheet);
+    const swept = cueSheet.instruments.Pause.swept(1, 3, press);
+    cueSheet.sweep(1, 3, press);
+    expect(preview).toEqual(state().shown.sheet);
+    expect(swept).toEqual([_after ? 2 : 1]);
+    expect(preview[_after ? 2 : 1]).toMatchObject({ name: 'wait', args: [2.6] });
+  });
+
+  it.each([
+    ['before the cell', 0, 0],
+    ['on the cell', 1, 1],
+    ['after the cell', 4, 5],
+  ])('moves the pointer %s on a Pause of cell 1', (_where, _pointer, _after) => {
+    const { cueSheet, state } = editing('Pause', _pointer);
+    cueSheet.sweep(1, 1, { after: true, travel: 0 });
+    expect(state().pointer).toBe(_after);
+  });
+
+  it('keeps the cell of a pointer after the pressed cell', () => {
+    const { cueSheet, state } = editing('Pause', 4);
+    cueSheet.sweep(1, 1, { after: false, travel: 0 });
+    expect(state().shown.sheet[state().pointer]).toEqual(CELLS[4]);
+  });
+});
+
 describe('cueSheet edits', () => {
   it('renames a cell and ends the rename, keeps the label on stopRenaming, and ends a rename on another change', () => {
     const { cueSheet, state } = editing('Rename');

@@ -1,11 +1,11 @@
-import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
+import { clamp, concat, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
 import { identity, isDeepEqual, isEmpty, isIncludedIn, isNullish, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
 import { prop, range, reduce, set, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
 import { CONDUITE, KEYED, KEYS, PANE, PANE_GROUPS } from '../data/cues';
-import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, isCommandable } from '../utils/commands';
+import { COMMANDABLE_GAITS, POSTURES, cellSchema, commandsOf, distinctIn, isCommandable, wait } from '../utils/commands';
 import { anyState, face, postureSides, sheetSchema, toggled, transition } from '../utils/commands';
 import { nextId, numbered, opened } from '../utils/trees';
 import type { Cell, Cue } from '../utils/commands';
@@ -144,7 +144,21 @@ const targetOf = (_document: Document, _id: Cell['id'] | undefined) =>
 const linksOf = (_document: Document, _key: Key) => targetOf(_document, _document.bindings[_key]);
 
 /// The strip's tools, which edit the sheet.
-export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup'] as const;
+export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup', 'Pause'] as const;
+
+/// A press on a cell: whether it hit the cell's lower half, and how far the pointer has since
+/// travelled toward the strip's right edge, as a fraction of that distance from 0 to 1.
+type Press = { after: boolean; travel: number };
+
+/// The press a sweep without one stands for: on the upper half, with no travel.
+const STILL: Press = { after: false, travel: 0 };
+
+/// The seconds a Pause press of `_travel` waits: 0.1 s with no travel, 5 s at the right edge,
+/// linear, rounded to 0.1 s.
+const pauseSeconds = (_travel: number) => Math.round((0.1 + _travel * 4.9) * 10) / 10;
+
+/// `_cell` with the wait cells `_waits` after it when `_after` holds, before it otherwise.
+const paused = (_waits: Cell[], _after: boolean) => (_cell: Cell) => (_after ? concat([_cell], _waits) : concat(_waits, [_cell]));
 
 /// The instruments: Fire plays the sheet, the sheet tools edit it, and Assign links keys to cells.
 const INSTRUMENTS = ['Fire', ...SHEET_TOOLS, 'Assign'] as const;
@@ -198,13 +212,14 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// What a sweep from cell `a` to cell `b` does under each instrument: the cells shown and the
     /// cells highlighted while the pointer is down, and the effect on release. Fire and Assign
     /// highlight nothing. Move shows the cells as its release will leave them, and highlights only
-    /// the moved cell, which follows the pointer.
+    /// the moved cell, which follows the pointer. Pause shows and highlights the wait cell its
+    /// press makes next to cell `a`, which its release inserts; only Pause reads the press.
     instruments: Record<
         CueSheet['state']['instrument'],
         {
-            shown: (_a: number, _b: number) => (_cells: Cell[]) => Cell[];
-            swept: (_a: number, _b: number) => number[];
-            release: (_a: number, _b: number) => void;
+            shown: (_a: number, _b: number, _press?: Press) => (_cells: Cell[]) => Cell[];
+            swept: (_a: number, _b: number, _press?: Press) => number[];
+            release: (_a: number, _b: number, _press?: Press) => void;
         }
     > = {
         Fire: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.send(_b) },
@@ -212,16 +227,25 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         Rename: { shown: () => identity(), swept: covered, release: (_a, _b) => this.startRenaming(_b) },
         Group: { shown: () => identity(), swept: covered, release: (_a, _b) => this.group(_a, _b) },
         Ungroup: { shown: () => identity(), swept: covered, release: (_a, _b) => this.ungroup(_a, _b) },
+        Pause: {
+            shown: (_a, _b, _press = STILL) => (_cells) => splice(_cells, _a, 1, paused(this.#wait(_press), _press.after)(_cells[_a])),
+            swept: (_a, _b, { after } = STILL) => [after ? _a + 1 : _a],
+            release: (_a, _b, _press = STILL) => this.#replace(_a, _a, flatMap(paused(this.#wait(_press), _press.after))),
+        },
         Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
     };
+
+    /// The wait cell of a Pause press, as a list of one, under an identifier no shown cell holds:
+    /// the same for the preview and the release, which happen on the same shown document.
+    #wait = ({ travel }: Press) => numbered([wait(pauseSeconds(travel))], nextId(cellsOf(this.state.shown)));
 
     /// Forgets why the last import failed: every action after it ends the message.
     #dismiss = () => this.update(set('problem', null));
 
-    /// Applies the sweep from cell `_a` to cell `_b` with the active instrument.
-    sweep = (_a: number, _b: number) => {
+    /// Applies the sweep from cell `_a` to cell `_b`, pressed as `_press`, with the active instrument.
+    sweep = (_a: number, _b: number, _press?: Press) => {
         this.#dismiss();
-        this.instruments[this.state.instrument].release(_a, _b);
+        this.instruments[this.state.instrument].release(_a, _b, _press);
     };
 
     /// Replaces the state by `_change` of it, and ends any renaming and any import message.

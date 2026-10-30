@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { flatMap, forEach, isIncludedIn, last, map, reduce } from 'remeda';
+    import { clamp, evolve, flatMap, forEach, isIncludedIn, last, map, pipe, reduce } from 'remeda';
     import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import { commandsOf } from '../lib/utils/commands';
     import type { Cell, Cue } from '../lib/utils/commands';
@@ -8,22 +8,24 @@
     import Pencil from '@lucide/svelte/icons/pencil';
     import Group from '@lucide/svelte/icons/group';
     import Ungroup from '@lucide/svelte/icons/ungroup';
+    import Timer from '@lucide/svelte/icons/timer';
 
     /// The icon of each sheet tool; a tool without an icon fails the type check.
-    const ICONS = { Move, Rename: Pencil, Group, Ungroup } satisfies Record<(typeof SHEET_TOOLS)[number], LucideIcon>;
+    const ICONS = { Move, Rename: Pencil, Group, Ungroup, Pause: Timer } satisfies Record<(typeof SHEET_TOOLS)[number], LucideIcon>;
 
     /// The strip's root element, whose drawn cells give each cell its index.
     let strip: HTMLDivElement;
 
-    /// The sweep in progress, as the cell `a` the press started on and the cell `b` under the pointer;
-    /// empty while no button is pressed on a cell. A release on a cell completes the sweep; a release
-    /// anywhere else only ends it.
-    let sweeps: { a: number; b: number }[] = $state([]);
+    /// The sweep in progress, as the cell `a` the press started on, the cell `b` under the pointer,
+    /// the press's horizontal position `x`, and the press as the store reads it; empty while no
+    /// button is pressed on a cell. A release on a cell completes the sweep; a release anywhere else
+    /// only ends it.
+    let sweeps: { a: number; b: number; x: number; press: NonNullable<Parameters<typeof cueSheet.sweep>[2]> }[] = $state([]);
 
     /// The active instrument, and the cells it shows and highlights during the sweep in progress.
     let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
-    let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b }) => instrument.shown(a, b)(_cells), cueSheet.state.shown.sheet));
-    let swept = $derived(flatMap(sweeps, ({ a, b }) => instrument.swept(a, b)));
+    let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b, press }) => instrument.shown(a, b, press)(_cells), cueSheet.state.shown.sheet));
+    let swept = $derived(flatMap(sweeps, ({ a, b, press }) => instrument.swept(a, b, press)));
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
     /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
@@ -32,6 +34,15 @@
         const cell = target instanceof HTMLElement && !target.isContentEditable && target.closest('[data-index]');
         return flatMap([...strip.querySelectorAll('[data-index]')], (_cell, _index) => (_cell === cell ? [_index] : []));
     };
+
+    /// Whether `_event` falls on the lower half of the drawn cell `_index`.
+    const onLowerHalf = (_event: PointerEvent, _index: number) =>
+        pipe(strip.querySelectorAll('[data-index]')[_index].getBoundingClientRect(), ({ top, height }) => _event.clientY > top + height / 2);
+
+    /// How far `_event` lies from `_x` toward the strip's right edge, as a fraction of that distance
+    /// from 0 to 1.
+    const travel = (_event: PointerEvent, _x: number) =>
+        clamp((_event.clientX - _x) / (strip.getBoundingClientRect().right - _x), { min: 0, max: 1 });
 
     /// The number of robot commands a group cell sends, counting its nested groups and not its
     /// waits; 0 for a cell that is not a group, so only a group shows a count.
@@ -69,9 +80,11 @@
     class="actionsequence"
     data-instrument={cueSheet.state.instrument}
     bind:this={strip}
-    onpointerdown={(event) => (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index })))}
-    onpointerover={(event) => (sweeps = map(sweeps, ({ a, b }) => ({ a, b: last([b, ...cellAt(event)]) })))}
-    onpointerup={(event) => forEach(sweeps, ({ a }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b)))}
+    onpointerdown={(event) =>
+        (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0 } })))}
+    onpointermove={(event) =>
+        (sweeps = map(sweeps, (_sweep) => evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x) } })))}
+    onpointerup={(event) => forEach(sweeps, ({ a, press }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b, press)))}
 >
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar button-row">
@@ -97,7 +110,7 @@
 </div>
 
 <style>
-    /* The width fits the four tool buttons of the top bar on one line, and does not change between
+    /* The width fits the tool buttons of the top bar on one line, and does not change between
        modes or with the labels. No text is selected during a sweep; Safari needs the prefixed
        property. Safari bounces a scroll container at either end of its range, and the bounce moves
        the sticky bar with the cells; overscroll-behavior turns the bounce off. */
@@ -187,6 +200,11 @@
 
     [data-instrument='Group'] {
         cursor: cell;
+    }
+
+    /* Under Pause, dragging right lengthens the wait. */
+    [data-instrument='Pause'] {
+        cursor: ew-resize;
     }
 
     /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks
