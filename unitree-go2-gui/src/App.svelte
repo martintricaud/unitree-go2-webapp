@@ -55,7 +55,8 @@
     }}
 />
 
-<div class="ui-pane">
+<!-- Under Move, a press on a pane button holds its command, for a drag to copy into the strip. -->
+<div class="ui-pane" class:movable={cueSheet.state.instrument === 'Move'}>
     <div style="display:flex; flex-wrap:nowrap; flex-direction: column; gap:.4em">
         <!-- <button
             onclick={() => {
@@ -94,7 +95,7 @@
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.actions as cell (cell.id)}
                 <button class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
-                    aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)}>
+                    aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)} onpointerdown={() => cueSheet.carry(cell)}>
                     {cell.label}
                 </button>
             {/each}
@@ -105,7 +106,8 @@
         <h2>Gaits</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.gaits as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
+                    onpointerdown={() => cueSheet.carry(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.gait === after(cell).gait}
                     spinning={robot.current.state.pending.gait?.value === after(cell).gait}
@@ -129,12 +131,14 @@
                     {@const pending = robot.current.state.pending.posture}
                     <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
                         <button class:pressed={cueSheet.isPressed(cell, entry)}
-                            aria-disabled={!cueSheet.usable(cell, entry)} onclick={() => cueSheet.use(cell, entry)}>
+                            aria-disabled={!cueSheet.usable(cell, entry)} onclick={() => cueSheet.use(cell, entry)}
+                            onpointerdown={() => cueSheet.carry(cell, entry)}>
                             {POSTURE_FACES[posture][0]}
                             {#if pending?.value === posture}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
                         <button class:pressed={cueSheet.isPressed(cell, exit)}
-                            aria-disabled={!cueSheet.usable(cell, exit)} onclick={() => cueSheet.use(cell, exit)}>
+                            aria-disabled={!cueSheet.usable(cell, exit)} onclick={() => cueSheet.use(cell, exit)}
+                            onpointerdown={() => cueSheet.carry(cell, exit)}>
                             {POSTURE_FACES[posture][1]}
                             {#if inPosture && pending?.value === null}<span class="spinner" aria-label="waiting for the robot"></span>{/if}
                         </button>
@@ -147,7 +151,8 @@
         <h2>Light</h2>
         <div class="button-grid single-column">
             {#each cueSheet.state.shown.pane.lights as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
+                    onpointerdown={() => cueSheet.carry(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.headlight === after(cell).headlight}
                     spinning={robot.current.state.pending.headlight?.value === after(cell).headlight}
@@ -161,7 +166,8 @@
         <h2>Speed</h2>
         <div class="button-grid">
             {#each cueSheet.state.shown.pane.speeds as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
+                    onpointerdown={() => cueSheet.carry(cell)}><Radio
                     optionName={cell.label}
                     selected={robot.current.state.settled.speed === after(cell).speed}
                     spinning={robot.current.state.pending.speed?.value === after(cell).speed}
@@ -199,6 +205,11 @@
     /* Wraps a Radio so that the highlight reaches its button; the wrapper takes no box of its own. */
     .target {
         display: contents;
+    }
+
+    /* Under Move, a pane button can be dragged into the strip. */
+    .movable > section :global(button) {
+        cursor: grab;
     }
 
     .drawer.open {

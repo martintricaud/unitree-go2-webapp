@@ -1,6 +1,6 @@
 import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
-import { identity, isDeepEqual, isEmpty, isIncludedIn, isNullish, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
-import { prop, range, reduce, set, splice, take, values, zip } from 'remeda';
+import { identity, isDeepEqual, isEmpty, isIncludedIn, isNonNullish, isNullish, isStrictEqual, keys, last, map, mapValues, merge } from 'remeda';
+import { omit, pickBy, pipe, piped, prop, range, reduce, set, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
 import * as v from 'valibot';
 import { covered, move, span, within } from '../utils/lists';
@@ -173,6 +173,14 @@ const retimed = (_seconds: number, _travel: number) => clamp(Math.round((_second
 /// The instruments: Fire plays the sheet, the sheet tools edit it, and Assign links keys to cells.
 const INSTRUMENTS = ['Fire', ...SHEET_TOOLS, 'Assign'] as const;
 
+/// The entries of `instruments`: every instrument, and Copy, which a sweep uses while a pane
+/// command is held. Copy is no instrument, so `choose` cannot select it.
+const ENTRIES = [...INSTRUMENTS, 'Copy'] as const;
+
+/// `_cell` and every cell inside it without their identifiers, so that `numbered` gives the copy
+/// new ones.
+const unnumbered = (_cell: Cell): Cue => (_cell.items === undefined ? omit(_cell, ['id']) : { label: _cell.label, items: map(_cell.items, unnumbered) });
+
 /// Runs `_act`, or gives `_fallback` when it throws. Storage can be missing, full or forbidden,
 /// and the sheet must keep working in memory in every case.
 const attempt = <T>(_act: () => T, _fallback: T) => {
@@ -194,6 +202,7 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     renaming: null as number | null,
     deleting: null as [number, number] | null, // the lowest and highest index of the cells awaiting deletion
     key: null as Key | null, // the key Assign links to the next cell chosen
+    carried: null as Cue | null, // the command of the pane button held under Move, without identifiers
     problem: null as string | null, // why the last import failed, shown until the next action
 });
 
@@ -226,9 +235,10 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// the moved cell, which follows the pointer. Pause shows and highlights the wait cell its
     /// press makes next to cell `a`, or cell `a` retimed when it is a wait, and its release keeps
     /// that; only Pause reads the press. Delete highlights the swept range, and its release only
-    /// asks for confirmation.
+    /// asks for confirmation. Copy shows and highlights the held pane command at cell `b`, and its
+    /// release inserts it there, or after the last cell when `b` is the sheet's length.
     instruments: Record<
-        CueSheet['state']['instrument'],
+        (typeof ENTRIES)[number],
         {
             shown: (_a: number, _b: number, _press?: Press) => (_cells: Cell[]) => Cell[];
             swept: (_a: number, _b: number, _press?: Press) => number[];
@@ -247,7 +257,27 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         },
         Delete: { shown: () => identity(), swept: covered, release: (_a, _b) => this.update(set('deleting', span(_a, _b))) },
         Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
+        Copy: { shown: (_a, _b) => this.#insert(_b), swept: (_a, _b) => [_b], release: (_a, _b) => this.#replace(_b, _b, this.#insert(0)) },
     };
+
+    /// Inserts the held pane command at index `_at` of the cells, under identifiers no shown cell
+    /// holds: the same for the preview and the release, which happen on the same shown document.
+    #insert = (_at: number) => (_cells: Cell[]) =>
+        splice(_cells, _at, 0, numbered(filter([this.state.carried], isNonNullish), nextId(cellsOf(this.state.shown))));
+
+    /// The entry of `instruments` a sweep uses: Copy while a pane command is held, the active
+    /// instrument's otherwise.
+    inUse = () => (this.state.carried === null ? this.state.instrument : 'Copy');
+
+    /// Holds `_cue`, the side of the pane cell `_cell` its button sends, the cell itself unless
+    /// given, for a sweep to copy into the sheet. Only Move copies; every other instrument holds
+    /// nothing.
+    carry = (_cell: Cell, _cue: Cue = unnumbered(_cell)) => {
+        if (this.state.instrument === 'Move') this.update(set('carried', _cue));
+    };
+
+    /// Ends the holding of a pane command.
+    drop = () => this.update(set('carried', null));
 
     /// What the Pause press `_press` does to `_cell`: the cells that replace it, and the offset among
     /// them of the wait it highlights. A wait cell (a leaf; a group of waits is not one) takes the
@@ -268,10 +298,10 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// Forgets why the last import failed: every action after it ends the message.
     #dismiss = () => this.update(set('problem', null));
 
-    /// Applies the sweep from cell `_a` to cell `_b`, pressed as `_press`, with the active instrument.
+    /// Applies the sweep from cell `_a` to cell `_b`, pressed as `_press`, with the entry in use.
     sweep = (_a: number, _b: number, _press?: Press) => {
         this.#dismiss();
-        this.instruments[this.state.instrument].release(_a, _b, _press);
+        this.instruments[this.inUse()].release(_a, _b, _press);
     };
 
     /// Replaces the state by `_change` of it, and ends any renaming, any import message and any

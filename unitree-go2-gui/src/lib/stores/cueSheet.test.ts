@@ -79,7 +79,7 @@ describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
     const cells = numbered(CUES, 0);
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -552,7 +552,7 @@ describe('cueSheet edits', () => {
     cueSheet.save();
     const renamed = merge(CELLS[1], { label: 'X' });
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
     cueSheet.sweep(1, 1);
     expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
@@ -562,7 +562,7 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(0, 3);
     expect(state().pointer).toBe(1);
     cueSheet.cancel();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
 
     const { cueSheet: grown, state: grownState } = editing('Ungroup', 5);
     grown.sweep(2, 2);
@@ -577,7 +577,7 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, deleting: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, deleting: null, key: null, carried: null, problem: null });
   });
 });
 
@@ -687,6 +687,61 @@ describe('cueSheet in storage', () => {
 /** The pane cell of `_cueSheet`'s shown document labelled `_label`, in `_group`. */
 const paneCell = (_cueSheet: CueSheet, _group: keyof CueSheet['state']['shown']['pane'], _label: string) =>
   filter(_cueSheet.state.shown.pane[_group], (_cell) => _cell.label === _label)[0];
+
+describe('cueSheet copies a held pane command', () => {
+  it.each([
+    ['before the first cell', 0],
+    ['after the last cell', SHEET.length],
+  ])('inserts the carried "red" light %s under Move, and leaves the pane unchanged', (_where, _at) => {
+    const { cueSheet, state } = editing('Move');
+    const { pane } = state().shown;
+    const red = paneCell(cueSheet, 'lights', 'red');
+    cueSheet.carry(red);
+    cueSheet.sweep(_at, _at);
+    expect(map(state().shown.sheet, prop('label'))).toEqual(splice(map(SHEET, prop('label')), _at, 0, ['red']));
+    expect(omit(state().shown.sheet[_at], ['id'])).toEqual(omit(red, ['id']));
+    expect(state().shown.pane).toEqual(pane);
+  });
+
+  it('inserts the exit side of the Sitting pair when that side is carried', () => {
+    const { cueSheet, state } = editing('Move');
+    cueSheet.carry(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
+    cueSheet.sweep(1, 1);
+    expect(omit(state().shown.sheet[1], ['id'])).toEqual(leave('Sitting'));
+    expect(state().shown.sheet[1].label).toBe('Exit Sitting');
+  });
+
+  it('gives a copied group cell and its constituents identifiers no other cell holds', () => {
+    const { cueSheet, state } = editing('Move');
+    cueSheet.carry(state().shown.sheet[2]);
+    cueSheet.sweep(0, 0);
+    expect(map(opened(state().shown.sheet[0]), prop('label'))).toEqual(map(opened(SABOTS), prop('label')));
+    expect(distinct([...state().shown.sheet, ...pipe(state().shown.pane, values(), flat())])).toBe(true);
+  });
+
+  it('previews a copy as its release will leave the cells, and highlights only the copy', () => {
+    const { cueSheet, state } = editing('Move');
+    cueSheet.carry(paneCell(cueSheet, 'lights', 'red'));
+    const preview = cueSheet.instruments.Copy.shown(0, 3)(state().shown.sheet);
+    expect(cueSheet.instruments.Copy.swept(0, 3)).toEqual([3]);
+    cueSheet.sweep(0, 3);
+    expect(preview).toEqual(state().shown.sheet);
+  });
+
+  it.each(['Fire', 'Pause', 'Assign'] as const)('holds nothing under %s, which a sweep then uses', (_name) => {
+    const { cueSheet, state } = editing(_name);
+    cueSheet.carry(paneCell(cueSheet, 'lights', 'red'));
+    expect([state().carried, cueSheet.inUse()]).toEqual([null, _name]);
+  });
+
+  it('reorders again as Move does once the command is dropped', () => {
+    const { cueSheet, state } = editing('Move');
+    cueSheet.carry(paneCell(cueSheet, 'lights', 'red'));
+    cueSheet.drop();
+    cueSheet.sweep(1, 4);
+    expect(state().shown.sheet).toEqual(map([0, 2, 3, 4, 1, 5], (_index) => CELLS[_index]));
+  });
+});
 
 describe('cueSheet key assignment', () => {
   it('links the key selected under Assign to a pane light, which then toggles that colour and the previous one', () => {

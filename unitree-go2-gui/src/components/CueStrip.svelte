@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { clamp, concat, evolve, flatMap, forEach, isIncludedIn, last, map, pipe, reduce } from 'remeda';
+    import { clamp, concat, evolve, flatMap, forEach, isEmpty, isIncludedIn, last, map, pipe, reduce } from 'remeda';
     import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import { commandsOf } from '../lib/utils/commands';
     import { covered } from '../lib/utils/lists';
@@ -20,12 +20,14 @@
 
     /// The sweep in progress, as the cell `a` the press started on, the cell `b` under the pointer,
     /// the press's horizontal position `x`, and the press as the store reads it; empty while no
-    /// button is pressed on a cell. A release on a cell completes the sweep; a release anywhere else
+    /// button is pressed on a cell. While a pane command is held, the sweep starts on the first cell
+    /// the pointer moves over. A release on a cell completes the sweep; a release anywhere else
     /// only ends it.
     let sweeps: { a: number; b: number; x: number; press: NonNullable<Parameters<typeof cueSheet.sweep>[2]> }[] = $state([]);
 
-    /// The active instrument, and the cells it shows and highlights during the sweep in progress.
-    let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
+    /// The entry of the store's instruments in use, and the cells it shows and highlights during
+    /// the sweep in progress.
+    let instrument = $derived(cueSheet.instruments[cueSheet.inUse()]);
     let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b, press }) => instrument.shown(a, b, press)(_cells), cueSheet.state.shown.sheet));
     /// The cells awaiting deletion stay highlighted after the sweep that chose them.
     let deleting = $derived(cueSheet.state.deleting);
@@ -51,6 +53,10 @@
         const cell = target instanceof HTMLElement && !target.isContentEditable && target.closest('[data-index]');
         return flatMap([...strip.querySelectorAll('[data-index]')], (_cell, _index) => (_cell === cell ? [_index] : []));
     };
+
+    /// The sweep starting at the cell `_event` targets, as zero or one.
+    const started = (_event: PointerEvent) =>
+        map(cellAt(_event), (_index) => ({ a: _index, b: _index, x: _event.clientX, press: { after: onLowerHalf(_event, _index), travel: 0, drag: 0 } }));
 
     /// Whether `_event` falls on the lower half of the drawn cell `_index`.
     const onLowerHalf = (_event: PointerEvent, _index: number) =>
@@ -94,7 +100,10 @@
 </script>
 
 <svelte:window
-    onpointerup={() => (sweeps = [])}
+    onpointerup={() => {
+        sweeps = [];
+        cueSheet.drop();
+    }}
     onpointerdown={(event) => deleting !== null && event.target instanceof Node && !confirmation.contains(event.target) && cueSheet.cancelDelete()}
     onkeydown={(event) => deleting !== null && event.key === 'Escape' && cueSheet.cancelDelete()}
 />
@@ -102,12 +111,11 @@
 <div
     id="sidebar"
     class="actionsequence"
-    data-instrument={cueSheet.state.instrument}
+    data-instrument={cueSheet.inUse()}
     bind:this={strip}
-    onpointerdown={(event) =>
-        (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0, drag: 0 } })))}
+    onpointerdown={(event) => (sweeps = started(event))}
     onpointermove={(event) =>
-        (sweeps = map(sweeps, (_sweep) =>
+        (sweeps = map(isEmpty(sweeps) && cueSheet.state.carried !== null ? started(event) : sweeps, (_sweep) =>
             evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x), drag: () => drag(event, _sweep.x) } }),
         ))}
     onpointerup={(event) =>
@@ -263,6 +271,11 @@
     /* Under Delete, the swept cells are marked for deletion. */
     [data-instrument='Delete'] {
         cursor: crosshair;
+    }
+
+    /* While a pane command is held, the strip receives a copy of it. */
+    [data-instrument='Copy'] {
+        cursor: copy;
     }
 
     /* The confirmation row sits where `place` puts its top left corner, instead of the browser's
