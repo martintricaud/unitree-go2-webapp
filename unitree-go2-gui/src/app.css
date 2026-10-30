@@ -4,6 +4,16 @@
   --app-border: 2px;
   /* The width of a button's border, which the posture group's row gap also takes. */
   --button-border: 4px;
+  /* The radius of a button's corners. In a group of buttons, only the group's outer corners
+     are rounded. */
+  --button-radius: 4px;
+  /* The radius of the corners on each side of a button. A row or column sets a side to 0 on an
+     item that shares that side with a neighbour, and the item's buttons inherit it. The 0 must
+     be written 0px, because min() rejects a unitless 0 beside a length. */
+  --radius-top: var(--button-radius);
+  --radius-bottom: var(--button-radius);
+  --radius-left: var(--button-radius);
+  --radius-right: var(--button-radius);
   /* The colour of an outset or inset border. The browser shades each edge from it. */
   --bevel-color: rgb(160, 160, 160);
   /* The background of an element drawn pressed in, a little darker than a raised button's. */
@@ -59,6 +69,8 @@ button {
   line-height: 1em;
   vertical-align: middle !important;
   border: var(--button-border) outset var(--bevel-color);
+  /* A corner is rounded only if neither of its two sides is shared. */
+  border-radius: min(var(--radius-top), var(--radius-left)) min(var(--radius-top), var(--radius-right)) min(var(--radius-bottom), var(--radius-right)) min(var(--radius-bottom), var(--radius-left));
   background-color: rgb(239, 239, 239);
   color: rgb(0, 0, 0);
   padding: 0.6em 0.6em;
@@ -77,7 +89,7 @@ button:hover {
 
 /* :where() keeps the states at the specificity of `button`, so a component's own button rule
    still overrides them. */
-button:where(:active:not(:disabled)) {
+button:where(:active:not(:disabled), [aria-pressed='true']) {
   border-style: inset;
   background-color: var(--inset-background);
 }
@@ -156,15 +168,22 @@ button:focus-visible {
   min-height: 0;
 }
 
+/* A column of the pane shrinks to its section's height. Its buttons start as tall as a button
+   elsewhere and shrink evenly when the column has too little room. */
+.ui-pane>section>.button-col {
+  min-height: 0;
+}
+
+.ui-pane .button-col button {
+  flex: 0 1 3em;
+  min-height: 0;
+}
+
 /* A posture's pair: its entry and its exit side by side, two transitions; neither side shows the
    robot's state. */
 /* The posture pairs' rows are separated by a gap as thick as a button's border. */
 .button-grid.pairs {
   row-gap: var(--button-border);
-}
-
-.posture-toggle {
-  display: flex;
 }
 
 /* Each side takes exactly half of the pair, whatever its label. */
@@ -173,19 +192,12 @@ button:focus-visible {
   min-width: 0;
 }
 
-/* The two sides are two transitions, divided by one grooved line. */
-.posture-toggle>button:first-child {
-  border-right-style: groove;
-}
-
-.posture-toggle>button:last-child {
-  border-left: none;
-}
-
-/* Buttons stacked in a column (resp. side by side in a row), divided by grooved lines. Each line
-   is the block-end (resp. inline-end) edge of the button before it, so the button after it draws
-   no block-start (resp. inline-start) edge. A line is half as wide as a button's border. Every
-   other edge keeps the button rule's outset style, so a pressed button still draws it inset. */
+/* Buttons stacked in a column (resp. side by side in a row), divided by grooved lines half as
+   wide as a button's border. An item of the group is a child, or the button of a child that only
+   wraps it, as `.target` wraps a Radio or a nested row wraps its buttons. Each line is the
+   block-end (resp. inline-end) edge of the item before it, so the item after it draws no
+   block-start (resp. inline-start) edge, and the corners on a shared side are square. Every other
+   edge keeps its outset style, so a pressed item still draws it inset. */
 .button-col {
   display: flex;
   flex-direction: column;
@@ -196,24 +208,37 @@ button:focus-visible {
   flex-direction: row;
 }
 
-.button-col>button:not(:first-of-type) {
+.button-col>:not(:first-child),
+.button-col>:not(:first-child)>button {
   border-block-start: none;
+  --radius-top: 0px;
 }
 
-.button-col>button:not(:last-of-type) {
+.button-col>:not(:last-child),
+.button-col>:not(:last-child)>button {
   border-block-end-style: groove;
   border-block-end-width: calc(var(--button-border) / 2);
+  --radius-bottom: 0px;
 }
 
-.button-row>button:not(:first-of-type) {
+.button-row>:not(:first-child),
+.button-row>:not(:first-child)>button {
   border-inline-start: none;
+  --radius-left: 0px;
 }
 
-.button-row>button:not(:last-of-type) {
+.button-row>:not(:last-child),
+.button-row>:not(:last-child)>button {
   border-inline-end-style: groove;
   border-inline-end-width: calc(var(--button-border) / 2);
+  --radius-right: 0px;
 }
 
+/* A group nested in another draws no border of its own: its buttons draw the edges. */
+.button-col>.button-row,
+.button-row>.button-col {
+  border: none;
+}
 
 /* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
    size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,
@@ -224,28 +249,6 @@ button:focus-visible {
   grid-auto-flow: column;
   grid-template-rows: repeat(auto-fill, 2.7em);
   height: calc(100% - 0.5em);
-}
-
-/* A grid whose buttons stay in one column: the rows share the grid's height, and the buttons
-   shrink below the button rule's min-height to fit. */
-.button-grid.single-column {
-  grid-auto-flow: row;
-  grid-template-rows: none;
-  grid-auto-rows: minmax(0, 1fr);
-}
-
-.button-grid.single-column button {
-  min-height: 0;
-}
-
-/* Two stacked buttons are divided by one grooved line: the upper button's bottom edge. The divider
-   belongs to both buttons, so a pressed button draws inset only on its other edges. */
-.button-grid.single-column>.target+.target button {
-  border-top: none;
-}
-
-.button-grid.single-column>.target:has(+ .target) button {
-  border-bottom-style: groove;
 }
 
 .tp-lblv {

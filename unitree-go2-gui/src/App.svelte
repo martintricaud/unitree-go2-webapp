@@ -129,7 +129,7 @@
                     {@const exit = leave(posture)}
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
-                    <div class="posture-toggle" class:swept={cueSheet.isTarget(cell)}>
+                    <div class="posture-toggle button-row" class:swept={cueSheet.isTarget(cell)}>
                         <button class:pressed={cueSheet.isPressed(cell, entry)}
                             aria-disabled={!cueSheet.usable(cell, entry)} onclick={() => cueSheet.use(cell, entry)}
                             onpointerdown={() => cueSheet.carry(cell, entry)}>
@@ -149,7 +149,7 @@
     </section>
     <section>
         <h2>Light</h2>
-        <div class="button-grid single-column">
+        <div class="button-col">
             {#each cueSheet.state.shown.pane.lights as cell (cell.id)}
                 <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
                     onpointerdown={() => cueSheet.carry(cell)}><Radio
@@ -164,7 +164,7 @@
     </section>
     <section>
         <h2>Speed</h2>
-        <div class="button-grid">
+        <div class="button-col">
             {#each cueSheet.state.shown.pane.speeds as cell (cell.id)}
                 <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
                     onpointerdown={() => cueSheet.carry(cell)}><Radio

@@ -126,27 +126,29 @@
             }),
         )}
 >
-    {#if cueSheet.state.instrument !== 'Fire'}
-        <div class="bar button-row">
-            {#each SHEET_TOOLS as name}
-                {@const Icon = ICONS[name]}
-                <button class:active={cueSheet.state.instrument === name} title={name} aria-label={name} onclick={() => cueSheet.choose(name)}><Icon size="1em" /></button>
-            {/each}
-        </div>
-    {/if}
-    {#each shown as cell, i}
-        <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={cueSheet.isPressed(cell)}
-            class:swept={isIncludedIn(i, swept) || cueSheet.isTarget(cell)}>
-            {#if cueSheet.state.renaming === i}
-                <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
-            {:else}
-                <span>{cell.label}</span>
-            {/if}
-            {#if commandCount(cell) > 1}
-                <span>({commandCount(cell)})</span>
-            {/if}
-        </div>
-    {/each}
+    <div class="button-col">
+        {#if cueSheet.state.instrument !== 'Fire'}
+            <div class="bar button-row">
+                {#each SHEET_TOOLS as name}
+                    {@const Icon = ICONS[name]}
+                    <button aria-pressed={cueSheet.state.instrument === name} title={name} aria-label={name} onclick={() => cueSheet.choose(name)}><Icon size="1em" /></button>
+                {/each}
+            </div>
+        {/if}
+        {#each shown as cell, i}
+            <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={cueSheet.isPressed(cell)}
+                class:swept={isIncludedIn(i, swept) || cueSheet.isTarget(cell)}>
+                {#if cueSheet.state.renaming === i}
+                    <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
+                {:else}
+                    <span>{cell.label}</span>
+                {/if}
+                {#if commandCount(cell) > 1}
+                    <span>({commandCount(cell)})</span>
+                {/if}
+            </div>
+        {/each}
+    </div>
     <div class="confirmation button-row" popover="manual" bind:this={confirmation} style:left="{place.left}px" style:top="{place.top}px">
         <button disabled={cueSheet.deletesAll()} title={cueSheet.deletesAll() ? 'The sheet must keep at least one cell' : undefined} onclick={cueSheet.confirmDelete}>Confirm</button>
         <button onclick={cueSheet.cancelDelete}>Cancel</button>
@@ -186,16 +188,11 @@
         flex: 1 1 auto;
     }
 
-    /* `:where` keeps this below the .button-row dividers, so an active tool keeps its grooved edges. */
-    .bar :where(.active) {
-        border-style: inset;
-        background-color: var(--inset-background);
-    }
-
     /* A cell is drawn as the app's buttons are. A long label wraps inside its cell. The label sits
        flush left and the command count flush right; the gap separates them, since a flex container
-       drops the space. */
-    .cell {
+       drops the space. The rule has zero specificity, so the column's grooves and the cell states
+       override it. */
+    :where(.cell) {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -203,6 +200,7 @@
         min-height: 3em;
         padding: 0.6em;
         border: 4px outset var(--bevel-color);
+        border-radius: min(var(--radius-top), var(--radius-left)) min(var(--radius-top), var(--radius-right)) min(var(--radius-bottom), var(--radius-right)) min(var(--radius-bottom), var(--radius-left));
         background-color: rgb(239, 239, 239);
         font-size: 0.9em;
         font-weight: 500;
@@ -222,12 +220,12 @@
     }
 
     /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks
-       pressed. This rule comes before the swept one, so a pressed cell that is also swept keeps the
-       swept background. */
-    .pressed,
+       pressed. The cell selectors have zero specificity, so a pressed cell keeps the column's
+       groove. This rule comes before the swept one, so a pressed element that is also swept keeps
+       the swept background. */
+    :where(.pressed, [data-instrument='Fire'] .cell:active),
     :global(button.pressed),
-    :global(.pressed > button),
-    [data-instrument='Fire'] .cell:active {
+    :global(.pressed > button) {
         border-style: inset;
         background-color: var(--inset-background);
     }
@@ -286,16 +284,5 @@
         padding: 0;
         border: none;
         background: none;
-    }
-
-    /* Two stacked cells are divided by one grooved line: the upper cell's bottom edge. The divider
-       belongs to both cells, so a pressed cell draws inset only on its other edges. These rules come
-       last and are scoped to the strip, so that they win over the pressed ones. */
-    .actionsequence .cell + .cell {
-        border-top: none;
-    }
-
-    .actionsequence .cell:has(+ .cell) {
-        border-bottom-style: groove;
     }
 </style>
