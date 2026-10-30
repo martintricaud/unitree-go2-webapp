@@ -144,7 +144,7 @@ const targetOf = (_document: Document, _id: Cell['id'] | undefined) =>
 const linksOf = (_document: Document, _key: Key) => targetOf(_document, _document.bindings[_key]);
 
 /// The strip's tools, which edit the sheet.
-export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup', 'Pause'] as const;
+export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup', 'Pause', 'Delete'] as const;
 
 /// A press on a cell: whether it hit the cell's lower half, and how far the pointer has since
 /// travelled toward the strip's right edge, as a fraction of that distance from 0 to 1.
@@ -182,6 +182,7 @@ const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] 
     pressed: null as { id: Cell['id']; cue: Cue } | null, // the cell a held key fired, and which of its sides
     instrument: _instrument,
     renaming: null as number | null,
+    deleting: null as [number, number] | null, // the lowest and highest index of the cells awaiting deletion
     key: null as Key | null, // the key Assign links to the next cell chosen
     problem: null as string | null, // why the last import failed, shown until the next action
 });
@@ -213,7 +214,8 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// cells highlighted while the pointer is down, and the effect on release. Fire and Assign
     /// highlight nothing. Move shows the cells as its release will leave them, and highlights only
     /// the moved cell, which follows the pointer. Pause shows and highlights the wait cell its
-    /// press makes next to cell `a`, which its release inserts; only Pause reads the press.
+    /// press makes next to cell `a`, which its release inserts; only Pause reads the press. Delete
+    /// highlights the swept range, and its release only asks for confirmation.
     instruments: Record<
         CueSheet['state']['instrument'],
         {
@@ -232,6 +234,7 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
             swept: (_a, _b, { after } = STILL) => [after ? _a + 1 : _a],
             release: (_a, _b, _press = STILL) => this.#replace(_a, _a, flatMap(paused(this.#wait(_press), _press.after))),
         },
+        Delete: { shown: () => identity(), swept: covered, release: (_a, _b) => this.update(set('deleting', span(_a, _b))) },
         Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
     };
 
@@ -248,9 +251,10 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         this.instruments[this.state.instrument].release(_a, _b, _press);
     };
 
-    /// Replaces the state by `_change` of it, and ends any renaming and any import message.
+    /// Replaces the state by `_change` of it, and ends any renaming, any import message and any
+    /// deletion awaiting confirmation.
     #edit = (_change: Updater<CueSheet['state']>) =>
-        this.update(piped(_change, set('renaming', null), set('problem', null)));
+        this.update(piped(_change, set('renaming', null), set('problem', null), set('deleting', null)));
 
     /// Makes `_instrument` the active one with `_key` selected, and ends any renaming.
     #enter = (_instrument: CueSheet['state']['instrument'], _key: Key | null) =>
@@ -273,19 +277,35 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     stopRenaming = () => this.update(set('renaming', null));
 
     /// Replaces the cells from `_a` to `_b`, in either order, by `_change` of them and of the state,
-    /// and ends any renaming. A pointer on a replaced cell lands on the first new one; a pointer after them
-    /// keeps its cell. A key linked to a cell the change removes from the top level is unassigned.
+    /// and ends any renaming. A pointer on a replaced cell lands on the first new one, or on the new
+    /// last cell when no cell follows; a pointer after them keeps its cell. A key linked to a cell the
+    /// change removes from the top level is unassigned.
     #replace = (_a: number, _b: number, _change: (_run: Cell[], _state: CueSheet['state']) => Cell[]) => {
         const [lo, hi] = span(_a, _b);
         const count = hi - lo + 1;
         this.#edit((_state) => {
             const made = _change(pipe(_state.shown.sheet, drop(lo), take(count)), _state);
+            const sheet = splice(_state.shown.sheet, lo, count, made);
             return evolve(_state, {
-                shown: (_shown) => resolved(evolve(_shown, { sheet: splice(lo, count, made) })),
-                pointer: (_at) => (_at > hi ? _at + made.length - count : clamp(_at, { max: lo })),
+                shown: (_shown) => resolved(set(_shown, 'sheet', sheet)),
+                pointer: (_at) => within(sheet, _at > hi ? _at + made.length - count : clamp(_at, { max: lo })),
             });
         });
     };
+
+    /// Whether the cells awaiting deletion are every cell, which Confirm must not delete: the stored
+    /// format requires at least one cell.
+    deletesAll = () => isDeepEqual(this.state.deleting, [0, this.state.shown.sheet.length - 1]);
+
+    /// Deletes the cells awaiting deletion, and ends the confirmation; does nothing when they are
+    /// every cell.
+    confirmDelete = () => {
+        const { deleting } = this.state;
+        if (deleting !== null && !this.deletesAll()) this.#replace(...deleting, constant([]));
+    };
+
+    /// Ends the confirmation and keeps the cells.
+    cancelDelete = () => this.update(set('deleting', null));
 
     /// Gives cell `_index` the label `_label`, and ends any renaming.
     rename = (_index: number, _label: string) => this.#replace(_index, _index, map(merge({ label: _label })));

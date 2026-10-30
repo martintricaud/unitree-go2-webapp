@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { clamp, evolve, flatMap, forEach, isIncludedIn, last, map, pipe, reduce } from 'remeda';
+    import { clamp, concat, evolve, flatMap, forEach, isIncludedIn, last, map, pipe, reduce } from 'remeda';
     import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import { commandsOf } from '../lib/utils/commands';
+    import { covered } from '../lib/utils/lists';
     import type { Cell, Cue } from '../lib/utils/commands';
     import type { LucideIcon } from '@lucide/svelte';
     import Move from '@lucide/svelte/icons/move';
@@ -9,9 +10,10 @@
     import Group from '@lucide/svelte/icons/group';
     import Ungroup from '@lucide/svelte/icons/ungroup';
     import Timer from '@lucide/svelte/icons/timer';
+    import Trash from '@lucide/svelte/icons/trash';
 
     /// The icon of each sheet tool; a tool without an icon fails the type check.
-    const ICONS = { Move, Rename: Pencil, Group, Ungroup, Pause: Timer } satisfies Record<(typeof SHEET_TOOLS)[number], LucideIcon>;
+    const ICONS = { Move, Rename: Pencil, Group, Ungroup, Pause: Timer, Delete: Trash } satisfies Record<(typeof SHEET_TOOLS)[number], LucideIcon>;
 
     /// The strip's root element, whose drawn cells give each cell its index.
     let strip: HTMLDivElement;
@@ -25,7 +27,25 @@
     /// The active instrument, and the cells it shows and highlights during the sweep in progress.
     let instrument = $derived(cueSheet.instruments[cueSheet.state.instrument]);
     let shown = $derived(reduce(sweeps, (_cells: Cell[], { a, b, press }) => instrument.shown(a, b, press)(_cells), cueSheet.state.shown.sheet));
-    let swept = $derived(flatMap(sweeps, ({ a, b, press }) => instrument.swept(a, b, press)));
+    /// The cells awaiting deletion stay highlighted after the sweep that chose them.
+    let deleting = $derived(cueSheet.state.deleting);
+    let swept = $derived(concat(flatMap(sweeps, ({ a, b, press }) => instrument.swept(a, b, press)), deleting ? covered(...deleting) : []));
+
+    /// The row that confirms a deletion, the point of the last release, and the row's position: the
+    /// release point, moved just enough for the open row to fit inside the window. The row is a
+    /// popover, so the scrolled strip does not clip it; it is open while cells await deletion, and
+    /// closing it by Escape or a press outside ends the confirmation. The browser closes it at the
+    /// end of the press that opened it, as a press outside it, so the click that follows the
+    /// release opens it again.
+    let confirmation: HTMLDivElement;
+    let released = $state({ x: 0, y: 0 });
+    let place = $state({ left: 0, top: 0 });
+    const follow = () => {
+        confirmation.togglePopover(deleting !== null);
+        const { width, height } = confirmation.getBoundingClientRect();
+        place = { left: clamp(released.x, { min: 0, max: innerWidth - width }), top: clamp(released.y, { min: 0, max: innerHeight - height }) };
+    };
+    $effect(follow);
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
     /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
@@ -75,6 +95,9 @@
 
 <svelte:window onpointerup={() => (sweeps = [])} />
 
+<!-- The click only reopens the confirmation row after a sweep, which only a pointer makes, so it
+     needs no key handler and no role. -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
     id="sidebar"
     class="actionsequence"
@@ -84,7 +107,11 @@
         (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0 } })))}
     onpointermove={(event) =>
         (sweeps = map(sweeps, (_sweep) => evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x) } })))}
-    onpointerup={(event) => forEach(sweeps, ({ a, press }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b, press)))}
+    onclick={follow}
+    onpointerup={(event) => {
+        released = { x: event.clientX, y: event.clientY };
+        forEach(sweeps, ({ a, press }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b, press)));
+    }}
 >
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar button-row">
@@ -107,6 +134,11 @@
             {/if}
         </div>
     {/each}
+    <div class="confirmation button-row" popover="auto" bind:this={confirmation} style:left="{place.left}px" style:top="{place.top}px"
+        ontoggle={(event) => event.newState === 'closed' && cueSheet.cancelDelete()}>
+        <button disabled={cueSheet.deletesAll()} title={cueSheet.deletesAll() ? 'The sheet must keep at least one cell' : undefined} onclick={cueSheet.confirmDelete}>Confirm</button>
+        <button onclick={cueSheet.cancelDelete}>Cancel</button>
+    </div>
 </div>
 
 <style>
@@ -205,6 +237,21 @@
     /* Under Pause, dragging right lengthens the wait. */
     [data-instrument='Pause'] {
         cursor: ew-resize;
+    }
+
+    /* Under Delete, the swept cells are marked for deletion. */
+    [data-instrument='Delete'] {
+        cursor: crosshair;
+    }
+
+    /* The confirmation row sits where `place` puts its top left corner, instead of the browser's
+       centring of a popover. */
+    .confirmation {
+        inset: auto;
+        margin: 0;
+        padding: 0;
+        border: none;
+        background: none;
     }
 
     /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks

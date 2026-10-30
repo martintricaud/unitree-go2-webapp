@@ -73,7 +73,7 @@ describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
     const cells = numbered(CUES, 0);
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -404,6 +404,73 @@ describe('cueSheet pauses', () => {
   });
 });
 
+describe('cueSheet deletions', () => {
+  it('deletes nothing on a Delete release, in either direction, and holds the swept range for confirmation', () => {
+    times(2, (_reverse) => {
+      const { cueSheet } = editing('Delete');
+      cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
+      expect(sheets(cueSheet)).toMatchObject({ shown: CELLS, deleting: [1, 3] });
+    });
+  });
+
+  it('deletes exactly the range on confirmDelete, and ends the confirmation', () => {
+    const { cueSheet } = editing('Delete');
+    cueSheet.sweep(1, 3);
+    cueSheet.confirmDelete();
+    expect(sheets(cueSheet)).toMatchObject({ shown: [CELLS[0], CELLS[4], CELLS[5]], deleting: null });
+  });
+
+  it.each([
+    ['cancelDelete', (_cueSheet: CueSheet) => _cueSheet.cancelDelete()],
+    ['a change of instrument', (_cueSheet: CueSheet) => _cueSheet.choose('Move')],
+    ['another edit', (_cueSheet: CueSheet) => _cueSheet.reorder(4, 5)],
+    ['Reset', (_cueSheet: CueSheet) => _cueSheet.reset()],
+    ['Save', (_cueSheet: CueSheet) => _cueSheet.save()],
+    ['Cancel', (_cueSheet: CueSheet) => _cueSheet.cancel()],
+  ])('keeps the swept cells after %s, and ends the confirmation', (_name, _act) => {
+    const { cueSheet, state } = editing('Delete');
+    cueSheet.sweep(1, 3);
+    _act(cueSheet);
+    const kept = state().shown.sheet;
+    cueSheet.confirmDelete();
+    expect(state()).toMatchObject({ shown: { sheet: kept }, deleting: null });
+    expect(kept).toEqual(expect.arrayContaining(CELLS.slice(1, 4)));
+  });
+
+  it('unassigns a key linked to a deleted cell, and keeps the other links', () => {
+    const { cueSheet } = editing('Assign');
+    cueSheet.press('a');
+    cueSheet.sweep(3, 3);
+    cueSheet.press('b');
+    cueSheet.sweep(0, 0);
+    cueSheet.choose('Delete');
+    cueSheet.sweep(2, 3);
+    cueSheet.confirmDelete();
+    expect([cueSheet.linked('a'), cueSheet.linked('b')]).toEqual([undefined, CELLS[0]]);
+  });
+
+  it.each([
+    ['before the range', 1, 1],
+    ['on the range', 4, 3],
+    ['on the last cell', 5, 3],
+  ])('moves a pointer %s onto its own cell or the new last cell when the last cells are deleted', (_where, _pointer, _after) => {
+    const { cueSheet, state } = editing('Delete', _pointer);
+    cueSheet.sweep(4, 5);
+    cueSheet.confirmDelete();
+    expect(state().pointer).toBe(_after);
+    expect(state().shown.sheet[state().pointer]).toEqual(CELLS[_after]);
+  });
+
+  it('leaves the sheet unchanged, and Confirm refused, when the range is every cell', () => {
+    const { cueSheet, state } = editing('Delete');
+    expect(cueSheet.deletesAll()).toBe(false);
+    cueSheet.sweep(SHEET.length - 1, 0);
+    expect(cueSheet.deletesAll()).toBe(true);
+    cueSheet.confirmDelete();
+    expect(state().shown.sheet).toEqual(CELLS);
+  });
+});
+
 describe('cueSheet edits', () => {
   it('renames a cell and ends the rename, keeps the label on stopRenaming, and ends a rename on another change', () => {
     const { cueSheet, state } = editing('Rename');
@@ -432,7 +499,7 @@ describe('cueSheet edits', () => {
     cueSheet.save();
     const renamed = merge(CELLS[1], { label: 'X' });
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
     cueSheet.sweep(1, 1);
     expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
@@ -442,7 +509,7 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(0, 3);
     expect(state().pointer).toBe(1);
     cueSheet.cancel();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, problem: null });
 
     const { cueSheet: grown, state: grownState } = editing('Ungroup', 5);
     grown.sweep(2, 2);
@@ -457,7 +524,7 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, key: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, deleting: null, key: null, problem: null });
   });
 });
 
