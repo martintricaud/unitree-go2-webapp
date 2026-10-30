@@ -3,6 +3,14 @@
     import { cueSheet, SHEET_TOOLS } from '../lib/stores/cueSheet.svelte';
     import { commandsOf } from '../lib/utils/commands';
     import type { Cell, Cue } from '../lib/utils/commands';
+    import type { LucideIcon } from '@lucide/svelte';
+    import Move from '@lucide/svelte/icons/move';
+    import Pencil from '@lucide/svelte/icons/pencil';
+    import Group from '@lucide/svelte/icons/group';
+    import Ungroup from '@lucide/svelte/icons/ungroup';
+
+    /// The icon of each sheet tool; a tool without an icon fails the type check.
+    const ICONS = { Move, Rename: Pencil, Group, Ungroup } satisfies Record<(typeof SHEET_TOOLS)[number], LucideIcon>;
 
     /// The strip's root element, whose drawn cells give each cell its index.
     let strip: HTMLDivElement;
@@ -68,7 +76,8 @@
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar button-row">
             {#each SHEET_TOOLS as name}
-                <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
+                {@const Icon = ICONS[name]}
+                <button class:active={cueSheet.state.instrument === name} title={name} aria-label={name} onclick={() => cueSheet.choose(name)}><Icon size="1em" /></button>
             {/each}
         </div>
     {/if}
@@ -118,7 +127,6 @@
     /* `:where` keeps this below the .button-row dividers, so an active tool keeps its grooved edges. */
     .bar :where(.active) {
         border-style: inset;
-        font-weight: bold;
     }
 
     /* A cell is drawn as the app's buttons are. A long label wraps inside its cell. The label sits
