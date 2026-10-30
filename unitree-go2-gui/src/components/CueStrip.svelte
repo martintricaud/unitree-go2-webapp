@@ -31,21 +31,18 @@
     let deleting = $derived(cueSheet.state.deleting);
     let swept = $derived(concat(flatMap(sweeps, ({ a, b, press }) => instrument.swept(a, b, press)), deleting ? covered(...deleting) : []));
 
-    /// The row that confirms a deletion, the point of the last release, and the row's position: the
-    /// release point, moved just enough for the open row to fit inside the window. The row is a
-    /// popover, so the scrolled strip does not clip it; it is open while cells await deletion, and
-    /// closing it by Escape or a press outside ends the confirmation. The browser closes it at the
-    /// end of the press that opened it, as a press outside it, so the click that follows the
-    /// release opens it again.
+    /// The row that confirms a deletion, the point where the last sweep ended on a cell, and the
+    /// row's position: that point, moved just enough for the open row to fit inside the window. The
+    /// row is a popover, so the scrolled strip does not clip it, and it is open exactly while cells
+    /// await deletion. Escape and a press outside the row end the confirmation.
     let confirmation: HTMLDivElement;
     let released = $state({ x: 0, y: 0 });
     let place = $state({ left: 0, top: 0 });
-    const follow = () => {
+    $effect(() => {
         confirmation.togglePopover(deleting !== null);
         const { width, height } = confirmation.getBoundingClientRect();
         place = { left: clamp(released.x, { min: 0, max: innerWidth - width }), top: clamp(released.y, { min: 0, max: innerHeight - height }) };
-    };
-    $effect(follow);
+    });
 
     /// The index of the cell `_event` targets, as zero or one index: the cell's position among the
     /// drawn cells. None outside every cell, and none inside the label being renamed, so a press
@@ -93,11 +90,12 @@
     };
 </script>
 
-<svelte:window onpointerup={() => (sweeps = [])} />
+<svelte:window
+    onpointerup={() => (sweeps = [])}
+    onpointerdown={(event) => deleting !== null && event.target instanceof Node && !confirmation.contains(event.target) && cueSheet.cancelDelete()}
+    onkeydown={(event) => deleting !== null && event.key === 'Escape' && cueSheet.cancelDelete()}
+/>
 
-<!-- The click only reopens the confirmation row after a sweep, which only a pointer makes, so it
-     needs no key handler and no role. -->
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
     id="sidebar"
     class="actionsequence"
@@ -107,11 +105,13 @@
         (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0 } })))}
     onpointermove={(event) =>
         (sweeps = map(sweeps, (_sweep) => evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x) } })))}
-    onclick={follow}
-    onpointerup={(event) => {
-        released = { x: event.clientX, y: event.clientY };
-        forEach(sweeps, ({ a, press }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b, press)));
-    }}
+    onpointerup={(event) =>
+        forEach(sweeps, ({ a, press }) =>
+            forEach(cellAt(event), (_b) => {
+                released = { x: event.clientX, y: event.clientY };
+                cueSheet.sweep(a, _b, press);
+            }),
+        )}
 >
     {#if cueSheet.state.instrument !== 'Fire'}
         <div class="bar button-row">
@@ -134,8 +134,7 @@
             {/if}
         </div>
     {/each}
-    <div class="confirmation button-row" popover="auto" bind:this={confirmation} style:left="{place.left}px" style:top="{place.top}px"
-        ontoggle={(event) => event.newState === 'closed' && cueSheet.cancelDelete()}>
+    <div class="confirmation button-row" popover="manual" bind:this={confirmation} style:left="{place.left}px" style:top="{place.top}px">
         <button disabled={cueSheet.deletesAll()} title={cueSheet.deletesAll() ? 'The sheet must keep at least one cell' : undefined} onclick={cueSheet.confirmDelete}>Confirm</button>
         <button onclick={cueSheet.cancelDelete}>Cancel</button>
     </div>
