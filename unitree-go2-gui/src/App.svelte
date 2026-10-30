@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { entries } from 'remeda';
     import { onMount } from 'svelte';
     import Video from './components/Video.svelte';
     import Switch from './components/Switch.svelte';
@@ -10,7 +9,6 @@
     // import Lidar from './components/Lidar.svelte';
     import { POSTURE_FACES, enter, leave, set, transition } from './lib/utils/commands';
     import type { Cell, Cue } from './lib/utils/commands';
-    import { SPEED_LEVELS } from './lib/data/settings';
     import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
     import { displayed } from './lib/utils/confirmable';
@@ -162,14 +160,14 @@
     <section>
         <h2>Speed</h2>
         <div class="button-grid">
-            {#each entries(SPEED_LEVELS) as [speedName, level]}
-                <Radio
-                    optionName={speedName}
-                    selected={robot.current.state.settled.speed === level}
-                    spinning={robot.current.state.pending.speed?.value === level}
-                    disabled={!robot.current.robotConnected || !robot.current.reported.speed}
-                    callback={() => sendToRobot(set({ name: 'speed', value: level }))}
-                />
+            {#each cueSheet.state.shown.pane.speeds as cell (cell.id)}
+                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}><Radio
+                    optionName={cell.label}
+                    selected={robot.current.state.settled.speed === after(cell).speed}
+                    spinning={robot.current.state.pending.speed?.value === after(cell).speed}
+                    greyed={!cueSheet.usable(cell)}
+                    callback={() => cueSheet.use(cell)}
+                /></div>
             {/each}
         </div>
     </section>

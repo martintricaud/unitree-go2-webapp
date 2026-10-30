@@ -25,6 +25,7 @@ const PANE_KINDS: Record<PaneGroup, v.GenericSchema> = {
     gaits: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(COMMANDABLE_GAITS)]) }),
     postures: v.looseObject({ name: v.literal('enter'), args: v.tuple([v.picklist(keys(POSTURES))]) }),
     lights: v.looseObject({ name: v.literal('set'), args: v.tuple([v.looseObject({ name: v.literal('headlight') })]) }),
+    speeds: v.looseObject({ name: v.literal('set'), args: v.tuple([v.looseObject({ name: v.literal('speed') })]) }),
 };
 
 /// The document: the sheet the operator steps through, the cells of the pane's buttons, and the
@@ -45,16 +46,31 @@ const resolved = <D extends Document>({ sheet, pane, bindings }: D): Document =>
         bindings: pickBy(bindings, (_id) => isIncludedIn(_id, _drawn)),
     }));
 
+/// The document of `_document` whose missing pane groups get their default cells, each group in
+/// `PANE_GROUPS` order numbered above every identifier before it. Any other field is left out.
+/// Generic, so that the schema's transform takes the parsed document's own type.
+const filled = <D extends Omit<Document, 'pane'> & { pane: Partial<Document['pane']> }>({ sheet, pane, bindings }: D): Document =>
+    pipe(
+        PANE_GROUPS,
+        reduce(
+            (_document: Document, _group) =>
+                merge(_document, { pane: set(_document.pane, _group, pane[_group] ?? numbered(PANE[_group], nextId(cellsOf(_document)))) }),
+            { sheet, pane: mapValues(PANE, (_default, _group) => pane[_group] ?? []), bindings },
+        ),
+    );
+
 /// The stored document: the sheet, each pane group as `stored` writes them, and the bindings,
 /// every identifier held by one cell only. The format's version is optional, because documents
-/// saved before it was added lack it. A binding to a missing cell is dropped.
+/// saved before it was added lack it, and so is each pane group, which documents saved before the
+/// group was added lack. A binding to a missing cell is dropped.
 export const documentSchema = v.pipe(
     v.strictObject({
         version: v.optional(v.literal(2)),
         sheet: sheetSchema,
-        pane: v.strictObject(mapValues(PANE_KINDS, (_kind) => v.array(v.pipe(_kind, cellSchema)))),
+        pane: v.strictObject(mapValues(PANE_KINDS, (_kind) => v.optional(v.array(v.pipe(_kind, cellSchema))))),
         bindings: v.record(v.picklist(KEYS), v.number()),
     }),
+    v.transform(filled),
     distinctIn(cellsOf),
     v.transform(resolved),
 );
@@ -66,14 +82,7 @@ const documentText = v.pipe(v.string(), v.parseJson(), documentSchema);
 /// above every identifier numbered before it. Each key links to the cell numbered from its
 /// default cue, found by identity; a default cue missing from `_cues` leaves its key unassigned.
 const numberedDocument = (_cues: Cue[]) => {
-    const document = pipe(
-        PANE_GROUPS,
-        reduce(
-            (_document: Document, _group) =>
-                merge(_document, { pane: set(_document.pane, _group, numbered(PANE[_group], nextId(cellsOf(_document)))) }),
-            { sheet: numbered(_cues, 0), pane: mapValues(PANE, () => []), bindings: {} },
-        ),
-    );
+    const document = filled({ sheet: numbered(_cues, 0), pane: {}, bindings: {} });
     const pairs = zip(cellsOf({ sheet: _cues, pane: PANE }), cellsOf(document));
     const idOf = (_cue: Cue | undefined) =>
         pipe(pairs, filter(([_default]) => _default === _cue), map(([, _cell]) => _cell.id), first());
@@ -91,12 +100,13 @@ const reached = (_robot: typeof robot, _cell: Cell) => transition(_cell)(_robot.
 const itself = (_robot: typeof robot, _cell: Cell) => [_cell];
 
 /// Why the robot cannot take a cell yet, or null once it can: a sheet cell always; a pane cell once
-/// the robot is connected, and a gait or a posture other than Damp once it has also reported its
-/// gait or posture.
+/// the robot is connected; a gait or a posture other than Damp once it has also reported its gait
+/// or posture, and a speed once it has also reported its speed.
 const connected = (_robot: typeof robot) => (_robot.current.robotConnected ? null : 'the robot is not connected');
-const motionKnown = (_robot: typeof robot) =>
-    connected(_robot) ??
-    (_robot.current.reported.gait || _robot.current.reported.posture ? null : 'the robot has not reported its gait or posture');
+const known =
+    (_what: string, _reported: (_fields: typeof robot.current.reported) => true | undefined) => (_robot: typeof robot) =>
+        connected(_robot) ?? (_reported(_robot.current.reported) ? null : `the robot has not reported its ${_what}`);
+const motionKnown = known('gait or posture', (_fields) => _fields.gait || _fields.posture);
 
 const PANE_KEYS: Record<
     PaneGroup,
@@ -122,6 +132,8 @@ const PANE_KEYS: Record<
         available: itself,
     },
     lights: { act: (_robot, _cell) => _robot.toggleTo('headlight', reached(_robot, _cell).headlight), refusal: connected, available: itself },
+    // A speed is sent as it is: the robot store keeps no previous speed to switch back to.
+    speeds: { act: send, refusal: known('speed', prop('speed')), available: itself },
 };
 
 /// Each drawn cell of `_document`, with what a key linked to it does, when the robot can take it,

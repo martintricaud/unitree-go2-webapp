@@ -4,7 +4,7 @@ import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { POSTURES, compiled, enter, leave, perform, sequence, set as setting, wait } from '../utils/commands';
 import type { Cue } from '../utils/commands';
-import { nextId, numbered, opened } from '../utils/trees';
+import { distinct, nextId, numbered, opened } from '../utils/trees';
 import { CueSheet, documentSchema, SHEET_TOOLS } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
 import { Robot } from './robot.svelte';
@@ -43,6 +43,12 @@ const setup = (_cues = CUES, _storage: Pick<Storage, 'getItem' | 'setItem'> = me
     });
   return { cueSheet, robot, sent, confirm, receive, log };
 };
+
+/** The request a cue labelled `_label` makes when it sets the speed to `_level`, as `sent` reads it. */
+const speedSent = (_label: string, _level: number) => ({
+  command_name: _label,
+  sequence: [{ kind: 'command', topic: 'SPORT_MOD', api_id: 1015, command_name: 'SpeedLevel', parameter: { data: _level } }],
+});
 
 /** The summaries of the presses `_log` holds as blocked, newest first. */
 const blocked = (_log: OutcomeLog) => map(_log.messages.blocked, prop('summary'));
@@ -575,6 +581,17 @@ describe('cueSheet edits', () => {
   });
 });
 
+/** The document of a cue sheet on `SHEET` and the default pane, with its first cell renamed so that
+ * it differs from the default one, and the document a second cue sheet loads once the first is
+ * stored without the pane groups `_missing`. */
+const reloadedWithout = (..._missing: (keyof CueSheet['state']['shown']['pane'])[]) => {
+  const { cueSheet } = editing('Rename', 0, SHEET);
+  cueSheet.rename(0, 'Stored');
+  const document = cueSheet.state.shown;
+  const stored = JSON.stringify({ version: 2, sheet: document.sheet, pane: omit(document.pane, _missing), bindings: document.bindings });
+  return { document, reloaded: setup(SHEET, memoryStorage(new Map([['cueSheet.v2', stored]]))).cueSheet.state.shown };
+};
+
 describe('cueSheet in storage', () => {
   it('starts a second sheet on the same storage with the cells and identifiers the first one saved', () => {
     const storage = memoryStorage();
@@ -641,6 +658,29 @@ describe('cueSheet in storage', () => {
       cueSheet.save();
     }).not.toThrow();
     expect(cueSheet.state.shown.sheet).toEqual([CELLS[0], set(CELLS[1], 'label', 'X'), ...CELLS.slice(2)]);
+  });
+
+  it('lists the speeds last in the default pane', () => {
+    expect(keys(setup().cueSheet.state.shown.pane)).toEqual(['actions', 'gaits', 'postures', 'lights', 'speeds']);
+  });
+
+  it('loads a stored document without speeds with the three speed cells numbered above every other cell, the rest unchanged', () => {
+    const { document, reloaded } = reloadedWithout('speeds');
+    const others = [...reloaded.sheet, ...pipe(omit(reloaded.pane, ['speeds']), values(), flat())];
+    expect(omit(reloaded, ['pane'])).toEqual(omit(document, ['pane']));
+    expect(omit(reloaded.pane, ['speeds'])).toEqual(omit(document.pane, ['speeds']));
+    expect(map(reloaded.pane.speeds, prop('label'))).toEqual(['slow', 'normal', 'fast']);
+    expect(map(reloaded.pane.speeds, prop('id'))).toEqual(times(3, (_index) => nextId(others) + _index));
+    expect(keys(reloaded.pane)).toEqual(keys(document.pane));
+    expect(distinct([...reloaded.sheet, ...pipe(reloaded.pane, values(), flat())])).toBe(true);
+  });
+
+  it('loads a stored document missing two pane groups with both filled, every identifier distinct', () => {
+    const { reloaded } = reloadedWithout('lights', 'speeds');
+    expect(reloaded.sheet[0].label).toBe('Stored');
+    expect(map(reloaded.pane.lights, prop('label'))).toEqual(['white', 'red', 'yellow', 'blue', 'green', 'cyan', 'purple']);
+    expect(map(reloaded.pane.speeds, prop('label'))).toEqual(['slow', 'normal', 'fast']);
+    expect(distinct([...reloaded.sheet, ...pipe(reloaded.pane, values(), flat())])).toBe(true);
   });
 });
 
@@ -756,6 +796,27 @@ describe('cueSheet key assignment', () => {
     expect([cueSheet.usable(damp, enter('Damp')), cueSheet.usable(damp, leave('Damp'))]).toEqual([true, true]);
     cueSheet.use(damp, leave('Damp'));
     expect(sent()).toEqual(asSent(leave('Damp')));
+  });
+
+  it('sends SpeedLevel for a pane speed once the robot has reported its speed, and logs it as blocked before', () => {
+    const { cueSheet, sent, receive, log } = setup(CONDUITE);
+    const fast = paneCell(cueSheet, 'speeds', 'fast');
+    cueSheet.use(fast);
+    expect([sent(), blocked(log)]).toEqual([[], ['fast: the robot has not reported its speed']]);
+    receive({ type: 'robot_settings', speedLevel: 0, obstacleAvoidance: false });
+    cueSheet.use(fast);
+    expect(sent()).toEqual([speedSent('fast', 1)]);
+  });
+
+  it('links the key selected under Assign to a pane speed, which then sends that speed under Fire', () => {
+    const { cueSheet, sent, receive } = setup(CONDUITE);
+    receive({ type: 'robot_settings', speedLevel: 0, obstacleAvoidance: false });
+    cueSheet.choose('Assign');
+    cueSheet.press('b');
+    cueSheet.use(paneCell(cueSheet, 'speeds', 'slow'));
+    cueSheet.save();
+    cueSheet.press('b');
+    expect(sent()).toEqual([speedSent('slow', -1)]);
   });
 
   it('logs the side of a posture pair the settled posture does not allow as blocked, from a button and from a key', () => {
