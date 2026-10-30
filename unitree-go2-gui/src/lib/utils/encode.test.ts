@@ -96,8 +96,8 @@ describe('label', () => {
       ].map((_cue) => _cue.label),
     ).toEqual([
       'Bound',
-      'Pose',
-      'Exit Lying',
+      'Enter Pose',
+      'Stand',
       'Hello',
       'RecoveryStand',
       'Headlight',
@@ -113,7 +113,7 @@ describe('label', () => {
   it('names the cue sheet as before, in the same order', () => {
     expect(CONDUITE.map((_cue) => _cue.label)).toEqual([
       'FreeWalk',
-      'Pose',
+      'Enter Pose',
       'Sabots',
       'Wizard of Oz',
       'Stretch 👋 Jump',
@@ -123,14 +123,14 @@ describe('label', () => {
       'ClassicWalk',
       'Heart',
       'Salto',
-      'Sitting',
+      'Sit',
       'FreeWalk',
       'Chien',
       'FreeWalk',
       'Dance',
       'Ahahah Redlight',
       'Assis Whitelight',
-      'Lying',
+      'Lie',
     ]);
   });
 });

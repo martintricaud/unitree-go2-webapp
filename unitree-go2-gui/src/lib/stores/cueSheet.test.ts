@@ -242,7 +242,7 @@ describe('cueSheet sweeps', () => {
   it('moves cell 0 of CONDUITE to position 2, and keeps the pointer on its cell', () => {
     const { cueSheet, state } = editing('Move', 1, CONDUITE);
     cueSheet.sweep(0, 2);
-    expect(map(state().shown.sheet.slice(0, 3), (_cell) => _cell.label)).toEqual(['Pose', 'Sabots', 'FreeWalk']);
+    expect(map(state().shown.sheet.slice(0, 3), (_cell) => _cell.label)).toEqual(['Enter Pose', 'Sabots', 'FreeWalk']);
     expect(state().shown.sheet[state().pointer]).toEqual(numbered(CONDUITE, 0)[1]);
   });
 
@@ -264,7 +264,7 @@ describe('cueSheet sweeps', () => {
   it('groups a sweep made in either direction into one sequence with a new identifier, and leaves a sweep of one cell', () => {
     // The new identifier is above the pane's, which are numbered after the sheet's.
     const id = nextId([...CELLS, ...pipe(editing('Group').cueSheet.state.shown.pane, values(), flat())]);
-    const expected = [CELLS[0], { id, label: 'Pose → Hello', items: [CELLS[1], CELLS[2], CELLS[3]] }, ...CELLS.slice(4)];
+    const expected = [CELLS[0], { id, label: 'Enter Pose → Hello', items: [CELLS[1], CELLS[2], CELLS[3]] }, ...CELLS.slice(4)];
     times(2, (_reverse) => {
       const { cueSheet, state } = editing('Group');
       cueSheet.sweep(_reverse ? 3 : 1, _reverse ? 1 : 3);
@@ -705,10 +705,10 @@ describe('cueSheet copies a held pane command', () => {
 
   it('inserts the exit side of the Sitting pair when that side is carried', () => {
     const { cueSheet, state } = editing('Move');
-    cueSheet.carry(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
+    cueSheet.carry(paneCell(cueSheet, 'postures', 'Sit'), leave('Sitting'));
     cueSheet.sweep(1, 1);
     expect(omit(state().shown.sheet[1], ['id'])).toEqual(leave('Sitting'));
-    expect(state().shown.sheet[1].label).toBe('Exit Sitting');
+    expect(state().shown.sheet[1].label).toBe('Rise');
   });
 
   it('gives a copied group cell and its constituents identifiers no other cell holds', () => {
@@ -764,7 +764,7 @@ describe('cueSheet key assignment', () => {
     cueSheet.choose('Assign');
     expect(targets()).toEqual([]);
     cueSheet.press('x');
-    expect(targets()).toEqual(['Sitting']);
+    expect(targets()).toEqual(['Sit']);
     cueSheet.press('y');
     expect(targets()).toEqual([]);
   });
@@ -795,23 +795,23 @@ describe('cueSheet key assignment', () => {
     const usableSides = () =>
       pipe(
         keys(POSTURES),
-        flatMap((_posture) => filter([enter(_posture), leave(_posture)], (_side) => cueSheet.usable(paneCell(cueSheet, 'postures', _posture), _side))),
+        flatMap((_posture) => filter([enter(_posture), leave(_posture)], (_side) => cueSheet.usable(paneCell(cueSheet, 'postures', enter(_posture).label), _side))),
         map(prop('label')),
       );
-    const sitting = paneCell(cueSheet, 'postures', 'Sitting');
-    expect(usableSides()).toEqual([...keys(POSTURES), leave('Damp').label]);
+    const sitting = paneCell(cueSheet, 'postures', 'Sit');
+    expect(usableSides()).toEqual([...map(keys(POSTURES), (_posture) => enter(_posture).label), leave('Damp').label]);
     cueSheet.use(sitting, leave('Sitting'));
     cueSheet.use(sitting, enter('Sitting'));
     confirm();
     expect(usableSides()).toEqual(map([leave('Sitting'), enter('Damp'), leave('Damp')], prop('label')));
-    cueSheet.use(paneCell(cueSheet, 'postures', 'Pose'), enter('Pose'));
+    cueSheet.use(paneCell(cueSheet, 'postures', 'Enter Pose'), enter('Pose'));
     cueSheet.use(sitting, leave('Sitting'));
     expect(sent()).toEqual(asSent(enter('Sitting'), leave('Sitting')));
   });
 
   it('draws pressed and sends only the side of the posture pair a key is linked to that the settled posture allows', () => {
     const { cueSheet, sent, confirm } = setup(CONDUITE);
-    const pose = paneCell(cueSheet, 'postures', 'Pose');
+    const pose = paneCell(cueSheet, 'postures', 'Enter Pose');
     const pressedSides = () => filter([enter('Pose'), leave('Pose')], (_side) => cueSheet.isPressed(pose, _side));
     cueSheet.press('a');
     // The robot settles in Pose while a is held; the side drawn pressed stays the one a sent.
@@ -876,7 +876,7 @@ describe('cueSheet key assignment', () => {
 
   it('logs the side of a posture pair the settled posture does not allow as blocked, from a button and from a key', () => {
     const { cueSheet, confirm, log } = setup(CONDUITE);
-    cueSheet.use(paneCell(cueSheet, 'postures', 'Sitting'), leave('Sitting'));
+    cueSheet.use(paneCell(cueSheet, 'postures', 'Sit'), leave('Sitting'));
     tap(cueSheet, 'x');
     confirm();
     cueSheet.press('a');

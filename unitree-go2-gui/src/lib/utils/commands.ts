@@ -91,16 +91,6 @@ export const POSTURE_FACES = {
 /// True for a target that is a posture; the other targets are gaits.
 const isPosture = (_target: CommandableGait | Posture): _target is Posture => _target in POSTURES;
 
-/// The side of a posture's pair each posture command is drawn on.
-const SIDES = { enter: 0, leave: 1 } as const;
-
-/// The text of the button that sends `_cue`, which names a press in the log: a posture's entry or
-/// exit is named by its side of the pair, as the pane draws it; any other cue by its label.
-export const face = (_cue: Cue) =>
-    _cue.items === undefined && (_cue.name === 'enter' || _cue.name === 'leave') && isPosture(_cue.args[0])
-        ? POSTURE_FACES[_cue.args[0]][SIDES[_cue.name]]
-        : _cue.label;
-
 export type RobotState = {
     /// While the robot is in a posture, this keeps the gait it returns to on leaving the posture.
     gait: Gait;
@@ -181,15 +171,15 @@ const sport = (_request: SportRequest | PostureRequest) =>
 /// The change that sets field `name` of `RobotState` to `value`.
 const field = <K extends keyof RobotState>({ name, value }: { name: K; value: RobotState[K] }): Partial<RobotState> => objOf(value, name);
 
-/// What each command does, labelled as a new cue of it is labelled. Entering a posture keeps the
-/// gait; entering a gait leaves any posture. RecoveryStand stands the robot in its gait from any
-/// state.
+/// What each command does, labelled as a new cue of it is labelled. A posture's entry and exit are
+/// labelled with the faces of the pane buttons that send them. Entering a posture keeps the gait;
+/// entering a gait leaves any posture. RecoveryStand stands the robot in its gait from any state.
 const COMMANDS: { [K in keyof Params]: (..._args: Params[K]) => Act } = {
     enter: (_target) =>
         isPosture(_target)
-            ? { label: _target, steps: map(POSTURES[_target].enter, sport), change: { posture: _target } }
+            ? { label: POSTURE_FACES[_target][0], steps: map(POSTURES[_target].enter, sport), change: { posture: _target } }
             : { label: _target, steps: [sport(GAITS[_target].enter)], change: { gait: _target, posture: null } },
-    leave: (_posture) => ({ label: `Exit ${_posture}`, steps: map(POSTURES[_posture].exit, sport), change: { posture: null } }),
+    leave: (_posture) => ({ label: POSTURE_FACES[_posture][1], steps: map(POSTURES[_posture].exit, sport), change: { posture: null } }),
     perform: (_action) => ({ label: _action, steps: [sport(_action)], change: {} }),
     recover: () => ({ label: 'RecoveryStand', steps: [sport('RecoveryStand')], change: { posture: null } }),
     set: (_setting) =>

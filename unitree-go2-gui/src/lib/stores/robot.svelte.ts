@@ -1,7 +1,7 @@
 import { constant, evolve, filter, forEach, indexBy, isBoolean, isDeepEqual, isEmpty, isIncludedIn, isNonNullish } from 'remeda';
 import { isPlainObject, join, keys, mapValues, merge, omit, omitBy, pickBy, pipe, piped, set, values } from 'remeda';
 import { SPEED_LEVELS } from '../data/settings';
-import { compiled, enter, face, isCommandable, postureSides, set as setting, toggled, transition } from '../utils/commands';
+import { compiled, enter, isCommandable, postureSides, set as setting, toggled, transition } from '../utils/commands';
 import type { CommandableGait, Cue, Posture, RobotState } from '../utils/commands';
 import { displayed, propose, resolve, settle } from '../utils/confirmable';
 import type { Confirmable } from '../utils/confirmable';
@@ -394,7 +394,7 @@ export class Robot {
     togglePosture = (_posture: Posture) => {
         const { pending, settled } = this.#current.state;
         const waiting = waitingOn(pending, ['posture']);
-        forEach(pipe(postureSides(_posture)(settled), toggled(settled)), (_cue) => (waiting === null ? void this.request(_cue) : this.block(face(_cue), waiting)));
+        forEach(pipe(postureSides(_posture)(settled), toggled(settled)), (_cue) => (waiting === null ? void this.request(_cue) : this.block(_cue.label, waiting)));
     };
 
     /// Sends `_field` to `_value`, or back to its previous value when the robot already shows
