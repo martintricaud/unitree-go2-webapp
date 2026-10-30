@@ -12,6 +12,7 @@
     import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
     import { displayed } from './lib/utils/confirmable';
+    import { chunk } from 'remeda';
 
     /* STATE VARIABLES */
 
@@ -30,6 +31,9 @@
     /// The state the robot would settle in from its settled state once `_cell` has run: a pane
     /// button is ticked when its cell would change nothing.
     const after = (_cell: Cell) => transition(_cell)(robot.current.state.settled);
+    /// The number of gaits in one column of their grid: as many 3em buttons as fit in the pane's
+    /// 20rem height.
+    const GAIT_ROWS = 6;
 
     onMount(() => {
         robot.connect();
@@ -92,7 +96,7 @@
     </div>
     <section>
         <h2>Actions</h2>
-        <div class="button-grid">
+        <div class="flow-grid">
             {#each cueSheet.state.shown.pane.actions as cell (cell.id)}
                 <button class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
                     aria-disabled={!cueSheet.usable(cell)} onclick={() => cueSheet.use(cell)} onpointerdown={() => cueSheet.carry(cell)}>
@@ -105,15 +109,19 @@
     <section>
         <h2>Gaits</h2>
         <div class="button-grid">
-            {#each cueSheet.state.shown.pane.gaits as cell (cell.id)}
-                <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
-                    onpointerdown={() => cueSheet.carry(cell)}><Radio
-                    optionName={cell.label}
-                    selected={robot.current.state.settled.gait === after(cell).gait}
-                    spinning={robot.current.state.pending.gait?.value === after(cell).gait}
-                    greyed={!cueSheet.usable(cell)}
-                    callback={() => cueSheet.use(cell)}
-                /></div>
+            {#each chunk(cueSheet.state.shown.pane.gaits, GAIT_ROWS) as column}
+                <div class="button-col">
+                    {#each column as cell (cell.id)}
+                        <div class="target" class:swept={cueSheet.isTarget(cell)} class:pressed={cueSheet.isPressed(cell)}
+                            onpointerdown={() => cueSheet.carry(cell)}><Radio
+                            optionName={cell.label}
+                            selected={robot.current.state.settled.gait === after(cell).gait}
+                            spinning={robot.current.state.pending.gait?.value === after(cell).gait}
+                            greyed={!cueSheet.usable(cell)}
+                            callback={() => cueSheet.use(cell)}
+                        /></div>
+                    {/each}
+                </div>
             {/each}
         </div>
     </section>
@@ -121,7 +129,7 @@
          the robot's settled posture allows is usable, and a key draws only that side pressed. -->
     <section>
         <h2>Posture changes</h2>
-        <div class="button-grid pairs">
+        <div class="flow-grid pairs">
             {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
                 {#if posture}

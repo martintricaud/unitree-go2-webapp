@@ -163,14 +163,14 @@ button:focus-visible {
   margin-bottom: 0.3em;
 }
 
-.ui-pane>section>.button-grid {
+.ui-pane>section>.flow-grid {
   flex: 1;
   min-height: 0;
 }
 
 /* A column of the pane shrinks to its section's height. Its buttons start as tall as a button
    elsewhere and shrink evenly when the column has too little room. */
-.ui-pane>section>.button-col {
+.ui-pane>section>:is(.button-col, .button-grid) {
   min-height: 0;
 }
 
@@ -182,7 +182,7 @@ button:focus-visible {
 /* A posture's pair: its entry and its exit side by side, two transitions; neither side shows the
    robot's state. */
 /* The posture pairs' rows are separated by a gap as thick as a button's border. */
-.button-grid.pairs {
+.flow-grid.pairs {
   row-gap: var(--button-border);
 }
 
@@ -193,42 +193,44 @@ button:focus-visible {
 }
 
 /* Buttons stacked in a column (resp. side by side in a row), divided by grooved lines half as
-   wide as a button's border. An item of the group is a child, or the button of a child that only
-   wraps it, as `.target` wraps a Radio or a nested row wraps its buttons. Each line is the
-   block-end (resp. inline-end) edge of the item before it, so the item after it draws no
-   block-start (resp. inline-start) edge, and the corners on a shared side are square. Every other
-   edge keeps its outset style, so a pressed item still draws it inset. */
+   wide as a button's border. An item of the group is a child; its buttons are the child itself
+   or the buttons inside it, as `.target` wraps a Radio or a nested row holds its buttons. A grid
+   is a row of columns. Each line is the block-end (resp. inline-end) edge of the item before it,
+   so the item after it draws no block-start (resp. inline-start) edge, and the corners on a
+   shared side are square. Every other edge keeps its outset style, so a pressed item still draws
+   it inset. */
 .button-col {
   display: flex;
   flex-direction: column;
 }
 
-.button-row {
+.button-row,
+.button-grid {
   display: flex;
   flex-direction: row;
 }
 
 .button-col>:not(:first-child),
-.button-col>:not(:first-child)>button {
+.button-col>:not(:first-child) button {
   border-block-start: none;
   --radius-top: 0px;
 }
 
 .button-col>:not(:last-child),
-.button-col>:not(:last-child)>button {
+.button-col>:not(:last-child) button {
   border-block-end-style: groove;
   border-block-end-width: calc(var(--button-border) / 2);
   --radius-bottom: 0px;
 }
 
-.button-row>:not(:first-child),
-.button-row>:not(:first-child)>button {
+:is(.button-row, .button-grid)>:not(:first-child),
+:is(.button-row, .button-grid)>:not(:first-child) button {
   border-inline-start: none;
   --radius-left: 0px;
 }
 
-.button-row>:not(:last-child),
-.button-row>:not(:last-child)>button {
+:is(.button-row, .button-grid)>:not(:last-child),
+:is(.button-row, .button-grid)>:not(:last-child) button {
   border-inline-end-style: groove;
   border-inline-end-width: calc(var(--button-border) / 2);
   --radius-right: 0px;
@@ -236,14 +238,14 @@ button:focus-visible {
 
 /* A group nested in another draws no border of its own: its buttons draw the edges. */
 .button-col>.button-row,
-.button-row>.button-col {
+:is(.button-row, .button-grid)>.button-col {
   border: none;
 }
 
 /* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
    size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,
    so only the template rows need a size. */
-.button-grid {
+.flow-grid {
   column-fill: balance;
   display: grid;
   grid-auto-flow: column;
