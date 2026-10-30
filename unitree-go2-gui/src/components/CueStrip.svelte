@@ -66,7 +66,7 @@
     onpointerup={(event) => forEach(sweeps, ({ a }) => forEach(cellAt(event), (_b) => cueSheet.sweep(a, _b)))}
 >
     {#if cueSheet.state.instrument !== 'Fire'}
-        <div class="bar">
+        <div class="bar button-row">
             {#each SHEET_TOOLS as name}
                 <button class:active={cueSheet.state.instrument === name} onclick={() => cueSheet.choose(name)}>{name}</button>
             {/each}
@@ -108,7 +108,6 @@
         position: sticky;
         top: 0;
         z-index: 1;
-        display: flex;
         background: rgb(230, 230, 230);
     }
 
@@ -116,16 +115,7 @@
         flex: 1 1 auto;
     }
 
-    /* Two adjacent tools are divided by one grooved line: the left tool's right edge. */
-    .bar button + button {
-        border-left: none;
-    }
-
-    .bar button:has(+ button) {
-        border-right-style: groove;
-    }
-
-    /* `:where` keeps this below the dividers, so an active tool keeps its grooved edges. */
+    /* `:where` keeps this below the .button-row dividers, so an active tool keeps its grooved edges. */
     .bar :where(.active) {
         border-style: inset;
         font-weight: bold;

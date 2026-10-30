@@ -176,6 +176,36 @@ button:focus-visible {
   border-left: none;
 }
 
+/* Buttons stacked in a column (resp. side by side in a row), divided by grooved lines. Each line
+   is the block-end (resp. inline-end) edge of the button before it, so the button after it draws
+   no block-start (resp. inline-start) edge. Every other edge keeps the button rule's outset
+   style, so a pressed button still draws it inset. */
+.button-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.button-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.button-col>button:not(:first-of-type) {
+  border-block-start: none;
+}
+
+.button-col>button:not(:last-of-type) {
+  border-block-end-style: groove;
+}
+
+.button-row>button:not(:first-of-type) {
+  border-inline-start: none;
+}
+
+.button-row>button:not(:last-of-type) {
+  border-inline-end-style: groove;
+}
+
 
 /* A row is as tall as a button elsewhere: the button rule's min-height of 3em at its .9em font
    size makes 2.7em of the grid's font size. Items flow into new columns, never into new rows,

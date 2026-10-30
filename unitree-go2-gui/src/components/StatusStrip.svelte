@@ -72,11 +72,15 @@
                 <button class="toggle" onclick={() => cueSheet.choose('Move')}>Edit</button>
             {:else}
                 <span class="edit">
-                    <button class="toggle" onclick={() => cueSheet.save()}>Save</button>
-                    <button class="toggle" onclick={() => cueSheet.reset()}>Reset</button>
-                    <button class="toggle" onclick={() => cueSheet.cancel()}>Cancel</button>
-                    <button class="toggle" onclick={() => picker.click()}>Import</button>
-                    <button class="toggle" onclick={exportShown}>Export</button>
+                    <span class="button-row">
+                        <button class="toggle" onclick={() => cueSheet.save()}>Save</button>
+                        <button class="toggle" onclick={() => cueSheet.reset()}>Reset</button>
+                        <button class="toggle" onclick={() => cueSheet.cancel()}>Cancel</button>
+                    </span>
+                    <span class="button-row">
+                        <button class="toggle" onclick={() => picker.click()}>Import</button>
+                        <button class="toggle" onclick={exportShown}>Export</button>
+                    </span>
                 </span>
                 {#if cueSheet.state.problem !== null}
                     <span class="problem" title={cueSheet.state.problem}>{cueSheet.state.problem}</span>
@@ -175,6 +179,7 @@
         text-align: right;
     }
 
+    /* The gap separates the two button rows. */
     .edit {
         display: flex;
         gap: 0.4em;
