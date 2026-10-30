@@ -147,13 +147,14 @@
 
 <style>
     /* The width fits the tool buttons of the top bar on one line, and does not change between
-       modes or with the labels. No text is selected during a sweep; Safari needs the prefixed
+       modes or with the labels. It adds the sidebar's 1em padding on each side, because the
+       padding sits inside the width. No text is selected during a sweep; Safari needs the prefixed
        property. Safari bounces a scroll container at either end of its range, and the bounce moves
        the sticky bar with the cells; overscroll-behavior turns the bounce off. */
     .actionsequence {
         -webkit-user-select: none;
         user-select: none;
-        width: 19rem;
+        width: calc(19rem + 2em);
         display: flex;
         flex-direction: column;
         max-height: 100%;
@@ -161,10 +162,14 @@
         overscroll-behavior-y: none;
     }
 
-    /* The bar stays at the top of the scrolled strip; cells scroll under it. */
+    /* The bar stays at the top of the scrolled strip; cells scroll under it. A sticky element stops
+       at the inner edge of the sidebar's padding, so the bar extends over the 1em top padding and
+       stops at the strip's top edge; otherwise cells would show above it. */
     .bar {
         position: sticky;
-        top: 0;
+        top: -1em;
+        margin-top: -1em;
+        padding-top: 1em;
         z-index: 1;
         background: rgb(230, 230, 230);
     }
@@ -176,6 +181,7 @@
     /* `:where` keeps this below the .button-row dividers, so an active tool keeps its grooved edges. */
     .bar :where(.active) {
         border-style: inset;
+        background-color: var(--inset-background);
     }
 
     /* A cell is drawn as the app's buttons are. A long label wraps inside its cell. The label sits
@@ -188,7 +194,7 @@
         gap: 1ch;
         min-height: 3em;
         padding: 0.6em;
-        border: 4px outset rgb(118, 118, 118);
+        border: 4px outset var(--bevel-color);
         background-color: rgb(239, 239, 239);
         font-size: 0.9em;
         font-weight: 500;
@@ -205,6 +211,17 @@
         font-weight: bold;
         box-shadow: inset 0 0 10px rgb(0, 218, 163);
         border-color: rgb(0, 218, 163);
+    }
+
+    /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks
+       pressed. This rule comes before the swept one, so a pressed cell that is also swept keeps the
+       swept background. */
+    .pressed,
+    :global(button.pressed),
+    :global(.pressed > button),
+    [data-instrument='Fire'] .cell:active {
+        border-style: inset;
+        background-color: var(--inset-background);
     }
 
     /* A swept cell, and under Assign the cell or the pane button the selected key is linked to.
@@ -256,15 +273,6 @@
         padding: 0;
         border: none;
         background: none;
-    }
-
-    /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks
-       pressed. */
-    .pressed,
-    :global(button.pressed),
-    :global(.pressed > button),
-    [data-instrument='Fire'] .cell:active {
-        border-style: inset;
     }
 
     /* Two stacked cells are divided by one grooved line: the upper cell's bottom edge. The divider

@@ -4,6 +4,10 @@
   --app-border: 2px;
   /* The width of a button's border, which the posture group's row gap also takes. */
   --button-border: 4px;
+  /* The colour of an outset or inset border. The browser shades each edge from it. */
+  --bevel-color: rgb(160, 160, 160);
+  /* The background of an element drawn pressed in, a little darker than a raised button's. */
+  --inset-background: rgb(205, 205, 205);
   /* The line between two areas of the screen, and between two columns of the pane. */
   --divider: 2px groove rgb(200, 200, 200);
   /* The interface's base size, a little under the browsers' `small` (13px), so that the UI pane's
@@ -54,7 +58,7 @@ button {
   text-align: center;
   line-height: 1em;
   vertical-align: middle !important;
-  border: var(--button-border) outset rgb(118, 118, 118);
+  border: var(--button-border) outset var(--bevel-color);
   background-color: rgb(239, 239, 239);
   color: rgb(0, 0, 0);
   padding: 0.6em 0.6em;
@@ -75,12 +79,13 @@ button:hover {
    still overrides them. */
 button:where(:active:not(:disabled)) {
   border-style: inset;
+  background-color: var(--inset-background);
 }
 
 /* A button with aria-disabled looks disabled and still takes the pointer, so it draws itself pressed while held. */
 button:where(:disabled, [aria-disabled='true']) {
   color: rgb(16 16 16 / 0.3);
-  border-color: rgb(118 118 118 / 0.3);
+  border-color: color-mix(in srgb, var(--bevel-color) 30%, transparent);
   background-color: rgb(239 239 239 / 0.3);
   cursor: not-allowed;
 }
@@ -104,6 +109,7 @@ button:focus-visible {
 #sidebar {
   grid-area: sidebar;
   border-left: var(--divider);
+  padding: 1em;
 }
 
 .ui-pane {
@@ -178,8 +184,8 @@ button:focus-visible {
 
 /* Buttons stacked in a column (resp. side by side in a row), divided by grooved lines. Each line
    is the block-end (resp. inline-end) edge of the button before it, so the button after it draws
-   no block-start (resp. inline-start) edge. Every other edge keeps the button rule's outset
-   style, so a pressed button still draws it inset. */
+   no block-start (resp. inline-start) edge. A line is half as wide as a button's border. Every
+   other edge keeps the button rule's outset style, so a pressed button still draws it inset. */
 .button-col {
   display: flex;
   flex-direction: column;
@@ -196,6 +202,7 @@ button:focus-visible {
 
 .button-col>button:not(:last-of-type) {
   border-block-end-style: groove;
+  border-block-end-width: calc(var(--button-border) / 2);
 }
 
 .button-row>button:not(:first-of-type) {
@@ -204,6 +211,7 @@ button:focus-visible {
 
 .button-row>button:not(:last-of-type) {
   border-inline-end-style: groove;
+  border-inline-end-width: calc(var(--button-border) / 2);
 }
 
 
