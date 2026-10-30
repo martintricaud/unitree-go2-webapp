@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evolve, filter, flat, flatMap, forEach, keys, map, merge, omit, pick, pipe, prop, set, times, values } from 'remeda';
+import { evolve, filter, flat, flatMap, forEach, keys, map, merge, omit, pick, pipe, prop, set, splice, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { POSTURES, compiled, enter, leave, perform, sequence, set as setting, wait } from '../utils/commands';
@@ -347,7 +347,7 @@ describe('cueSheet pauses', () => {
   ])('inserts a wait cell, with after %s on cell 1, at index %i, and keeps every other cell', (_after, _index) => {
     const { cueSheet, state } = editing('Pause');
     const expected = pauseCell(cueSheet, 0.1);
-    cueSheet.sweep(1, 1, { after: _after, travel: 0 });
+    cueSheet.sweep(1, 1, { after: _after, travel: 0, drag: 0 });
     expect(state().shown.sheet[_index]).toEqual(expected);
     expect(filter(state().shown.sheet, (_cell) => _cell !== state().shown.sheet[_index])).toEqual(CELLS);
   });
@@ -359,7 +359,7 @@ describe('cueSheet pauses', () => {
   ])('waits, for a travel of %f, %f seconds', (_travel, _seconds) => {
     const { cueSheet, state } = editing('Pause');
     const expected = pauseCell(cueSheet, _seconds);
-    cueSheet.sweep(1, 1, { after: false, travel: _travel });
+    cueSheet.sweep(1, 1, { after: false, travel: _travel, drag: 0 });
     expect(state().shown.sheet[1]).toEqual(expected);
   });
 
@@ -372,13 +372,13 @@ describe('cueSheet pauses', () => {
 
   it('gives the wait cell an identifier no other cell of the sheet or the pane holds', () => {
     const { cueSheet, state } = editing('Pause');
-    cueSheet.sweep(1, 1, { after: true, travel: 0.5 });
+    cueSheet.sweep(1, 1, { after: true, travel: 0.5, drag: 0 });
     expect(v.safeParse(documentSchema, state().shown).success).toBe(true);
   });
 
   it.each([false, true])('previews, with after %s, the sheet its release leaves, and highlights only the wait cell', (_after) => {
     const { cueSheet, state } = editing('Pause');
-    const press = { after: _after, travel: 0.5 };
+    const press = { after: _after, travel: 0.5, drag: 0 };
     const preview = cueSheet.instruments.Pause.shown(1, 3, press)(state().shown.sheet);
     const swept = cueSheet.instruments.Pause.swept(1, 3, press);
     cueSheet.sweep(1, 3, press);
@@ -393,14 +393,61 @@ describe('cueSheet pauses', () => {
     ['after the cell', 4, 5],
   ])('moves the pointer %s on a Pause of cell 1', (_where, _pointer, _after) => {
     const { cueSheet, state } = editing('Pause', _pointer);
-    cueSheet.sweep(1, 1, { after: true, travel: 0 });
+    cueSheet.sweep(1, 1, { after: true, travel: 0, drag: 0 });
     expect(state().pointer).toBe(_after);
   });
 
   it('keeps the cell of a pointer after the pressed cell', () => {
     const { cueSheet, state } = editing('Pause', 4);
-    cueSheet.sweep(1, 1, { after: false, travel: 0 });
+    cueSheet.sweep(1, 1, { after: false, travel: 0, drag: 0 });
     expect(state().shown.sheet[state().pointer]).toEqual(CELLS[4]);
+  });
+});
+
+/** A Pause press on the upper half of a cell, moved horizontally by `_drag` strip widths. */
+const dragged = (_drag: number) => ({ after: false, travel: 0, drag: _drag });
+
+describe('cueSheet retimes a wait cell under Pause', () => {
+  it('leaves the sheet unchanged on a press with no horizontal movement, even on a wait above 5 s', () => {
+    const { cueSheet, state } = editing('Pause', 0, [enter('FreeWalk'), wait(7)]);
+    const before = state().shown.sheet;
+    cueSheet.sweep(1, 1, { after: true, travel: 0.5, drag: 0 });
+    expect(state().shown.sheet).toEqual(before);
+  });
+
+  it.each([
+    ['a quarter strip width right', 0.25, 2.2],
+    ['left past the start', -1, 0.1],
+    ['right far enough', 2, 5],
+  ])('gives the 1 s wait of cell 4, for a drag %s, %f seconds, under its own identifier', (_where, _drag, _seconds) => {
+    const { cueSheet, state } = editing('Pause');
+    cueSheet.sweep(4, 4, dragged(_drag));
+    expect(state().shown.sheet).toEqual(splice(CELLS, 4, 1, numbered([wait(_seconds)], CELLS[4].id)));
+  });
+
+  it('keeps the key linked to the retimed wait cell', () => {
+    const { cueSheet } = editing('Assign');
+    cueSheet.press('a');
+    cueSheet.sweep(4, 4);
+    cueSheet.choose('Pause');
+    cueSheet.sweep(4, 4, dragged(0.25));
+    expect(cueSheet.linked('a')).toMatchObject({ id: CELLS[4].id, name: 'wait', args: [2.2] });
+  });
+
+  it('previews the sheet its release leaves, and highlights only the wait cell', () => {
+    const { cueSheet, state } = editing('Pause');
+    const preview = cueSheet.instruments.Pause.shown(4, 2, dragged(0.25))(state().shown.sheet);
+    const swept = cueSheet.instruments.Pause.swept(4, 2, dragged(0.25));
+    cueSheet.sweep(4, 2, dragged(0.25));
+    expect([preview, swept]).toEqual([state().shown.sheet, [4]]);
+  });
+
+  it('inserts a wait next to a group of waits, which is not a wait cell', () => {
+    const { cueSheet, state } = editing('Pause', 0, [enter('FreeWalk'), sequence('rest', wait(1), wait(2))]);
+    const expected = pauseCell(cueSheet, 0.1);
+    cueSheet.sweep(1, 1, dragged(0.25));
+    expect(state().shown.sheet[1]).toEqual(expected);
+    expect(state().shown.sheet).toHaveLength(3);
   });
 });
 

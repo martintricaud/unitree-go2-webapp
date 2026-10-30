@@ -1,4 +1,4 @@
-import { clamp, concat, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
+import { clamp, constant, doNothing, drop, entries, evolve, filter, first, findIndex, flat, flatMap, forEach, hasAtLeast } from 'remeda';
 import { identity, isDeepEqual, isEmpty, isIncludedIn, isNullish, isStrictEqual, keys, last, map, mapValues, merge, pickBy, pipe, piped } from 'remeda';
 import { prop, range, reduce, set, splice, take, values, zip } from 'remeda';
 import type { Updater, Writable } from 'svelte/store';
@@ -146,19 +146,17 @@ const linksOf = (_document: Document, _key: Key) => targetOf(_document, _documen
 /// The strip's tools, which edit the sheet.
 export const SHEET_TOOLS = ['Move', 'Rename', 'Group', 'Ungroup', 'Pause', 'Delete'] as const;
 
-/// A press on a cell: whether it hit the cell's lower half, and how far the pointer has since
-/// travelled toward the strip's right edge, as a fraction of that distance from 0 to 1.
-type Press = { after: boolean; travel: number };
+/// A press on a cell: whether it hit the cell's lower half, how far the pointer has since
+/// travelled toward the strip's right edge, as a fraction of that distance from 0 to 1, and how far
+/// it has since moved horizontally, as a signed fraction of the strip's width.
+type Press = { after: boolean; travel: number; drag: number };
 
 /// The press a sweep without one stands for: on the upper half, with no travel.
-const STILL: Press = { after: false, travel: 0 };
+const STILL: Press = { after: false, travel: 0, drag: 0 };
 
-/// The seconds a Pause press of `_travel` waits: 0.1 s with no travel, 5 s at the right edge,
-/// linear, rounded to 0.1 s.
-const pauseSeconds = (_travel: number) => Math.round((0.1 + _travel * 4.9) * 10) / 10;
-
-/// `_cell` with the wait cells `_waits` after it when `_after` holds, before it otherwise.
-const paused = (_waits: Cell[], _after: boolean) => (_cell: Cell) => (_after ? concat([_cell], _waits) : concat(_waits, [_cell]));
+/// The seconds a wait of `_seconds` lasts after a change of `_travel`: 4.9 s per unit of travel,
+/// rounded to 0.1 s, from 0.1 s to 5 s. A Pause press inserts `retimed(0.1, travel)`.
+const retimed = (_seconds: number, _travel: number) => clamp(Math.round((_seconds + _travel * 4.9) * 10) / 10, { min: 0.1, max: 5 });
 
 /// The instruments: Fire plays the sheet, the sheet tools edit it, and Assign links keys to cells.
 const INSTRUMENTS = ['Fire', ...SHEET_TOOLS, 'Assign'] as const;
@@ -214,8 +212,9 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     /// cells highlighted while the pointer is down, and the effect on release. Fire and Assign
     /// highlight nothing. Move shows the cells as its release will leave them, and highlights only
     /// the moved cell, which follows the pointer. Pause shows and highlights the wait cell its
-    /// press makes next to cell `a`, which its release inserts; only Pause reads the press. Delete
-    /// highlights the swept range, and its release only asks for confirmation.
+    /// press makes next to cell `a`, or cell `a` retimed when it is a wait, and its release keeps
+    /// that; only Pause reads the press. Delete highlights the swept range, and its release only
+    /// asks for confirmation.
     instruments: Record<
         CueSheet['state']['instrument'],
         {
@@ -230,17 +229,29 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
         Group: { shown: () => identity(), swept: covered, release: (_a, _b) => this.group(_a, _b) },
         Ungroup: { shown: () => identity(), swept: covered, release: (_a, _b) => this.ungroup(_a, _b) },
         Pause: {
-            shown: (_a, _b, _press = STILL) => (_cells) => splice(_cells, _a, 1, paused(this.#wait(_press), _press.after)(_cells[_a])),
-            swept: (_a, _b, { after } = STILL) => [after ? _a + 1 : _a],
-            release: (_a, _b, _press = STILL) => this.#replace(_a, _a, flatMap(paused(this.#wait(_press), _press.after))),
+            shown: (_a, _b, _press = STILL) => (_cells) => splice(_cells, _a, 1, this.#pause(_press)(_cells[_a]).cells),
+            swept: (_a, _b, _press = STILL) => [_a + this.#pause(_press)(this.state.shown.sheet[_a]).at],
+            release: (_a, _b, _press = STILL) => this.#replace(_a, _a, flatMap((_cell) => this.#pause(_press)(_cell).cells)),
         },
         Delete: { shown: () => identity(), swept: covered, release: (_a, _b) => this.update(set('deleting', span(_a, _b))) },
         Assign: { shown: () => identity(), swept: () => [], release: (_a, _b) => this.#bind(this.state.shown.sheet[_b]) },
     };
 
-    /// The wait cell of a Pause press, as a list of one, under an identifier no shown cell holds:
-    /// the same for the preview and the release, which happen on the same shown document.
-    #wait = ({ travel }: Press) => numbered([wait(pauseSeconds(travel))], nextId(cellsOf(this.state.shown)));
+    /// What the Pause press `_press` does to `_cell`: the cells that replace it, and the offset among
+    /// them of the wait it highlights. A wait cell (a leaf; a group of waits is not one) takes the
+    /// signed drag as a change of its duration under its own identifier, so a key linked to it stays
+    /// linked; with no drag it stays as it is, even above 5 s. Any other cell gets a new wait of the
+    /// press's travel before it, or after it when `after` holds, under an identifier no shown cell
+    /// holds: the same for the preview and the release, which happen on the same shown document.
+    #pause =
+        ({ after, travel, drag }: Press) =>
+        (_cell: Cell) =>
+            'name' in _cell && _cell.name === 'wait'
+                ? { cells: drag === 0 ? [_cell] : numbered([wait(retimed(_cell.args[0], drag))], _cell.id), at: 0 }
+                : pipe(Number(after), (_at) => ({
+                      cells: splice([_cell], _at, 0, numbered([wait(retimed(0.1, travel))], nextId(cellsOf(this.state.shown)))),
+                      at: _at,
+                  }));
 
     /// Forgets why the last import failed: every action after it ends the message.
     #dismiss = () => this.update(set('problem', null));

@@ -61,6 +61,9 @@
     const travel = (_event: PointerEvent, _x: number) =>
         clamp((_event.clientX - _x) / (strip.getBoundingClientRect().right - _x), { min: 0, max: 1 });
 
+    /// How far `_event` lies right of `_x`, negative when left of it, as a fraction of the strip's width.
+    const drag = (_event: PointerEvent, _x: number) => (_event.clientX - _x) / strip.getBoundingClientRect().width;
+
     /// The number of robot commands a group cell sends, counting its nested groups and not its
     /// waits; 0 for a cell that is not a group, so only a group shows a count.
     const commandCount = (_cell: Cue) => (_cell.items === undefined ? 0 : commandsOf(_cell).length);
@@ -102,9 +105,11 @@
     data-instrument={cueSheet.state.instrument}
     bind:this={strip}
     onpointerdown={(event) =>
-        (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0 } })))}
+        (sweeps = map(cellAt(event), (_index) => ({ a: _index, b: _index, x: event.clientX, press: { after: onLowerHalf(event, _index), travel: 0, drag: 0 } })))}
     onpointermove={(event) =>
-        (sweeps = map(sweeps, (_sweep) => evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x) } })))}
+        (sweeps = map(sweeps, (_sweep) =>
+            evolve(_sweep, { b: (_b) => last([_b, ...cellAt(event)]), press: { travel: () => travel(event, _sweep.x), drag: () => drag(event, _sweep.x) } }),
+        ))}
     onpointerup={(event) =>
         forEach(sweeps, ({ a, press }) =>
             forEach(cellAt(event), (_b) => {
