@@ -7,7 +7,7 @@
     import CueStrip from './components/CueStrip.svelte';
     import ControllerEmulation from './components/ControllerEmulation.svelte';
     // import Lidar from './components/Lidar.svelte';
-    import { POSTURE_FACES, enter, leave, set, transition } from './lib/utils/commands';
+    import { POSTURE_FACES, enter, leaveToGait, set, transition } from './lib/utils/commands';
     import type { Cell, Cue } from './lib/utils/commands';
     import { robot } from './lib/stores/robot.svelte';
     import { cueSheet } from './lib/stores/cueSheet.svelte';
@@ -134,7 +134,7 @@
                 {@const posture = after(cell).posture}
                 {#if posture}
                     {@const entry = enter(posture)}
-                    {@const exit = leave(posture)}
+                    {@const exit = leaveToGait(posture)(robot.current.state.settled)}
                     {@const inPosture = robot.current.state.settled.posture === posture}
                     {@const pending = robot.current.state.pending.posture}
                     <div class="posture-toggle button-row" class:swept={cueSheet.isTarget(cell)}>

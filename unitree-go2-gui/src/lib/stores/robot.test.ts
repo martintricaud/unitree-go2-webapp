@@ -3,7 +3,7 @@ import { map, omit, prop, range, reverse, times } from 'remeda';
 import { Robot } from './robot.svelte';
 import { LISTS, OutcomeLog } from './outcomes.svelte';
 import type { Outcome } from './outcomes.svelte';
-import { compiled, enter, leave, perform, recover, sequence, set, wait } from '../utils/commands';
+import { compiled, enter, leave, leaveToGait, perform, recover, sequence, set, wait } from '../utils/commands';
 import type { Cue, RobotState } from '../utils/commands';
 import { displayed } from '../utils/confirmable';
 
@@ -1116,11 +1116,12 @@ describe('the toggles', () => {
         expect(connected.robot.current).toMatchObject({ state: { settled: { gait: 'FreeWalk' } }, previous: { gait: 'Bound' } });
     });
 
-    it('a from a gait sends StopMove and Pose on, then only Pose off', async () => {
+    it('a from a gait sends StopMove and Pose on, then Pose off and that gait again', async () => {
         const connected = connectedRobot();
         await connected.confirm(enter('Running'));
+        const exit = leaveToGait('Pose')(connected.robot.current.state.settled);
         const a = () => connected.robot.togglePosture('Pose');
-        expect(pressAll(connected, [a, a])).toEqual(asSent(enter('Pose'), leave('Pose')));
+        expect(pressAll(connected, [a, a])).toEqual(asSent(enter('Pose'), exit));
         expect(connected.robot.current).toMatchObject({
             state: { settled: { gait: 'Running', posture: null } },
             previous: { gait: 'FreeWalk' },
@@ -1149,14 +1150,16 @@ describe('the toggles', () => {
     it("Damp's toggle drops the robot from another posture, then stands it up", async () => {
         const connected = connectedRobot();
         await connected.confirm(enter('Sitting'));
+        const exit = leaveToGait('Damp')(connected.robot.current.state.settled);
         const d = () => connected.robot.togglePosture('Damp');
-        expect(pressAll(connected, [d, d])).toEqual(asSent(enter('Damp'), leave('Damp')));
+        expect(pressAll(connected, [d, d])).toEqual(asSent(enter('Damp'), exit));
     });
 
     it('x sits from a gait, then rises', () => {
         const connected = connectedRobot();
+        const exit = leaveToGait('Sitting')(connected.robot.current.state.settled);
         const x = () => connected.robot.togglePosture('Sitting');
-        expect(pressAll(connected, [x, x])).toEqual(asSent(enter('Sitting'), leave('Sitting')));
+        expect(pressAll(connected, [x, x])).toEqual(asSent(enter('Sitting'), exit));
     });
 
     it('red from the boot green sends red, then green, then red again', () => {

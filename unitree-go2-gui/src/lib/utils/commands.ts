@@ -235,15 +235,21 @@ export const transition = (_cue: Cue) => (_state: RobotState): RobotState => ({ 
 /// state, reported or not, so that the operator can always drop the robot or stand it up.
 export const anyState = (_posture: Posture) => _posture === 'Damp';
 
+/// The cue that leaves `_posture` from `_state`, then re-enters the gait `_state` records, after
+/// 0.1 s, unless the app cannot command that gait. The robot is not documented to resume its gait
+/// by itself.
+export const leaveToGait = (_posture: Posture) => ({ gait }: RobotState) =>
+    isCommandable(gait) ? sequence(leave(_posture).label, leave(_posture), wait(0.1), enter(gait)) : leave(_posture);
+
 /// The sides of `_posture`'s pair the robot can take from `_state`. In no posture the robot can
 /// enter any posture; in a posture it can only leave that posture. Damp's pair allows both sides.
-export const postureSides = (_posture: Posture) => ({ posture }: RobotState) =>
+export const postureSides = (_posture: Posture) => (_state: RobotState) =>
     anyState(_posture)
-        ? [enter(_posture), leave(_posture)]
-        : posture === null
+        ? [enter(_posture), leaveToGait(_posture)(_state)]
+        : _state.posture === null
           ? [enter(_posture)]
-          : posture === _posture
-            ? [leave(_posture)]
+          : _state.posture === _posture
+            ? [leaveToGait(_posture)(_state)]
             : [];
 
 /// The side of `_sides` a key sends from `_state`, as zero or one cue: the first side that changes

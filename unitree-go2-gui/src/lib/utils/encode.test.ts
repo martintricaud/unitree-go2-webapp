@@ -3,9 +3,9 @@ import { drop, fromKeys, keys, map, mapValues, merge } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
 import { COLOURS, SPEED_LEVELS } from '../data/settings';
-import { ACTIONS, GAITS, dim, enter, isCommandable, leave, orient, perform, recover, sequence, set, wait } from './commands';
+import { ACTIONS, GAITS, dim, enter, isCommandable, leave, leaveToGait, orient, perform, recover, sequence, set, wait } from './commands';
 import { compiled, sheetSchema } from './commands';
-import type { Cell } from './commands';
+import type { Cell, Posture, RobotState } from './commands';
 import { nextId, numbered } from './trees';
 import WIRE from './encode.fixture.json';
 
@@ -74,6 +74,31 @@ describe('steps', () => {
     expect(compiled(leave('Pose')).steps).toEqual([
       { kind: 'command', topic: 'SPORT_MOD', api_id: 1028, command_name: 'Pose', parameter: { data: false } },
     ]);
+  });
+});
+
+/** The boot state of the robot, but in `_posture` with `_gait` recorded as the gait it returns to. */
+const inPosture = (_posture: Posture, _gait: RobotState['gait']): RobotState => ({
+  gait: _gait,
+  posture: _posture,
+  headlight: 'green',
+  speed: 0,
+  obstacleAvoidance: true,
+});
+
+describe('leaving a posture', () => {
+  it('leaves the posture, waits 0.1 s and re-enters FreeWalk, as the pre-August exits from FreeWalk did', () => {
+    const pause = { kind: 'wait', wait: 0.1 };
+    expect(compiled(leaveToGait('Pose')(inPosture('Pose', 'FreeWalk'))).steps).toEqual([
+      { kind: 'command', topic: 'SPORT_MOD', api_id: 1028, command_name: 'Pose', parameter: { data: false } },
+      pause,
+      WIRE.modesOn.FreeWalk,
+    ]);
+    expect(compiled(leaveToGait('Sitting')(inPosture('Sitting', 'FreeWalk'))).steps).toEqual([WIRE.actions.RiseSit, pause, WIRE.modesOn.FreeWalk]);
+  });
+
+  it('only leaves the posture when the recorded gait is one the app cannot command', () => {
+    expect(leaveToGait('Sitting')(inPosture('Sitting', 'Stairs'))).toEqual(leave('Sitting'));
   });
 });
 

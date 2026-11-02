@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { evolve, filter, flat, flatMap, forEach, keys, map, merge, omit, pick, pipe, prop, set, splice, times, values } from 'remeda';
 import * as v from 'valibot';
 import { CONDUITE, presets } from '../data/cues';
-import { POSTURES, compiled, enter, leave, perform, sequence, set as setting, wait } from '../utils/commands';
-import type { Cue } from '../utils/commands';
+import { POSTURES, compiled, enter, leave, leaveToGait, perform, sequence, set as setting, wait } from '../utils/commands';
+import type { Cue, Posture } from '../utils/commands';
 import { distinct, nextId, numbered, opened } from '../utils/trees';
 import { CueSheet, documentSchema, SHEET_TOOLS } from './cueSheet.svelte';
 import { OutcomeLog } from './outcomes.svelte';
@@ -791,36 +791,38 @@ describe('cueSheet key assignment', () => {
   });
 
   it('makes usable and sends only the sides of a posture pair the settled posture allows, and both sides of Damp', () => {
-    const { cueSheet, sent, confirm } = setup();
+    const { cueSheet, robot, sent, confirm } = setup();
+    const exit = (_posture: Posture) => leaveToGait(_posture)(robot.current.state.settled);
     const usableSides = () =>
       pipe(
         keys(POSTURES),
-        flatMap((_posture) => filter([enter(_posture), leave(_posture)], (_side) => cueSheet.usable(paneCell(cueSheet, 'postures', enter(_posture).label), _side))),
+        flatMap((_posture) => filter([enter(_posture), exit(_posture)], (_side) => cueSheet.usable(paneCell(cueSheet, 'postures', enter(_posture).label), _side))),
         map(prop('label')),
       );
     const sitting = paneCell(cueSheet, 'postures', 'Sit');
-    expect(usableSides()).toEqual([...map(keys(POSTURES), (_posture) => enter(_posture).label), leave('Damp').label]);
-    cueSheet.use(sitting, leave('Sitting'));
+    expect(usableSides()).toEqual([...map(keys(POSTURES), (_posture) => enter(_posture).label), exit('Damp').label]);
+    cueSheet.use(sitting, exit('Sitting'));
     cueSheet.use(sitting, enter('Sitting'));
     confirm();
-    expect(usableSides()).toEqual(map([leave('Sitting'), enter('Damp'), leave('Damp')], prop('label')));
+    expect(usableSides()).toEqual(map([exit('Sitting'), enter('Damp'), exit('Damp')], prop('label')));
     cueSheet.use(paneCell(cueSheet, 'postures', 'Enter Pose'), enter('Pose'));
-    cueSheet.use(sitting, leave('Sitting'));
-    expect(sent()).toEqual(asSent(enter('Sitting'), leave('Sitting')));
+    cueSheet.use(sitting, exit('Sitting'));
+    expect(sent()).toEqual(asSent(enter('Sitting'), exit('Sitting')));
   });
 
   it('draws pressed and sends only the side of the posture pair a key is linked to that the settled posture allows', () => {
-    const { cueSheet, sent, confirm } = setup(CONDUITE);
+    const { cueSheet, robot, sent, confirm } = setup(CONDUITE);
     const pose = paneCell(cueSheet, 'postures', 'Enter Pose');
-    const pressedSides = () => filter([enter('Pose'), leave('Pose')], (_side) => cueSheet.isPressed(pose, _side));
+    const exit = leaveToGait('Pose')(robot.current.state.settled);
+    const pressedSides = () => filter([enter('Pose'), exit], (_side) => cueSheet.isPressed(pose, _side));
     cueSheet.press('a');
     // The robot settles in Pose while a is held; the side drawn pressed stays the one a sent.
     confirm();
     expect(pressedSides()).toEqual([enter('Pose')]);
     cueSheet.release('a');
     cueSheet.press('a');
-    expect(pressedSides()).toEqual([leave('Pose')]);
-    expect(sent()).toEqual(asSent(enter('Pose'), leave('Pose')));
+    expect(pressedSides()).toEqual([exit]);
+    expect(sent()).toEqual(asSent(enter('Pose'), exit));
   });
 
   it('draws nothing pressed and sends nothing for a key linked to a posture pair while the robot is in another posture', () => {
@@ -845,12 +847,13 @@ describe('cueSheet key assignment', () => {
   });
 
   it('makes both sides of Damp usable before any gait or posture report, and sends them', () => {
-    const { cueSheet, sent, receive } = setup(CONDUITE, memoryStorage(), false);
+    const { cueSheet, robot, sent, receive } = setup(CONDUITE, memoryStorage(), false);
     receive({ type: 'robot_state', connected: true });
     const damp = paneCell(cueSheet, 'postures', 'Damp');
-    expect([cueSheet.usable(damp, enter('Damp')), cueSheet.usable(damp, leave('Damp'))]).toEqual([true, true]);
-    cueSheet.use(damp, leave('Damp'));
-    expect(sent()).toEqual(asSent(leave('Damp')));
+    const exit = leaveToGait('Damp')(robot.current.state.settled);
+    expect([cueSheet.usable(damp, enter('Damp')), cueSheet.usable(damp, exit)]).toEqual([true, true]);
+    cueSheet.use(damp, exit);
+    expect(sent()).toEqual(asSent(exit));
   });
 
   it('sends SpeedLevel for a pane speed once the robot has reported its speed, and logs it as blocked before', () => {
