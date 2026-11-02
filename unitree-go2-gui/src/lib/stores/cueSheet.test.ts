@@ -79,7 +79,7 @@ describe('cueSheet in play mode', () => {
   it('starts on the first cue under Fire, with no cue pressed and the saved cells shown', () => {
     const { cueSheet } = setup();
     const cells = numbered(CUES, 0);
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 0, current: null, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
   });
 
   it('fires the cue under the pointer, draws it pressed, and moves the pointer by the step', () => {
@@ -122,6 +122,18 @@ describe('cueSheet in play mode', () => {
     cueSheet.sweep(0, 2);
     expect(sent()).toEqual(asSent(CUES[2]));
     expect(position(cueSheet)).toEqual({ pointer: 0, pressed: null });
+  });
+
+  it('makes the cell sent last the current one, and moves neither it nor the pointer when moving without sending', () => {
+    const { cueSheet } = setup();
+    tap(cueSheet, 'ArrowRight');
+    expect([cueSheet.state.current, cueSheet.state.pointer]).toEqual([0, 1]);
+    tap(cueSheet, 'ArrowDown');
+    expect([cueSheet.state.current, cueSheet.state.pointer]).toEqual([0, 2]);
+    tap(cueSheet, 'Enter');
+    expect([cueSheet.state.current, cueSheet.state.pointer]).toEqual([2, 2]);
+    cueSheet.sweep(1, 1);
+    expect([cueSheet.state.current, cueSheet.state.pointer]).toEqual([1, 2]);
   });
 });
 
@@ -552,7 +564,7 @@ describe('cueSheet edits', () => {
     cueSheet.save();
     const renamed = merge(CELLS[1], { label: 'X' });
     const cells = [CELLS[0], renamed, ...CELLS.slice(2)];
-    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: cells, shown: cells, pointer: 1, current: 0, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
     cueSheet.sweep(1, 1);
     expect(sent()).toEqual(asSent(CELLS[0], renamed));
   });
@@ -562,7 +574,7 @@ describe('cueSheet edits', () => {
     cueSheet.sweep(0, 3);
     expect(state().pointer).toBe(1);
     cueSheet.cancel();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: 1, current: null, pressed: null, instrument: 'Fire', renaming: null, deleting: null, key: null, carried: null, problem: null });
 
     const { cueSheet: grown, state: grownState } = editing('Ungroup', 5);
     grown.sweep(2, 2);
@@ -577,7 +589,7 @@ describe('cueSheet edits', () => {
     cueSheet.choose('Rename');
     cueSheet.sweep(1, 1);
     cueSheet.reset();
-    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, pressed: null, instrument: 'Rename', renaming: null, deleting: null, key: null, carried: null, problem: null });
+    expect(sheets(cueSheet)).toEqual({ saved: CELLS, shown: CELLS, pointer: SHEET.length - 1, current: null, pressed: null, instrument: 'Rename', renaming: null, deleting: null, key: null, carried: null, problem: null });
   });
 });
 

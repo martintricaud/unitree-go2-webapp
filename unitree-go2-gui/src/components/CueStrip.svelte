@@ -136,7 +136,7 @@
             </div>
         {/if}
         {#each shown as cell, i}
-            <div class="cell" data-index={i} class:active-step={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={cueSheet.isPressed(cell)}
+            <div class="cell" data-index={i} class:current={cell.id === cueSheet.state.current} class:next={cell === cueSheet.state.shown.sheet[cueSheet.state.pointer]} class:pressed={cueSheet.isPressed(cell)}
                 class:swept={isIncludedIn(i, swept) || cueSheet.isTarget(cell)}>
                 {#if cueSheet.state.renaming === i}
                     <span contenteditable="plaintext-only" use:editor={i}>{cell.label}</span>
@@ -213,10 +213,14 @@
         user-select: text;
     }
 
-    .active-step {
-        font-weight: bold;
+    /* The cell sent last glows; the cell the next fire sends is bold. */
+    .current {
         box-shadow: inset 0 0 10px rgb(0, 218, 163);
         border-color: rgb(0, 218, 163);
+    }
+
+    .next {
+        font-weight: bold;
     }
 
     /* A cell or a pane button fired by a key, or a cell held under the pointer in play mode, looks

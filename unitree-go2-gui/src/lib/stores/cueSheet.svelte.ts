@@ -196,7 +196,8 @@ const attempt = <T>(_act: () => T, _fallback: T) => {
 const playing = (_document: Document, _instrument: (typeof INSTRUMENTS)[number] = 'Fire') => ({
     saved: _document, // the document Save last stored
     shown: _document, // the document shown; equal to `saved` under Fire
-    pointer: 0,
+    pointer: 0, // the cell the next fire sends
+    current: null as Cell['id'] | null, // the cell the sheet sent last
     pressed: null as { id: Cell['id']; cue: Cue } | null, // the cell a held key fired, and which of its sides
     instrument: _instrument,
     renaming: null as number | null,
@@ -421,8 +422,11 @@ export class CueSheet implements Pick<Writable<ReturnType<typeof playing>>, 'upd
     move = (_steps: number) =>
         this.update((_state) => evolve(_state, { pointer: (_at) => within(_state.shown.sheet, _at + _steps) }));
 
-    /// Sends the cue of cell `_index`.
-    send = (_index: number) => void this.#robot.request(this.state.shown.sheet[_index]);
+    /// Sends the cue of cell `_index`, and makes it the current cell.
+    send = (_index: number) => {
+        void this.#robot.request(this.state.shown.sheet[_index]);
+        this.update(set('current', this.state.shown.sheet[_index].id));
+    };
 
     /// Sends the cue under the pointer, draws it pressed, then moves the pointer by `_steps`.
     fire = (_steps: number) => {

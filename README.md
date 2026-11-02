@@ -91,7 +91,7 @@ After you click, a spinner shows until the robot confirms the change. If the rob
 
 ## 5. Play the cue sheet
 
-The cue sheet is the list on the right. The highlighted cell is the current cue. A cell is either a single command, a wait, or a group of commands that run one after another; a group shows its number of commands in brackets.
+The cue sheet is the list on the right. The cell sent last glows green. The cell the next → or Enter sends has bold text. A cell is either a single command, a wait, or a group of commands that run one after another; a group shows its number of commands in brackets.
 
 Use these keys while the page has focus:
 
@@ -104,7 +104,7 @@ Use these keys while the page has focus:
 | Enter | Sends the current cue and stays on it. |
 | A, B, X, Y | Sends the cell linked to that key (see [section 7](#7-link-controller-keys)). |
 
-You can also click a cell to send it without moving the highlight.
+You can also click a cell to send it. It then glows, and the bold cell stays where it was.
 
 A key linked to a gait or a light works as a toggle: the first press switches to that gait or colour, the next press switches back. A key linked to a posture pair enters the posture, and the next press leaves it.
 
@@ -131,7 +131,7 @@ Waits matter inside groups: the robot often ignores a command that arrives while
 
 ## 7. Link controller keys
 
-The keys A, B, X and Y each send one cell, wherever the cue sheet's highlight is. By default, A sends Pose, B sends Bound, X sends Sitting and Y sends Dance.
+The keys A, B, X and Y each send one cell, whatever the position in the cue sheet. By default, A sends Pose, B sends Bound, X sends Sitting and Y sends Dance.
 
 To change a link:
 
