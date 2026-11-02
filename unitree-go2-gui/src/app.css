@@ -180,13 +180,7 @@ button:focus-visible {
 }
 
 /* A posture's pair: its entry and its exit side by side, two transitions; neither side shows the
-   robot's state. */
-/* The posture pairs' rows are separated by a gap as thick as a button's border. */
-.flow-grid.pairs {
-  row-gap: var(--button-border);
-}
-
-/* Each side takes exactly half of the pair, whatever its label. */
+   robot's state. Each side takes exactly half of the pair, whatever its label. */
 .posture-toggle>button {
   flex: 0 0 50%;
   min-width: 0;
@@ -250,6 +244,8 @@ button:focus-visible {
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(auto-fill, 2.7em);
+  /* Separate buttons are as far apart as a button's border is thick. */
+  gap: var(--button-border);
   height: calc(100% - 0.5em);
 }
 

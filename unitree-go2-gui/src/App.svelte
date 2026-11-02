@@ -129,7 +129,7 @@
          the robot's settled posture allows is usable, and a key draws only that side pressed. -->
     <section>
         <h2>Posture changes</h2>
-        <div class="flow-grid pairs">
+        <div class="flow-grid">
             {#each cueSheet.state.shown.pane.postures as cell (cell.id)}
                 {@const posture = after(cell).posture}
                 {#if posture}
