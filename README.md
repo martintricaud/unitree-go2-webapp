@@ -15,11 +15,11 @@ This tutorial takes you from starting the app to playing your own cue sheet.
 
 The packaged app contains the server, the web page and Python. You need a Mac with Apple Silicon (M1 or later); the app does not run on an Intel Mac.
 
-1. Get `unitree-go2-v3.app`, either from a release zip or by building it (see [section 9](#9-build-the-macos-app)).
+1. Get `unitree-go2-vN.app`, where `vN` is the version, either from a release zip or by building it (see [section 9](#9-build-the-macos-app)).
 2. Double-click it. On the first launch, macOS refuses to open it because Apple did not sign it. Open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to the line about the app, and confirm.
 3. The app has no window of its own. It starts a server on your Mac and, after about two seconds, opens your browser at <http://localhost:8000>. If the browser does not open, go to that address yourself.
 
-Closing the browser tab does not stop the server. To stop it, quit `unitree-go2-v3` in Activity Monitor. The server writes its log to `~/Library/Logs/unitree-go2/relay.log`.
+Closing the browser tab does not stop the server. To stop it, quit `unitree-go2-vN` in Activity Monitor. The server writes its log to `~/Library/Logs/unitree-go2/relay.log`.
 
 ### Option B: from source, for development
 
@@ -161,11 +161,21 @@ The build needs the Python environment from [section 1](#option-b-from-source-fo
 
 ```sh
 backend/venv/bin/pip install pyinstaller
-./build.sh                  # builds the web page, then the app
-./build.sh --skip-frontend  # reuses unitree-go2-gui/dist
+./build.sh v4                    # builds the web page, then the app
+./build.sh v4 --release          # also makes the zip to send to users
+./build.sh v4 --skip-frontend    # reuses unitree-go2-gui/dist
 ```
 
-The result is `dist-app/unitree-go2-v3.app`. PyInstaller prints `Hidden import 'pycryptodome' not found` and `Hidden import 'uvicorn.loops.none' not found`; both are harmless. The packaging rules are in `unitree-go2.spec`.
+The version (`v4` here) is required. It becomes part of the app's name, so that several versions can sit side by side in Applications. Each version gets its own folder, and building a version again replaces its folder's content:
+
+```
+dist-app/
+  v4/
+    unitree-go2-v4.app        the app
+    unitree-go2-v4-mac.zip    with --release: the app and READ-ME-FIRST.txt
+```
+
+`READ-ME-FIRST.txt` at the root of the repository is the guide for users who receive the zip; the build replaces `{{VERSION}}` in it with the version. PyInstaller prints `Hidden import 'pycryptodome' not found` and `Hidden import 'uvicorn.loops.none' not found`; both are harmless. The packaging rules are in `unitree-go2.spec`.
 
 To run the tests before building:
 
@@ -179,7 +189,7 @@ cd backend && venv/bin/pytest
 **The app does nothing when double-clicked.** Start it from a terminal to see its output:
 
 ```sh
-dist-app/unitree-go2-v3.app/Contents/MacOS/unitree-go2-v3
+dist-app/v4/unitree-go2-v4.app/Contents/MacOS/unitree-go2-v4
 ```
 
 The most common cause is `address already in use`: another program uses port 8000. Quit it and try again.
@@ -209,7 +219,8 @@ unitree-go2-gui/src/
   components/           video, cue sheet, status strip, controller drawing
   lib/data/cues.ts      the default cue sheet, pane and key links
   lib/stores/           robot state and cue sheet state
-build.sh                builds the packaged app
+build.sh                builds the packaged app and the release zip
+READ-ME-FIRST.txt       guide included in the release zip
 unitree-go2.spec        PyInstaller rules for the packaged app
 ```
 

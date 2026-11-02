@@ -4,3 +4,6 @@ backend/__pycache__
 
 # macOS folder metadata
 .DS_Store
+
+# Built apps and release zips (build.sh)
+dist-app/

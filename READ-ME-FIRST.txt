@@ -1,0 +1,90 @@
+unitree-go2 {{VERSION}} — how to run it on your Mac
+==========================================
+
+WHAT YOU NEED
+  A Mac with Apple Silicon (M1, M2, M3, M4 …). This build does not run on an
+  Intel Mac. Check under  Apple menu > About This Mac : the Chip line must say
+  "Apple", not "Intel".
+
+  You do not need Python, Node, or anything else installed. Everything the app
+  needs is inside the bundle.
+
+
+BEFORE YOU START — quit the previous version
+  Earlier versions of this app can stay in your Applications folder next to
+  this one. But only one version can run at a time, because they all use the
+  same address, http://localhost:8000.
+
+  If an earlier version is running, quit it first, as described under
+  TO QUIT below. Otherwise this version will not start.
+
+
+STEP 1 — Unpack
+  Double-click unitree-go2-{{VERSION}}-mac.zip. It produces a folder named
+  unitree-go2-{{VERSION}}, holding this file and unitree-go2-{{VERSION}}.app.
+  Drag unitree-go2-{{VERSION}}.app into your Applications folder.
+
+
+STEP 2 — Allow it to open (needed once)
+  macOS blocks apps that were not bought from the App Store and not signed with
+  a paid Apple developer certificate. This app is signed, but not by Apple, so
+  the first launch is refused. Allowing it takes four clicks. You must do this
+  again for {{VERSION}}, even if you already did it for an earlier version.
+
+  1. Double-click unitree-go2-{{VERSION}}.app. A message appears saying macOS
+     cannot open it. Click Done. Nothing is broken; this refusal is expected.
+
+  2. Open System Settings > Privacy & Security.
+
+  3. Scroll down to the Security section. It now shows a line reading
+     "unitree-go2-{{VERSION}}.app was blocked to protect your Mac", with an
+     Open Anyway button next to it. Click Open Anyway.
+
+     This line only appears after step 1. If you do not see it, go back and
+     double-click the app first.
+
+  4. Confirm with Touch ID or your login password, then click Open Anyway once
+     more in the dialog that follows.
+
+  The app opens, and every later launch opens normally with no prompts.
+
+  Note: Control-clicking the app and choosing Open does NOT work on macOS 15
+  and later. Use System Settings as described above.
+
+
+STEP 3 — Use it
+  The app has no window of its own. It starts a small web server on your Mac
+  and, after about two seconds, opens your default browser at
+
+      http://localhost:8000
+
+  That browser page is the interface. If the browser does not open by itself,
+  open it yourself and go to that address.
+
+
+CONNECTING TO THE ROBOT
+  Your Mac must be connected to the Wi-Fi network of the Go2. Then click
+  Connect, the first button of the status line at the bottom of the page.
+  "Robot" in that status line shows a green tick once the robot answers.
+
+  Most buttons stay greyed out for a few seconds after that. They become
+  usable as soon as the robot has reported its current state. This is
+  expected; it stops the page from showing values the robot did not state.
+
+
+TO QUIT
+  Closing the browser tab does not stop the app; the server keeps running in
+  the background. To stop it: open Activity Monitor (Applications > Utilities),
+  search for "unitree-go2", select it, and press the (x) button in the toolbar,
+  then choose Quit.
+
+
+IF NOTHING HAPPENS WHEN YOU DOUBLE-CLICK
+  The app writes no visible error, so run it from Terminal to see why:
+
+      /Applications/unitree-go2-{{VERSION}}.app/Contents/MacOS/unitree-go2-{{VERSION}}
+
+  The most common cause is that port 8000 is already used by another program,
+  often an earlier version of this app that is still running. You will see
+  "address already in use" in the output. Quit the other program and try
+  again.
